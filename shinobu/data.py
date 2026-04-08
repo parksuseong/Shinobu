@@ -12,6 +12,7 @@ import yfinance as yf
 
 from config import has_kis_credentials
 from shinobu.kis import KisApiError, fetch_domestic_daily, fetch_domestic_intraday_history
+from shinobu.live_data import load_intraday_recent, load_intraday_seed, merge_intraday_frames
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -40,6 +41,7 @@ PAIR_SYMBOL_MAP = {
 }
 
 LIVE_INTRADAY_LOOKBACK_DAYS = 5
+LIVE_RECENT_WINDOW_MINUTES = 720
 
 INTRADAY_RESAMPLE_MINUTES = {
     "5분봉": 5,
@@ -290,7 +292,10 @@ def _load_live_chart_data_impl(symbol: str, timeframe_label: str) -> pd.DataFram
 
         short_code = display_symbol(symbol)
         if timeframe_label in INTRADAY_RESAMPLE_MINUTES:
-            minute_frame = fetch_domestic_intraday_history(short_code, lookback_days=LIVE_INTRADAY_LOOKBACK_DAYS)
+            minute_frame = merge_intraday_frames(
+                load_intraday_seed(short_code, lookback_days=LIVE_INTRADAY_LOOKBACK_DAYS),
+                load_intraday_recent(short_code, lookback_minutes=LIVE_RECENT_WINDOW_MINUTES),
+            )
             return _resample_domestic_intraday(minute_frame, INTRADAY_RESAMPLE_MINUTES[timeframe_label])
         if timeframe_label in {"?쇰큺", "二쇰큺", "?붾큺"}:
             period_code = {"?쇰큺": "D", "二쇰큺": "W", "?붾큺": "M"}[timeframe_label]
@@ -319,12 +324,12 @@ def load_chart_data(symbol: str, timeframe_label: str) -> pd.DataFrame:
     return _load_chart_data_impl(symbol, timeframe_label)
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def load_live_chart_data(symbol: str, timeframe_label: str) -> pd.DataFrame:
     return _load_live_chart_data_impl(symbol, timeframe_label)
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def load_ui_chart_data(symbol: str, timeframe_label: str) -> pd.DataFrame:
     return _load_ui_chart_data_impl(symbol, timeframe_label)
 

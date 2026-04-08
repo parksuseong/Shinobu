@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
 LIVE_ALLOCATION_KRW = 500_000.0
 MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
+LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 8.0
+LIVE_FILL_CONFIRM_POLL_SECONDS = 1.0
 LIVE_STATE_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_state.json"
 LIVE_LOG_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_trading.log"
 _LIVE_STATE_LOCK = threading.RLock()
@@ -33,6 +36,7 @@ def _default_state() -> dict[str, Any]:
         "last_checked_candle": "",
         "last_cycle_at": "",
         "last_order_at": "",
+        "last_asset_snapshot_order_at": "",
         "last_status": "stopped",
         "last_error": "",
         "orders": [],
@@ -125,10 +129,10 @@ def set_live_enabled(enabled: bool) -> None:
         if enabled:
             state["started_at"] = _now_text()
             state["last_status"] = "running"
-            _append_log("시스템", "실전 투자 시작")
+            _append_log("상태", "실전 투자 시작")
         else:
             state["last_status"] = "stopped"
-            _append_log("시스템", "실전 투자 중지")
+            _append_log("상태", "실전 투자 중지")
         _write_state(state)
 
 
@@ -177,7 +181,14 @@ def get_live_runtime_state() -> dict[str, str]:
 def record_asset_snapshot(total_assets: float) -> None:
     with _LIVE_STATE_LOCK:
         state = _read_state()
+        last_order_at = str(state.get("last_order_at", "") or "")
+        last_snapshot_order_at = str(state.get("last_asset_snapshot_order_at", "") or "")
         history = list(state.get("asset_history", []))
+        if not last_order_at and history:
+            return
+        if last_order_at and last_order_at == last_snapshot_order_at:
+            return
+
         timestamp = _now_text()
         if history and history[-1].get("timestamp") == timestamp:
             history[-1]["total_assets"] = float(total_assets)
@@ -186,6 +197,7 @@ def record_asset_snapshot(total_assets: float) -> None:
         if len(history) > MAX_ASSET_HISTORY:
             history = history[-MAX_ASSET_HISTORY:]
         state["asset_history"] = history
+        state["last_asset_snapshot_order_at"] = last_order_at
         _write_state(state)
 
 
@@ -253,6 +265,71 @@ def _allocation_quantity(orderable_cash: float, price: float) -> int:
     return int(budget // price)
 
 
+def _position_quantity_for_symbol(positions: pd.DataFrame, symbol: str) -> int:
+    if positions.empty or "code" not in positions.columns:
+        return 0
+    code = symbol.replace(".KS", "")
+    matches = positions.loc[positions["code"] == code]
+    if matches.empty:
+        return 0
+    return int(float(matches.iloc[0].get("quantity", 0)))
+
+
+def _format_order_response(order_output: dict[str, Any]) -> str:
+    if not order_output:
+        return "응답 없음"
+    parts: list[str] = []
+    branch = str(order_output.get("KRX_FWDG_ORD_ORGNO") or order_output.get("ORD_GNO_BRNO") or "").strip()
+    order_no = str(order_output.get("ODNO") or "").strip()
+    order_time = str(order_output.get("ORD_TMD") or "").strip()
+    if branch:
+        parts.append(f"지점 {branch}")
+    if order_no:
+        parts.append(f"주문번호 {order_no}")
+    if order_time:
+        parts.append(f"주문시각 {order_time}")
+    if not parts:
+        return json.dumps(order_output, ensure_ascii=False)
+    return ", ".join(parts)
+
+
+def _confirm_fill_after_order(symbol: str, side: str, baseline_quantity: int, expected_quantity: int) -> tuple[bool, str]:
+    deadline = time.monotonic() + LIVE_FILL_CONFIRM_TIMEOUT_SECONDS
+    while time.monotonic() <= deadline:
+        fetch_domestic_balance.clear()
+        positions, _ = fetch_domestic_balance()
+        current_quantity = _position_quantity_for_symbol(positions, symbol)
+        if side == "buy":
+            if current_quantity >= baseline_quantity + max(expected_quantity, 1):
+                return True, f"체결 확인: 보유수량 {baseline_quantity}주 -> {current_quantity}주"
+        else:
+            target_quantity = max(baseline_quantity - expected_quantity, 0)
+            if current_quantity <= target_quantity:
+                return True, f"체결 확인: 보유수량 {baseline_quantity}주 -> {current_quantity}주"
+        time.sleep(LIVE_FILL_CONFIRM_POLL_SECONDS)
+    return False, "체결 확인 대기 시간 초과"
+
+
+def _submit_live_order(
+    state: dict[str, Any],
+    symbol: str,
+    side: str,
+    quantity: int,
+    expected_price: float,
+    reason: str,
+    candle_time: pd.Timestamp,
+    baseline_quantity: int,
+) -> None:
+    broker_output = place_domestic_order(symbol.replace(".KS", ""), side, quantity)
+    _append_order(state, symbol, side, quantity, expected_price, reason, candle_time)
+    _append_log(
+        "주문",
+        f"{display_name(symbol)} {side.upper()} {quantity}주 시장가 주문 접수 ({_format_order_response(broker_output)})",
+    )
+    filled, fill_message = _confirm_fill_after_order(symbol, side, baseline_quantity, quantity)
+    _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {quantity}주 {fill_message}")
+
+
 def process_live_trading_cycle(
     primary_symbol: str,
     secondary_symbol: str,
@@ -300,17 +377,32 @@ def process_live_trading_cycle(
 
             if chosen_open is not None and chosen_open[0] != current_symbol:
                 target_symbol, target_row = chosen_open
-                place_domestic_order(current_symbol.replace(".KS", ""), "sell", current_quantity)
-                _append_order(state, current_symbol, "sell", current_quantity, float(active_row["Close"]), "반대 ETF 스위칭 청산", target_time)
-                _append_log("주문", f"{display_name(current_symbol)} {current_quantity}주 매도 완료")
+                _submit_live_order(
+                    state,
+                    current_symbol,
+                    "sell",
+                    current_quantity,
+                    float(active_row["Close"]),
+                    "반대 ETF 스위치 청산",
+                    target_time,
+                    baseline_quantity=current_quantity,
+                )
 
+                fetch_domestic_balance.clear()
                 _, summary = fetch_domestic_balance()
                 buy_price = float(target_row["Close"])
-                buy_quantity = _allocation_quantity(summary.get("주문가능현금", 0), buy_price)
+                buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
                 if buy_quantity > 0:
-                    place_domestic_order(target_symbol.replace(".KS", ""), "buy", buy_quantity)
-                    _append_order(state, target_symbol, "buy", buy_quantity, buy_price, "반대 ETF 진입", target_time)
-                    _append_log("주문", f"{display_name(target_symbol)} {buy_quantity}주 매수 완료")
+                    _submit_live_order(
+                        state,
+                        target_symbol,
+                        "buy",
+                        buy_quantity,
+                        buy_price,
+                        "반대 ETF 진입",
+                        target_time,
+                        baseline_quantity=0,
+                    )
                     _set_status(state, "ordered")
                 else:
                     _set_status(state, "waiting_cash")
@@ -319,9 +411,16 @@ def process_live_trading_cycle(
                 return
 
             if bool(active_row.get("buy_close", False)):
-                place_domestic_order(current_symbol.replace(".KS", ""), "sell", current_quantity)
-                _append_order(state, current_symbol, "sell", current_quantity, float(active_row["Close"]), "지표 2개 과열 청산", target_time)
-                _append_log("주문", f"{display_name(current_symbol)} {current_quantity}주 청산 완료")
+                _submit_live_order(
+                    state,
+                    current_symbol,
+                    "sell",
+                    current_quantity,
+                    float(active_row["Close"]),
+                    "지표 과열 청산",
+                    target_time,
+                    baseline_quantity=current_quantity,
+                )
                 _set_status(state, "ordered")
                 _write_state(state)
                 return
@@ -339,15 +438,22 @@ def process_live_trading_cycle(
 
         target_symbol, target_row = chosen_open
         buy_price = float(target_row["Close"])
-        buy_quantity = _allocation_quantity(summary.get("주문가능현금", 0), buy_price)
+        buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
         if buy_quantity <= 0:
             _set_status(state, "waiting_cash")
             _append_log("경고", f"{display_name(target_symbol)} 매수 가능 수량이 없습니다.")
             _write_state(state)
             return
 
-        place_domestic_order(target_symbol.replace(".KS", ""), "buy", buy_quantity)
-        _append_order(state, target_symbol, "buy", buy_quantity, buy_price, "buy open 진입", target_time)
-        _append_log("주문", f"{display_name(target_symbol)} {buy_quantity}주 매수 완료")
+        _submit_live_order(
+            state,
+            target_symbol,
+            "buy",
+            buy_quantity,
+            buy_price,
+            "buy open 진입",
+            target_time,
+            baseline_quantity=0,
+        )
         _set_status(state, "ordered")
         _write_state(state)

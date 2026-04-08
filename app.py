@@ -6,11 +6,14 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 
 from config import has_kis_account
 from shinobu import data as market_data
-from shinobu.chart import build_candlestick_chart
+from shinobu.chart import build_candlestick_chart, update_candlestick_chart
+from shinobu.chart_server import ensure_chart_server
+from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance
 from shinobu.live_trading import (
     LIVE_ALLOCATION_KRW,
@@ -32,6 +35,7 @@ LIVE_TIMEFRAME = "5분봉"
 LIVE_TIMEFRAME = "5분봉"
 PRIMARY_SYMBOL = "122630.KS"
 LIVE_CHART_STATE_KEY = "live_chart_state"
+LIVE_FIGURE_STATE_KEY = "live_figure_state"
 MAX_LIVE_CHART_CANDLES = 50
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.png"
@@ -56,14 +60,16 @@ def render_header() -> None:
 def init_live_chart_state() -> None:
     if LIVE_CHART_STATE_KEY not in st.session_state:
         st.session_state[LIVE_CHART_STATE_KEY] = {"started_at": "", "frames": {}}
+    if LIVE_FIGURE_STATE_KEY not in st.session_state:
+        st.session_state[LIVE_FIGURE_STATE_KEY] = {}
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def get_cached_raw_frame(symbol: str, timeframe_label: str) -> pd.DataFrame:
     return load_ui_chart_data(symbol, timeframe_label)
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def get_cached_strategy_frame(symbol: str, timeframe_label: str, stoch_pct: int, cci_pct: int, rsi_pct: int) -> pd.DataFrame:
     adjustments = StrategyAdjustments(stoch_pct=stoch_pct, cci_pct=cci_pct, rsi_pct=rsi_pct)
     raw = get_cached_raw_frame(symbol, timeframe_label)
@@ -155,6 +161,46 @@ def get_preview_raw_chart_frame(symbol: str) -> pd.DataFrame:
 def get_live_raw_chart_frame(symbol: str) -> pd.DataFrame:
     frame = get_cached_raw_frame(symbol, LIVE_TIMEFRAME)
     return filter_frame_from_live_start(frame)
+
+
+def _get_chart_figure(
+    chart_kind: str,
+    frame: pd.DataFrame,
+    symbol: str,
+    pair_symbol: str | None,
+    pair_frame: pd.DataFrame | None,
+) -> go.Figure:
+    init_live_chart_state()
+    state = st.session_state[LIVE_FIGURE_STATE_KEY]
+    include_scr_panel = "scr_line" in frame.columns
+    figure_key = f"{chart_kind}:{symbol}:{pair_symbol or ''}:{include_scr_panel}"
+    symbol_name = display_name(symbol)
+    pair_name = display_name(pair_symbol) if pair_symbol else None
+
+    cached_figure = state.get(figure_key)
+    if cached_figure is None:
+        cached_figure = build_candlestick_chart(
+            frame,
+            LIVE_TIMEFRAME,
+            symbol_name,
+            symbol,
+            pair_frame=pair_frame,
+            pair_name=pair_name,
+            pair_symbol_code=pair_symbol,
+        )
+        state[figure_key] = cached_figure
+        return cached_figure
+
+    return update_candlestick_chart(
+        cached_figure,
+        frame,
+        LIVE_TIMEFRAME,
+        symbol_name,
+        symbol,
+        pair_frame=pair_frame,
+        pair_name=pair_name,
+        pair_symbol_code=pair_symbol,
+    )
 
 
 def _add_live_order_markers(figure: go.Figure, order_frame: pd.DataFrame, price_frame: pd.DataFrame) -> None:
@@ -473,104 +519,138 @@ def render_emotion_section() -> None:
     except Exception:
         return
     render_emotion_panel(positions, summary)
-@st.fragment(run_every="300s")
+@st.fragment(run_every="5s")
 def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
-    chart_placeholder = st.empty()
-    try:
-        with st.spinner("차트를 불러오는 중..."):
-            started_at = get_live_started_at()
-            if started_at is None:
-                frame = get_preview_raw_chart_frame(symbol)
-                pair_frame = get_preview_raw_chart_frame(pair_symbol) if pair_symbol is not None else None
-                st.info(f"실행 전 최근 완료 {LIVE_TIMEFRAME} {MAX_LIVE_CHART_CANDLES}개를 미리 보여줍니다.")
-            else:
-                frame = get_live_raw_chart_frame(symbol)
-                pair_frame = get_live_raw_chart_frame(pair_symbol) if pair_symbol is not None else None
-
-            if frame.empty:
-                st.info("실행 이후 아직 표시할 5분봉 데이터가 없습니다.")
-                return
-
-            figure = build_candlestick_chart(
-                frame,
-                LIVE_TIMEFRAME,
-                display_name(symbol),
-                symbol,
-                pair_frame=pair_frame,
-                pair_name=display_name(pair_symbol) if pair_symbol else None,
-                pair_symbol_code=pair_symbol,
-            )
-
-            orders = get_live_orders()
-            if orders:
-                order_frame = pd.DataFrame(orders)
-                order_frame["candle_time"] = pd.to_datetime(order_frame["candle_time"])
-                allowed_symbols = [value for value in [symbol, pair_symbol] if value is not None]
-                order_frame = order_frame[order_frame["symbol"].isin(allowed_symbols)]
-                _add_live_order_markers(figure, order_frame, frame)
-    except Exception as exc:
-        st.warning(f"차트 로딩 실패: {exc}")
-        return
-
-    chart_placeholder.plotly_chart(
-        figure,
-        use_container_width=True,
-        theme=None,
-        config={
-            "scrollZoom": True,
-            "displaylogo": False,
-            "showAxisDragHandles": True,
-            "showAxisRangeEntryBoxes": True,
-            "doubleClick": "reset+autosize",
-            "modeBarButtonsToRemove": ["lasso2d", "select2d", "zoomIn2d", "zoomOut2d"],
-        },
+    components.html(
+        build_live_chart_html(
+            server_url=ensure_chart_server(),
+            symbol=symbol,
+            pair_symbol=pair_symbol,
+            stoch_pct=adjustments.stoch_pct,
+            cci_pct=adjustments.cci_pct,
+            rsi_pct=adjustments.rsi_pct,
+        ),
+        height=640,
     )
+    return
 
-    try:
-        if started_at is None:
-            overlay_frame = get_preview_chart_frame(symbol, adjustments)
-            overlay_pair_frame = get_preview_chart_frame(pair_symbol, adjustments) if pair_symbol is not None else None
-        else:
-            overlay_frame = get_live_chart_frame(symbol, adjustments)
-            overlay_pair_frame = get_live_chart_frame(pair_symbol, adjustments) if pair_symbol is not None else None
+    server_url = ensure_chart_server()
+    pair_query = pair_symbol or ""
+    component_key = f"live-chart-{symbol}-{pair_query}-{adjustments.stoch_pct}-{adjustments.cci_pct}-{adjustments.rsi_pct}"
+    html = f"""
+    <div id="chart-root" style="width:100%;height:560px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script>
+    const root = document.getElementById("chart-root");
+    const endpoint = "{server_url}/chart?kind=overlay&symbol={symbol}&pair_symbol={pair_query}&stoch_pct={adjustments.stoch_pct}&cci_pct={adjustments.cci_pct}&rsi_pct={adjustments.rsi_pct}";
+    let initialized = false;
 
-        if overlay_frame.empty:
-            return
+    function markerTrace(markers, color, symbol, axisSuffix = "") {{
+      const indicatorMode = axisSuffix === "2";
+      return {{
+        type: "scatter",
+        mode: indicatorMode ? "markers" : "markers+text",
+        x: markers.map((item) => item.x),
+        y: markers.map((item) => item.y),
+        text: indicatorMode ? [] : markers.map((item) => item.label),
+        textposition: "top center",
+        textfont: {{ size: 10, color }},
+        marker: {{ color, size: indicatorMode ? 7 : 10, symbol, opacity: indicatorMode ? 0.42 : 1, line: {{ color: "#ffffff", width: 1 }} }},
+        hoverinfo: "text",
+        hovertext: markers.map((item) => item.label),
+        xaxis: axisSuffix ? `x${{axisSuffix}}` : "x",
+        yaxis: axisSuffix ? `y${{axisSuffix}}` : "y",
+        showlegend: false
+      }};
+    }}
 
-        overlay_figure = build_candlestick_chart(
-            overlay_frame,
-            LIVE_TIMEFRAME,
-            display_name(symbol),
-            symbol,
-            pair_frame=overlay_pair_frame,
-            pair_name=display_name(pair_symbol) if pair_symbol else None,
-            pair_symbol_code=pair_symbol,
-        )
+    function buildFigure(data) {{
+      const x = data.candles.map((_, index) => index);
+      const step = Math.max(1, Math.ceil(x.length / 8));
+      const tickvals = x.filter((_, index) => index % step === 0 || index === x.length - 1);
+      const ticktext = data.tickText.filter((_, index) => index % step === 0 || index === x.length - 1);
 
-        orders = get_live_orders()
-        if orders:
-            order_frame = pd.DataFrame(orders)
-            order_frame["candle_time"] = pd.to_datetime(order_frame["candle_time"])
-            allowed_symbols = [value for value in [symbol, pair_symbol] if value is not None]
-            order_frame = order_frame[order_frame["symbol"].isin(allowed_symbols)]
-            _add_live_order_markers(overlay_figure, order_frame, overlay_frame)
+      return {{
+        data: [
+          {{
+            type: "candlestick",
+            x,
+            open: data.candles.map((item) => item.o),
+            high: data.candles.map((item) => item.h),
+            low: data.candles.map((item) => item.l),
+            close: data.candles.map((item) => item.c),
+            increasing: {{ line: {{ color: "#089981" }}, fillcolor: "#089981" }},
+            decreasing: {{ line: {{ color: "#f23645" }}, fillcolor: "#f23645" }},
+            xaxis: "x",
+            yaxis: "y",
+            hovertemplate: "시가 %{{open:,.0f}}<br>고가 %{{high:,.0f}}<br>저가 %{{low:,.0f}}<br>종가 %{{close:,.0f}}<extra></extra>",
+            showlegend: false
+          }},
+          markerTrace(data.signals.primaryOpenMain || [], "#3b82f6", "circle"),
+          markerTrace(data.signals.primaryCloseMain || [], "#ef4444", "circle"),
+          markerTrace(data.signals.pairOpenMain || [], "#3b82f6", "star"),
+          markerTrace(data.signals.pairCloseMain || [], "#ef4444", "star"),
+          markerTrace(data.orders || [], "#f59e0b", "diamond"),
+          {{
+            type: "scatter", mode: "lines", x, y: data.scr || [], xaxis: "x2", yaxis: "y2",
+            line: {{ color: "#ffffff", width: 3.1, dash: "solid" }}, showlegend: false,
+            hovertemplate: `${{data.symbolName}} SCR %{{y:.2f}}<extra></extra>`
+          }},
+          {{
+            type: "scatter", mode: "lines", x, y: data.pairScr || [], xaxis: "x2", yaxis: "y2",
+            line: {{ color: "#f59e0b", width: 2.5, dash: "dot" }}, showlegend: false,
+            hovertemplate: `${{data.pairName || "곱버스"}} SCR %{{y:.2f}}<extra></extra>`
+          }},
+          markerTrace(data.signals.primaryOpenIndicator || [], "#3b82f6", "circle", "2"),
+          markerTrace(data.signals.primaryCloseIndicator || [], "#ef4444", "circle", "2"),
+          markerTrace(data.signals.pairOpenIndicator || [], "#3b82f6", "star", "2"),
+          markerTrace(data.signals.pairCloseIndicator || [], "#ef4444", "star", "2")
+        ],
+        layout: {{
+          paper_bgcolor: "#131722",
+          plot_bgcolor: "#131722",
+          font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
+          margin: {{ l: 8, r: 56, t: 42, b: 18 }},
+          height: 560,
+          dragmode: false,
+          hovermode: "x unified",
+          hoverdistance: 30,
+          spikedistance: 30,
+          hoverlabel: {{ bgcolor: "#1e222d", font: {{ color: "#d1d4dc" }} }},
+          showlegend: false,
+          uirevision: "shinobu-live-chart",
+          xaxis: {{ domain: [0, 1], anchor: "y", showgrid: false, showticklabels: false, range: [-0.45, Math.max(x.length - 0.55, 1)], fixedrange: true, showspikes: true, spikemode: "across", spikecolor: "#4b5563", spikethickness: 1 }},
+          yaxis: {{ domain: [0.31, 1], side: "right", showgrid: true, gridcolor: "rgba(42,46,57,0.65)", fixedrange: true }},
+          xaxis2: {{ domain: [0, 1], anchor: "y2", tickmode: "array", tickvals, ticktext, showgrid: false, range: [-0.45, Math.max(x.length - 0.55, 1)], fixedrange: true, showspikes: true, spikemode: "across", spikecolor: "#4b5563", spikethickness: 1 }},
+          yaxis2: {{ domain: [0, 0.24], side: "right", range: [-1.6, 1.6], tickmode: "array", tickvals: [-1, 0, 1], ticktext: ["하단", "0", "상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)" }},
+          annotations: [
+            {{ x: 0.01, y: 1.04, xref: "paper", yref: "paper", showarrow: false, text: `${{data.symbolName}} · 5분봉 · 실전`, font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }} }},
+            {{ x: 0.01, y: 0.27, xref: "paper", yref: "paper", showarrow: false, text: "보조지표 (흰색 점선: 레버리지 / 주황 점선: 곱버스)", font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }} }}
+          ]
+        }}
+      }};
+    }}
 
-        chart_placeholder.plotly_chart(
-            overlay_figure,
-            use_container_width=True,
-            theme=None,
-            config={
-                "scrollZoom": True,
-                "displaylogo": False,
-                "showAxisDragHandles": True,
-                "showAxisRangeEntryBoxes": True,
-                "doubleClick": "reset+autosize",
-                "modeBarButtonsToRemove": ["lasso2d", "select2d", "zoomIn2d", "zoomOut2d"],
-            },
-        )
-    except Exception:
-        pass
-@st.fragment(run_every="30s")
+    async function refreshChart() {{
+      const response = await fetch(endpoint, {{ cache: "no-store" }});
+      if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
+      const payload = await response.json();
+      const figure = buildFigure(payload);
+      const config = {{ responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false, modeBarButtonsToRemove: ["zoom2d", "pan2d", "lasso2d", "select2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"] }};
+      if (!initialized) {{
+        await Plotly.newPlot(root, figure.data, figure.layout, config);
+        initialized = true;
+      }} else {{
+        await Plotly.react(root, figure.data, figure.layout, config);
+      }}
+    }}
+
+    refreshChart();
+    setInterval(refreshChart, 5000);
+    </script>
+    """
+    components.html(html, height=580)
+@st.fragment(run_every="5s")
 def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
     if not is_live_enabled() or pair_symbol is None:
         return
@@ -611,7 +691,7 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
         unsafe_allow_html=True,
     )
     st.caption(
-        f"실전 주문은 5분봉 기준으로만 처리하고, 30초마다 최신 완료 봉을 확인합니다. 최대 투입금은 {LIVE_ALLOCATION_KRW:,.0f}원입니다."
+        f"실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. 최대 투입금은 {LIVE_ALLOCATION_KRW:,.0f}원입니다."
     )
 
     runtime = get_live_runtime_state()
