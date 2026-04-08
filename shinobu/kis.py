@@ -271,7 +271,84 @@ def place_domestic_order(symbol: str, side: str, quantity: int, order_type: str 
     if not output:
         raise KisApiError(f"한투 주문 실패: {response}")
     fetch_domestic_balance.clear()
+    fetch_domestic_daily_ccld.clear()
     return output
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_domestic_daily_ccld(start_date: str, end_date: str) -> pd.DataFrame:
+    cano, acnt_prdt_cd = _account_params()
+    tr_id = "TTTC0081R" if _is_real_account() else "VTTC0081R"
+    params = {
+        "CANO": cano,
+        "ACNT_PRDT_CD": acnt_prdt_cd,
+        "INQR_STRT_DT": start_date,
+        "INQR_END_DT": end_date,
+        "SLL_BUY_DVSN_CD": "00",
+        "INQR_DVSN": "00",
+        "PDNO": "",
+        "CCLD_DVSN": "00",
+        "ORD_GNO_BRNO": "",
+        "ODNO": "",
+        "INQR_DVSN_3": "00",
+        "INQR_DVSN_1": "",
+        "EXCG_ID_DVSN_CD": "ALL",
+        "CTX_AREA_FK100": "",
+        "CTX_AREA_NK100": "",
+    }
+
+    rows: list[dict[str, object]] = []
+    while True:
+        url = f"{KIS_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld?{urllib.parse.urlencode(params)}"
+        response = _request_json("GET", url, headers=_build_headers(tr_id))
+        items = response.get("output1", [])
+        if not isinstance(items, list):
+            items = []
+
+        for item in items:
+            side_code = str(item.get("sll_buy_dvsn_cd") or "")
+            side = "buy" if side_code == "02" else "sell" if side_code == "01" else ""
+            qty = float(item.get("tot_ccld_qty") or item.get("ccld_qty_sum") or item.get("ord_qty") or 0)
+            price = float(item.get("tot_ccld_unpr") or item.get("avg_prvs") or item.get("avg_prvs_unpr") or item.get("ord_unpr") or 0)
+            if qty <= 0 or price <= 0 or not side:
+                continue
+
+            order_date = str(item.get("ord_dt") or item.get("trad_dt") or item.get("dt") or "").strip()
+            order_time = str(item.get("ord_tmd") or item.get("ord_tm") or item.get("ccld_dtime") or "000000").strip()
+            timestamp = None
+            if order_date:
+                try:
+                    timestamp = _parse_kis_date(order_date, order_time[:6].ljust(6, "0"))
+                except ValueError:
+                    timestamp = _parse_kis_date(order_date)
+
+            rows.append(
+                {
+                    "symbol": f"{str(item.get('pdno') or '').strip()}.KS",
+                    "name": str(item.get("prdt_name") or item.get("prdt_abrv_name") or "").strip(),
+                    "side": side,
+                    "quantity": qty,
+                    "price": price,
+                    "amount": qty * price,
+                    "timestamp": timestamp,
+                    "order_no": str(item.get("odno") or "").strip(),
+                    "order_branch": str(item.get("ord_gno_brno") or "").strip(),
+                }
+            )
+
+        fk = str(response.get("ctx_area_fk100") or "").strip()
+        nk = str(response.get("ctx_area_nk100") or "").strip()
+        if not fk and not nk:
+            break
+        params["CTX_AREA_FK100"] = fk
+        params["CTX_AREA_NK100"] = nk
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    if "timestamp" in frame.columns:
+        frame = frame.dropna(subset=["timestamp"]).sort_values("timestamp")
+    return frame.reset_index(drop=True)
 
 
 @st.cache_data(ttl=300, show_spinner=False)

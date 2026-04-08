@@ -84,6 +84,7 @@ function mainMarkerTrace(markers, color, symbol) {{
     marker: {{ color, size: 10, symbol, line: {{ color: "#ffffff", width: 1 }} }},
     hoverinfo: "text",
     hovertext: detailHover(markers),
+    hovertemplate: "%{{hovertext}}<extra></extra>",
     showlegend: false
   }};
 }}
@@ -303,7 +304,7 @@ function buildIndicatorFigure(payload) {{
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          text: "보조지표 (흰색 실선: 레버리지 / 주황 점선: 곱버스)",
+          text: "보조지표 (흰 실선: 레버리지 / 주황 점선: 곱버스)",
           font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }}
         }}
       ]
@@ -322,17 +323,6 @@ function canAppend(prevPayload, nextPayload) {{
   return true;
 }}
 
-function canPatchLast(prevPayload, nextPayload) {{
-  if (!prevPayload || !nextPayload) return false;
-  const prevCandles = prevPayload.candles || [];
-  const nextCandles = nextPayload.candles || [];
-  if (nextCandles.length !== prevCandles.length || nextCandles.length === 0) return false;
-  for (let i = 0; i < prevCandles.length - 1; i += 1) {{
-    if (prevCandles[i].t !== nextCandles[i].t) return false;
-  }}
-  return prevCandles[prevCandles.length - 1].t === nextCandles[nextCandles.length - 1].t;
-}}
-
 async function syncIndicatorRangeFromMain() {{
   const currentMainRange = mainRoot.layout?.xaxis?.range;
   if (!currentMainRange || currentMainRange.length !== 2) return;
@@ -342,7 +332,6 @@ async function syncIndicatorRangeFromMain() {{
 }}
 
 async function applyMainIncremental(prevPayload, nextPayload) {{
-  const prevCandles = candleArrays(prevPayload);
   const nextCandles = candleArrays(nextPayload);
   const markers = markerSeries(nextPayload).main;
 
@@ -361,6 +350,10 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
       nextCandles.x.length
     );
   }} else {{
+    const candleHoverText = nextPayload.candles.map((item) => {{
+      const timeText = (item.t || "").replace("T", " ").slice(0, 16);
+      return `시간 ${{timeText}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
+    }});
     await Plotly.restyle(
       mainRoot,
       {{
@@ -368,7 +361,9 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
         open: [nextCandles.open],
         high: [nextCandles.high],
         low: [nextCandles.low],
-        close: [nextCandles.close]
+        close: [nextCandles.close],
+        hovertext: [candleHoverText],
+        text: [candleHoverText]
       }},
       [MAIN_TRACE.candle]
     );

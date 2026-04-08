@@ -14,7 +14,7 @@ from shinobu import data as market_data
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
 from shinobu.chart_server import ensure_chart_server
 from shinobu.live_chart_component import build_live_chart_html
-from shinobu.kis import KisApiError, fetch_domestic_balance
+from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.live_trading import (
     LIVE_ALLOCATION_KRW,
     get_asset_history,
@@ -288,17 +288,21 @@ def _get_thumbnail_base64(image_path: str, max_width: int = 280, max_height: int
 
 
 def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_path: Path, highlighted: bool, tone: str) -> None:
-    border = "#3b82f6" if highlighted else "#2a2e39"
-    background = "rgba(59,130,246,0.12)" if highlighted else "#131722"
+    border = "#2a2e39"
+    background = "#131722"
+    accent = "#e5e7eb"
     if tone == "negative":
-        border = "#ef4444" if highlighted else "#2a2e39"
-        background = "rgba(239,68,68,0.12)" if highlighted else "#131722"
+        accent = "#e5e7eb"
+    if highlighted:
+        accent = "#3b82f6" if tone == "positive" else "#ef4444"
 
+    caption_size = "30px" if highlighted else "22px"
+    caption_weight = "900" if highlighted else "700"
     st.markdown(
         f"""
         <div style="border:2px solid {border};background:{background};border-radius:14px;padding:10px 10px 6px 10px;">
             <div style="font-size:13px;color:#e5e7eb;font-weight:700;margin-bottom:4px;">{title}</div>
-            <div style="font-size:12px;color:#9aa4b2;margin-bottom:10px;">{caption}</div>
+            <div style="font-size:{caption_size};font-weight:{caption_weight};color:{accent};margin-bottom:10px;text-align:center;">{caption}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -424,6 +428,152 @@ def _build_asset_history_figure() -> go.Figure | None:
         automargin=True,
     )
     return figure
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def get_live_trade_history(started_at_text: str) -> pd.DataFrame:
+    if not started_at_text:
+        return pd.DataFrame()
+
+    started_at = pd.to_datetime(started_at_text, errors="coerce")
+    if pd.isna(started_at):
+        return pd.DataFrame()
+
+    start_date = started_at.strftime("%Y%m%d")
+    end_date = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
+    executions = fetch_domestic_daily_ccld(start_date, end_date)
+    if executions.empty:
+        return executions
+
+    executions = executions.copy()
+    executions["timestamp"] = pd.to_datetime(executions["timestamp"], errors="coerce")
+    executions = executions.dropna(subset=["timestamp"])
+    executions = executions.loc[executions["timestamp"] >= started_at].sort_values("timestamp")
+    if executions.empty:
+        return pd.DataFrame()
+
+    trades: list[dict[str, object]] = []
+    open_lots: dict[str, dict[str, object]] = {}
+
+    for execution in executions.itertuples(index=False):
+        symbol = str(execution.symbol)
+        side = str(execution.side)
+        quantity = float(execution.quantity)
+        price = float(execution.price)
+        name = str(execution.name or display_name(symbol))
+        timestamp = pd.Timestamp(execution.timestamp)
+
+        if side == "buy":
+            lot = open_lots.get(symbol)
+            if lot is None:
+                open_lots[symbol] = {
+                    "symbol": symbol,
+                    "name": name,
+                    "entry_time": timestamp,
+                    "entry_qty": quantity,
+                    "entry_amount": quantity * price,
+                }
+            else:
+                lot["entry_qty"] = float(lot["entry_qty"]) + quantity
+                lot["entry_amount"] = float(lot["entry_amount"]) + (quantity * price)
+            continue
+
+        lot = open_lots.get(symbol)
+        if lot is None:
+            continue
+
+        entry_qty = float(lot["entry_qty"])
+        entry_amount = float(lot["entry_amount"])
+        matched_qty = min(entry_qty, quantity)
+        if matched_qty <= 0:
+            continue
+
+        entry_avg = entry_amount / entry_qty if entry_qty > 0 else 0.0
+        exit_amount = matched_qty * price
+        pnl_amount = exit_amount - (matched_qty * entry_avg)
+        pnl_rate = (pnl_amount / (matched_qty * entry_avg) * 100.0) if entry_avg > 0 else 0.0
+        trades.append(
+            {
+                "symbol": symbol,
+                "name": name,
+                "entry_time": pd.Timestamp(lot["entry_time"]),
+                "exit_time": timestamp,
+                "quantity": matched_qty,
+                "entry_price": entry_avg,
+                "exit_price": price,
+                "pnl_amount": pnl_amount,
+                "pnl_rate": pnl_rate,
+                "result": "승" if pnl_amount > 0 else "패" if pnl_amount < 0 else "보합",
+            }
+        )
+
+        remaining_qty = entry_qty - matched_qty
+        if remaining_qty > 0:
+            open_lots[symbol] = {
+                "symbol": symbol,
+                "name": name,
+                "entry_time": lot["entry_time"],
+                "entry_qty": remaining_qty,
+                "entry_amount": remaining_qty * entry_avg,
+            }
+        else:
+            del open_lots[symbol]
+
+    return pd.DataFrame(trades)
+
+
+def _render_live_trade_history() -> None:
+    st.markdown("#### 실전 거래 내역")
+    started_at = get_live_started_at()
+    try:
+        history = get_live_trade_history(started_at.isoformat() if started_at is not None else "")
+    except KisApiError as exc:
+        st.caption(f"거래내역 조회 오류: {exc}")
+        return
+    except Exception as exc:
+        st.caption(f"거래내역 집계 오류: {exc}")
+        return
+    if history.empty:
+        st.caption("아직 집계된 체결 거래가 없습니다.")
+        return
+
+    wins = int((history["pnl_amount"] > 0).sum())
+    losses = int((history["pnl_amount"] < 0).sum())
+    total = len(history)
+    win_rate = (wins / total * 100.0) if total else 0.0
+    realized = float(history["pnl_amount"].sum())
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("거래수", f"{total}")
+    col2.metric("승률", f"{win_rate:.1f}%")
+    col3.metric("실현손익", f"{realized:,.0f}원")
+
+    view = history.sort_values("exit_time", ascending=False).copy()
+    view["entry_time"] = pd.to_datetime(view["entry_time"]).dt.strftime("%m-%d %H:%M")
+    view["exit_time"] = pd.to_datetime(view["exit_time"]).dt.strftime("%m-%d %H:%M")
+    view["quantity"] = view["quantity"].map(lambda value: f"{float(value):,.0f}")
+    view["entry_price"] = view["entry_price"].map(lambda value: f"{float(value):,.0f}")
+    view["exit_price"] = view["exit_price"].map(lambda value: f"{float(value):,.0f}")
+    view["pnl_amount"] = view["pnl_amount"].map(lambda value: f"{float(value):+,.0f}")
+    view["pnl_rate"] = view["pnl_rate"].map(lambda value: f"{float(value):+.2f}%")
+    view = view.rename(
+        columns={
+            "name": "종목",
+            "entry_time": "진입",
+            "exit_time": "청산",
+            "quantity": "수량",
+            "entry_price": "진입가",
+            "exit_price": "청산가",
+            "pnl_amount": "손익",
+            "pnl_rate": "수익률",
+            "result": "결과",
+        }
+    )
+    st.dataframe(
+        view[["종목", "진입", "청산", "수량", "진입가", "청산가", "손익", "수익률", "결과"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
     total_assets = _extract_total_assets(summary)
     if total_assets > 0:
@@ -663,19 +813,35 @@ def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: St
         return
 
 
-@st.fragment(run_every="3s")
+def _handle_live_start() -> None:
+    set_live_enabled(True)
+
+
+def _handle_live_stop() -> None:
+    set_live_enabled(False)
+
+
 def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 실전 투자")
     left_button, right_button = st.columns(2)
     with left_button:
-        if st.button("실행", use_container_width=True, key="live_start_button"):
-            if pair_symbol is None:
-                st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
-            else:
-                set_live_enabled(True)
+        st.button(
+            "실행",
+            use_container_width=True,
+            key="live_start_button",
+            disabled=pair_symbol is None,
+            on_click=_handle_live_start,
+        )
     with right_button:
-        if st.button("중지", use_container_width=True, key="live_stop_button"):
-            set_live_enabled(False)
+        st.button(
+            "중지",
+            use_container_width=True,
+            key="live_stop_button",
+            on_click=_handle_live_stop,
+        )
+
+    if pair_symbol is None:
+        st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
 
     enabled = is_live_enabled()
     status_text = "실행 중" if enabled else "중지됨"
@@ -753,10 +919,14 @@ def main() -> None:
         render_live_trade_header(loaded_symbol, pair_symbol)
         chart_slot = st.empty()
         emotion_slot = st.empty()
+        history_slot = st.empty()
         with emotion_slot.container():
             render_emotion_section()
         with chart_slot.container():
             render_live_trade_chart(loaded_symbol, pair_symbol, adjustments)
+        with history_slot.container():
+            st.markdown("---")
+            _render_live_trade_history()
 
 
 if __name__ == "__main__":
