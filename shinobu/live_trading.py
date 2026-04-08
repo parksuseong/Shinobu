@@ -16,6 +16,7 @@ from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
 
 LIVE_ALLOCATION_KRW = 500_000.0
 MAX_LIVE_ORDERS = 200
+MAX_ASSET_HISTORY = 240
 LIVE_STATE_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_state.json"
 LIVE_LOG_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_trading.log"
 _LIVE_STATE_LOCK = threading.RLock()
@@ -35,6 +36,7 @@ def _default_state() -> dict[str, Any]:
         "last_status": "stopped",
         "last_error": "",
         "orders": [],
+        "asset_history": [],
     }
 
 
@@ -57,6 +59,8 @@ def _read_state() -> dict[str, Any]:
     state.update(data if isinstance(data, dict) else {})
     if not isinstance(state["orders"], list):
         state["orders"] = []
+    if not isinstance(state["asset_history"], list):
+        state["asset_history"] = []
     return state
 
 
@@ -170,6 +174,27 @@ def get_live_runtime_state() -> dict[str, str]:
     }
 
 
+def record_asset_snapshot(total_assets: float) -> None:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        history = list(state.get("asset_history", []))
+        timestamp = _now_text()
+        if history and history[-1].get("timestamp") == timestamp:
+            history[-1]["total_assets"] = float(total_assets)
+        else:
+            history.append({"timestamp": timestamp, "total_assets": float(total_assets)})
+        if len(history) > MAX_ASSET_HISTORY:
+            history = history[-MAX_ASSET_HISTORY:]
+        state["asset_history"] = history
+        _write_state(state)
+
+
+def get_asset_history() -> list[dict[str, Any]]:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        return list(state.get("asset_history", []))
+
+
 def _load_strategy(symbol: str, adjustments: StrategyAdjustments) -> pd.DataFrame:
     frame = load_live_chart_data(symbol, "5분봉")
     return calculate_scr_strategy(frame, adjustments, "5분봉")
@@ -187,20 +212,21 @@ def _get_target_rows(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd
 
 
 def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> dict[str, Any] | None:
-    if positions.empty:
+    if positions.empty or "code" not in positions.columns:
         return None
 
     target_codes = [symbol.replace(".KS", "") for symbol in symbols]
-    matches = positions[positions["종목코드"].isin(target_codes)]
+    matches = positions[positions["code"].isin(target_codes)]
     if matches.empty:
         return None
 
-    row = matches.sort_values("평가금액", ascending=False).iloc[0]
+    sort_column = "eval_amount" if "eval_amount" in matches.columns else "quantity"
+    row = matches.sort_values(sort_column, ascending=False).iloc[0]
     return {
-        "symbol": f"{row['종목코드']}.KS",
-        "name": row["종목명"],
-        "quantity": int(float(row["보유수량"])),
-        "current_price": float(row["현재가"]),
+        "symbol": f"{row['code']}.KS",
+        "name": row.get("name", ""),
+        "quantity": int(float(row.get("quantity", 0))),
+        "current_price": float(row.get("current_price", 0)),
     }
 
 

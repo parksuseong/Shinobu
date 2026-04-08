@@ -14,6 +14,7 @@ from shinobu.chart import build_candlestick_chart
 from shinobu.kis import KisApiError, fetch_domestic_balance
 from shinobu.live_trading import (
     LIVE_ALLOCATION_KRW,
+    get_asset_history,
     get_live_logs,
     get_live_orders,
     get_live_runtime_state,
@@ -21,6 +22,7 @@ from shinobu.live_trading import (
     init_live_state,
     is_live_enabled,
     process_live_trading_cycle,
+    record_asset_snapshot,
     set_live_enabled,
 )
 from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
@@ -307,100 +309,174 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
 
 
 def _emotion_by_position(positions: pd.DataFrame) -> str:
-    if positions.empty or "종목코드" not in positions.columns:
+    if positions.empty:
         return "neutral"
 
-    codes = positions["종목코드"].astype(str).tolist()
+    code_column = "code" if "code" in positions.columns else None
+    if code_column is None:
+        return "neutral"
+
+    codes = positions[code_column].astype(str).tolist()
     if "122630" in codes:
         return "positive"
     if "252670" in codes:
         return "negative"
     return "neutral"
+def _extract_total_assets(summary: dict) -> float:
+    for key in ["total_assets", "총자산"]:
+        if key in summary:
+            try:
+                return float(summary.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+def _build_asset_history_figure() -> go.Figure | None:
+    history = get_asset_history()
+    if not history:
+        return None
 
+    frame = pd.DataFrame(history)
+    if frame.empty or "timestamp" not in frame.columns or "total_assets" not in frame.columns:
+        return None
 
-def render_emotion_panel(positions: pd.DataFrame) -> None:
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    frame["total_assets"] = pd.to_numeric(frame["total_assets"], errors="coerce")
+    frame = frame.dropna().tail(80)
+    if frame.empty:
+        return None
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=frame["timestamp"],
+            y=frame["total_assets"],
+            mode="lines",
+            line={"color": "#f59e0b", "width": 2},
+            fill="tozeroy",
+            fillcolor="rgba(245,158,11,0.12)",
+            hovertemplate="%{x|%m-%d %H:%M}<br>총자산 %{y:,.0f}원<extra></extra>",
+            name="자산 추이",
+        )
+    )
+    figure.update_layout(
+        height=318,
+        margin={"l": 26, "r": 26, "t": 52, "b": 26},
+        paper_bgcolor="#131722",
+        plot_bgcolor="#131722",
+        font={"color": "#d1d4dc", "family": "Malgun Gothic"},
+        showlegend=False,
+        title={"text": "자산 상승 그래프", "x": 0.02, "font": {"size": 13}},
+    )
+    figure.update_xaxes(showgrid=False, tickfont={"size": 10, "color": "#9aa4b2"}, automargin=True)
+    figure.update_yaxes(
+        side="right",
+        showgrid=True,
+        gridcolor="rgba(42,46,57,0.35)",
+        tickformat=",.0f",
+        tickfont={"size": 10, "color": "#9aa4b2"},
+        automargin=True,
+    )
+    return figure
+def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
+    total_assets = _extract_total_assets(summary)
+    if total_assets > 0:
+        record_asset_snapshot(total_assets)
+
     emotion_state = _emotion_by_position(positions)
     positive = emotion_state == "positive"
     negative = emotion_state == "negative"
 
-    st.markdown("#### 감정 표")
-    if positive:
-        st.caption("현재 레버리지 보유 중")
-    elif negative:
-        st.caption("현재 인버스 보유 중")
-    else:
-        st.caption("현재 레버리지/인버스 보유 없음")
-    left, right = st.columns(2)
+    left, right = st.columns([1.35, 1], vertical_alignment="top")
     with left:
-        _render_emotion_card(
-            "긍정",
-            "레버리지 보유 시 이쪽이 강조됩니다.",
-            POSITIVE_IMAGE_PATH,
-            POSITIVE_FALLBACK_PATH,
-            positive,
-            "positive",
-        )
+        emotion_left, emotion_right = st.columns(2)
+        with emotion_left:
+            _render_emotion_card(
+                "",
+                "롱이다!!!!!!!!!!",
+                POSITIVE_IMAGE_PATH,
+                POSITIVE_FALLBACK_PATH,
+                positive,
+                "positive",
+            )
+        with emotion_right:
+            _render_emotion_card(
+                "",
+                "숏이다!!!!!!!!!!",
+                NEGATIVE_IMAGE_PATH,
+                NEGATIVE_FALLBACK_PATH,
+                negative,
+                "negative",
+            )
     with right:
-        _render_emotion_card(
-            "부정",
-            "인버스 보유 시 이쪽이 강조됩니다.",
-            NEGATIVE_IMAGE_PATH,
-            NEGATIVE_FALLBACK_PATH,
-            negative,
-            "negative",
-        )
-
-
+        figure = _build_asset_history_figure()
+        if figure is None:
+            st.info("아직 자산 이력이 충분하지 않습니다.")
+        else:
+            st.plotly_chart(figure, use_container_width=True, theme=None, config={"displaylogo": False})
 @st.fragment(run_every="10s")
 def render_live_account_panel() -> None:
-    st.markdown("#### 실계좌")
-    if not has_kis_account():
-        st.info("한투 계좌 정보가 없어 실계좌 정보를 조회할 수 없습니다.")
-        return
+    panel = st.empty()
+    with panel.container():
+        st.markdown("#### 실계좌")
+        if not has_kis_account():
+            st.info("한투 계좌 정보가 없어 계좌 화면을 표시할 수 없습니다.")
+            return
 
-    try:
-        with st.spinner("⏳ 계좌 정보를 불러오는 중..."):
-            positions, summary = fetch_domestic_balance()
-    except KisApiError as exc:
-        st.warning(f"실계좌 조회 실패: {exc}")
-        return
-    except Exception as exc:
-        st.warning(f"실계좌 조회 중 오류가 발생했습니다: {exc}")
-        return
+        try:
+            with st.spinner("계좌 정보를 불러오는 중..."):
+                positions, summary = fetch_domestic_balance()
+        except KisApiError as exc:
+            st.warning(f"계좌 조회 오류: {exc}")
+            return
+        except Exception as exc:
+            st.warning(f"계좌 조회 중 알 수 없는 오류가 발생했습니다: {exc}")
+            return
 
-    col1, col2 = st.columns(2)
-    col1.metric("총자산", f"{summary['총자산']:,.0f}원")
-    col2.metric("예수금", f"{summary['예수금']:,.0f}원")
-    col3, col4 = st.columns(2)
-    col3.metric("평가금액", f"{summary['평가금액']:,.0f}원")
-    col4.metric("평가손익", f"{summary['평가손익']:,.0f}원")
-    st.caption(f"계좌 {mask_account_number(summary['계좌번호'])} / 주문가능현금 {summary['주문가능현금']:,.0f}원")
+        col1, col2 = st.columns(2)
+        col1.metric("총자산", f"{summary.get('total_assets', 0):,.0f}원")
+        col2.metric("예수금", f"{summary.get('cash', 0):,.0f}원")
+        col3, col4 = st.columns(2)
+        col3.metric("평가금액", f"{summary.get('eval_amount', 0):,.0f}원")
+        col4.metric("평가손익", f"{summary.get('profit_amount', 0):,.0f}원")
+        st.caption(
+            f"계좌 {mask_account_number(summary.get('account_number', ''))} / 주문가능현금 {summary.get('orderable_cash', 0):,.0f}원"
+        )
 
-    if positions.empty:
-        st.info("현재 보유 포지션이 없습니다.")
-        return
+        if positions.empty:
+            st.info("현재 보유 포지션이 없습니다.")
+            return
 
-    styled = positions.copy()
-    for column in ["보유수량", "매입가", "현재가", "평가금액", "평가손익"]:
-        styled[column] = styled[column].map(lambda value: f"{value:,.0f}")
-    styled["수익률(%)"] = styled["수익률(%)"].map(lambda value: f"{value:+.2f}")
-    st.dataframe(styled, use_container_width=True, hide_index=True)
-
-
+        display_columns = ["code", "name", "quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"]
+        styled = positions.loc[:, [column for column in display_columns if column in positions.columns]].copy()
+        rename_map = {
+            "code": "종목코드",
+            "name": "종목명",
+            "quantity": "보유수량",
+            "avg_price": "평균단가",
+            "current_price": "현재가",
+            "eval_amount": "평가금액",
+            "profit_amount": "평가손익",
+            "profit_rate": "수익률(%)",
+        }
+        styled = styled.rename(columns=rename_map)
+        for column in ["보유수량", "평균단가", "현재가", "평가금액", "평가손익"]:
+            if column in styled.columns:
+                styled[column] = styled[column].map(lambda value: f"{float(value):,.0f}")
+        if "수익률(%)" in styled.columns:
+            styled["수익률(%)"] = styled["수익률(%)"].map(lambda value: f"{float(value):+.2f}")
+        st.dataframe(styled, use_container_width=True, hide_index=True)
 @st.fragment(run_every="10s")
 def render_emotion_section() -> None:
     try:
-        positions, _ = fetch_domestic_balance()
+        positions, summary = fetch_domestic_balance()
     except Exception:
         return
-    render_emotion_panel(positions)
-
-
+    render_emotion_panel(positions, summary)
 @st.fragment(run_every="300s")
 def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
     chart_placeholder = st.empty()
     try:
-        with st.spinner("⏳ 차트를 불러오는 중..."):
+        with st.spinner("차트를 불러오는 중..."):
             started_at = get_live_started_at()
             if started_at is None:
                 frame = get_preview_raw_chart_frame(symbol)
@@ -411,7 +487,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
                 pair_frame = get_live_raw_chart_frame(pair_symbol) if pair_symbol is not None else None
 
             if frame.empty:
-                st.info("실행 이후 아직 표시할 5분봉이 없습니다.")
+                st.info("실행 이후 아직 표시할 5분봉 데이터가 없습니다.")
                 return
 
             figure = build_candlestick_chart(
@@ -493,8 +569,6 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
         )
     except Exception:
         pass
-
-
 @st.fragment(run_every="30s")
 def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
     if not is_live_enabled() or pair_symbol is None:
@@ -580,8 +654,6 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
         """,
         unsafe_allow_html=True,
     )
-
-
 def main() -> None:
     init_live_state()
     init_live_chart_state()

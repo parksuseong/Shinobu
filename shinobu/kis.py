@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -20,10 +21,42 @@ KIS_RETRY_DELAY_SECONDS = 0.7
 KIS_MAX_RETRIES = 3
 _KIS_REQUEST_LOCK = threading.RLock()
 _KIS_LAST_REQUEST_AT = 0.0
+KIS_TOKEN_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "kis_token.json"
 
 
 class KisApiError(RuntimeError):
     pass
+
+
+def _read_cached_token() -> str | None:
+    try:
+        payload = json.loads(KIS_TOKEN_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    token = str(payload.get("access_token") or "").strip()
+    expires_at = str(payload.get("expires_at") or "").strip()
+    if not token or not expires_at:
+        return None
+
+    try:
+        expires_ts = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return None
+
+    if expires_ts <= datetime.now() + timedelta(minutes=5):
+        return None
+    return token
+
+
+def _write_cached_token(token: str, expires_in_seconds: int) -> None:
+    KIS_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    expires_at = datetime.now() + timedelta(seconds=max(expires_in_seconds - 300, 0))
+    payload = {
+        "access_token": token,
+        "expires_at": expires_at.isoformat(timespec="seconds"),
+    }
+    KIS_TOKEN_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _respect_rate_limit() -> None:
@@ -74,12 +107,15 @@ def _request_json(method: str, url: str, headers: dict[str, str] | None = None, 
     raise KisApiError("한투 요청 실패")
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def issue_access_token() -> str:
+    cached_token = _read_cached_token()
+    if cached_token:
+        return cached_token
+
     app_key = get_secret("KIS_APP_KEY")
     app_secret = get_secret("KIS_APP_SECRET")
     if not app_key or not app_secret:
-        raise KisApiError("한투 API 키가 없습니다.")
+        raise KisApiError("?? API ?? ????.")
 
     response = _request_json(
         "POST",
@@ -92,7 +128,10 @@ def issue_access_token() -> str:
     )
     token = response.get("access_token")
     if not token:
-        raise KisApiError(f"한투 토큰 발급 실패: {response}")
+        raise KisApiError(f"?? ?? ?? ??: {response}")
+
+    expires_in = int(response.get("expires_in") or 86400)
+    _write_cached_token(str(token), expires_in)
     return str(token)
 
 
@@ -171,26 +210,26 @@ def fetch_domestic_balance() -> tuple[pd.DataFrame, dict]:
             continue
         positions.append(
             {
-                "종목코드": str(item.get("pdno", "")),
-                "종목명": str(item.get("prdt_name", "")),
-                "보유수량": quantity,
-                "매입가": float(item.get("pchs_avg_pric") or 0),
-                "현재가": float(item.get("prpr") or 0),
-                "평가금액": float(item.get("evlu_amt") or 0),
-                "평가손익": float(item.get("evlu_pfls_amt") or 0),
-                "수익률(%)": float(item.get("evlu_pfls_rt") or 0),
+                "code": str(item.get("pdno", "")),
+                "name": str(item.get("prdt_name", "")),
+                "quantity": quantity,
+                "avg_price": float(item.get("pchs_avg_pric") or 0),
+                "current_price": float(item.get("prpr") or 0),
+                "eval_amount": float(item.get("evlu_amt") or 0),
+                "profit_amount": float(item.get("evlu_pfls_amt") or 0),
+                "profit_rate": float(item.get("evlu_pfls_rt") or 0),
             }
         )
 
     positions_frame = pd.DataFrame(positions)
     summary = {
-        "예수금": float(summary_raw.get("dnca_tot_amt") or 0),
-        "주문가능현금": float(summary_raw.get("nxdy_excc_amt") or 0),
-        "매입금액": float(summary_raw.get("pchs_amt_smtl_amt") or 0),
-        "평가금액": float(summary_raw.get("evlu_amt_smtl_amt") or 0),
-        "평가손익": float(summary_raw.get("evlu_pfls_smtl_amt") or 0),
-        "총자산": float(summary_raw.get("tot_evlu_amt") or 0),
-        "계좌번호": f"{cano}-{acnt_prdt_cd}",
+        "cash": float(summary_raw.get("dnca_tot_amt") or 0),
+        "orderable_cash": float(summary_raw.get("nxdy_excc_amt") or 0),
+        "purchase_amount": float(summary_raw.get("pchs_amt_smtl_amt") or 0),
+        "eval_amount": float(summary_raw.get("evlu_amt_smtl_amt") or 0),
+        "profit_amount": float(summary_raw.get("evlu_pfls_smtl_amt") or 0),
+        "total_assets": float(summary_raw.get("tot_evlu_amt") or 0),
+        "account_number": f"{cano}-{acnt_prdt_cd}",
     }
     return positions_frame, summary
 
