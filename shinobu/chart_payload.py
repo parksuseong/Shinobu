@@ -126,6 +126,134 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     return markers
 
 
+def _append_main_marker(
+    bucket: list[dict[str, Any]],
+    positions: pd.Series,
+    timestamp: pd.Timestamp,
+    price_row: pd.Series,
+    label: str,
+    marker_side: str,
+) -> None:
+    x_value = positions.get(timestamp)
+    if pd.isna(x_value):
+        return
+    y_value = float(price_row["Low"]) * 0.985 if marker_side == "open" else float(price_row["High"]) * 1.015
+    bucket.append(
+        {
+            "x": int(x_value),
+            "y": y_value,
+            "label": label,
+            "time": pd.Timestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
+            "price": float(price_row.get("Close", 0) or 0),
+        }
+    )
+
+
+def _append_indicator_marker(
+    bucket: list[dict[str, Any]],
+    positions: pd.Series,
+    timestamp: pd.Timestamp,
+    signal_row: pd.Series,
+    label: str,
+    signal_name: str,
+) -> None:
+    x_value = positions.get(timestamp)
+    y_value = signal_row.get("scr_line")
+    if pd.isna(x_value) or pd.isna(y_value):
+        return
+    bucket.append(
+        {
+            "x": int(x_value),
+            "y": float(y_value),
+            "label": label,
+            "time": pd.Timestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
+            "price": float(signal_row.get("Close", 0) or 0),
+            "scr": float(signal_row.get("scr_line", 0) or 0),
+            "signal": signal_name,
+        }
+    )
+
+
+def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol: str | None, pair_frame: pd.DataFrame | None) -> dict[str, list[dict[str, Any]]]:
+    empty = {
+        "primaryOpenMain": [],
+        "primaryCloseMain": [],
+        "pairOpenMain": [],
+        "pairCloseMain": [],
+        "primaryOpenIndicator": [],
+        "primaryCloseIndicator": [],
+        "pairOpenIndicator": [],
+        "pairCloseIndicator": [],
+    }
+    if frame.empty:
+        return empty
+
+    primary_name = market_data.display_name(symbol)
+    pair_name = market_data.display_name(pair_symbol) if pair_symbol else "곱버스"
+    positions = pd.Series(range(len(frame)), index=frame.index)
+    aligned_pair = pair_frame.reindex(frame.index).ffill() if pair_frame is not None and not pair_frame.empty else None
+
+    current_position: str | None = None
+
+    for timestamp, primary_row in frame.iterrows():
+        pair_row = aligned_pair.loc[timestamp] if aligned_pair is not None else None
+        primary_open = bool(primary_row.get("buy_open", False))
+        primary_close = bool(primary_row.get("buy_close", False))
+        pair_open = bool(pair_row.get("buy_open", False)) if pair_row is not None else False
+        pair_close = bool(pair_row.get("buy_close", False)) if pair_row is not None else False
+
+        if current_position is None:
+            if primary_open and pair_open and pair_row is not None:
+                current_position = symbol if float(primary_row.get("scr_line", 0.0)) >= float(pair_row.get("scr_line", 0.0)) else (pair_symbol or symbol)
+            elif primary_open:
+                current_position = symbol
+            elif pair_open:
+                current_position = pair_symbol
+
+            if current_position == symbol:
+                label = f"전략 open - {primary_name}"
+                _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, label, "open")
+                _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, label, "buy_open")
+            elif current_position == pair_symbol and pair_row is not None:
+                label = f"전략 open - {pair_name}"
+                _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, label, "open")
+                _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, label, "buy_open")
+            continue
+
+        if current_position == symbol:
+            if pair_open and pair_row is not None:
+                close_label = f"전략 close - {primary_name}"
+                open_label = f"전략 open - {pair_name}"
+                _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, close_label, "close")
+                _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, close_label, "buy_close")
+                _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, open_label, "open")
+                _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, open_label, "buy_open")
+                current_position = pair_symbol
+            elif primary_close:
+                close_label = f"전략 close - {primary_name}"
+                _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, close_label, "close")
+                _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, close_label, "buy_close")
+                current_position = None
+            continue
+
+        if current_position == pair_symbol and pair_row is not None:
+            if primary_open:
+                close_label = f"전략 close - {pair_name}"
+                open_label = f"전략 open - {primary_name}"
+                _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, close_label, "close")
+                _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, close_label, "buy_close")
+                _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, open_label, "open")
+                _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, open_label, "buy_open")
+                current_position = symbol
+            elif pair_close:
+                close_label = f"전략 close - {pair_name}"
+                _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, close_label, "close")
+                _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, close_label, "buy_close")
+                current_position = None
+
+    return empty
+
+
 def build_chart_payload(
     kind: str,
     symbol: str,
@@ -172,16 +300,7 @@ def build_chart_payload(
     if include_scr:
         payload["scr"] = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()]
         payload["pairScr"] = _pair_scr(frame, pair_frame)
-        payload["signals"] = {
-            "primaryOpenMain": _build_signal_markers(frame, frame, f"전략 open - {market_data.display_name(symbol)}", "buy_open", "Low", 0.985),
-            "primaryCloseMain": _build_signal_markers(frame, frame, f"전략 close - {market_data.display_name(symbol)}", "buy_close", "High", 1.015),
-            "pairOpenMain": _build_signal_markers(frame, pair_frame, f"전략 open - {pair_name or '곱버스'}", "buy_open", "Low", 0.985),
-            "pairCloseMain": _build_signal_markers(frame, pair_frame, f"전략 close - {pair_name or '곱버스'}", "buy_close", "High", 1.015),
-            "primaryOpenIndicator": _build_signal_markers(frame, frame, f"전략 open - {market_data.display_name(symbol)}", "buy_open", "scr_line"),
-            "primaryCloseIndicator": _build_signal_markers(frame, frame, f"전략 close - {market_data.display_name(symbol)}", "buy_close", "scr_line"),
-            "pairOpenIndicator": _build_signal_markers(frame, pair_frame, f"전략 open - {pair_name or '곱버스'}", "buy_open", "scr_line"),
-            "pairCloseIndicator": _build_signal_markers(frame, pair_frame, f"전략 close - {pair_name or '곱버스'}", "buy_close", "scr_line"),
-        }
+        payload["signals"] = _build_position_signal_markers(frame, symbol, pair_symbol, pair_frame)
     else:
         payload["signals"] = {}
 
