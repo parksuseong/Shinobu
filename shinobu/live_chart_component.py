@@ -95,6 +95,7 @@ function indicatorMarkerTrace(markers, color, symbol) {{
     marker: {{ color, size: 10, opacity: 0.82, symbol, line: {{ color: "#ffffff", width: 1.4 }} }},
     hoverinfo: "text",
     hovertext: detailHover(markers),
+    hovertemplate: "%{{hovertext}}<extra></extra>",
     showlegend: false
   }};
 }}
@@ -216,6 +217,7 @@ function buildMainFigure(payload) {{
 function buildIndicatorFigure(payload) {{
   const candle = candleArrays(payload);
   const ticks = tickData(payload);
+  const indicatorTimes = candle.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
   return {{
     data: [
       indicatorMarkerTrace(payload.signals.primaryOpenMain || [], "#3b82f6", "circle"),
@@ -232,8 +234,9 @@ function buildIndicatorFigure(payload) {{
         mode: "lines",
         x: candle.x,
         y: payload.scr || [],
+        customdata: indicatorTimes,
         line: {{ color: "#ffffff", width: 4.2, dash: "solid" }},
-        hovertemplate: `${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
+        hovertemplate: `시간 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
         showlegend: false
       }},
       {{
@@ -241,8 +244,9 @@ function buildIndicatorFigure(payload) {{
         mode: "lines",
         x: candle.x,
         y: payload.pairScr || [],
+        customdata: indicatorTimes,
         line: {{ color: "#f59e0b", width: 3.5, dash: "dot" }},
-        hovertemplate: `${{payload.pairName || "곱버스"}} SCR %{{y:.2f}}<extra></extra>`,
+        hovertemplate: `시간 %{{customdata}}<br>${{payload.pairName || "곱버스"}} SCR %{{y:.2f}}<extra></extra>`,
         showlegend: false
       }}
     ],
@@ -253,9 +257,9 @@ function buildIndicatorFigure(payload) {{
       margin: {{ l: 8, r: 56, t: 36, b: 18 }},
       height: 220,
       dragmode: false,
-      hovermode: "x unified",
-      hoverdistance: 30,
-      spikedistance: 30,
+      hovermode: "closest",
+      hoverdistance: 20,
+      spikedistance: 20,
       hoverlabel: {{ bgcolor: "#1e222d", font: {{ color: "#d1d4dc" }} }},
       showlegend: false,
       uirevision: "shinobu-indicator-chart",
@@ -384,6 +388,7 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
 async function applyIndicatorIncremental(prevPayload, nextPayload) {{
   const nextCandles = candleArrays(nextPayload);
   const markers = markerSeries(nextPayload).indicator;
+  const indicatorTimes = nextCandles.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
 
   for (let i = 0; i < markers.length; i += 1) {{
     const current = markers[i];
@@ -404,7 +409,8 @@ async function applyIndicatorIncremental(prevPayload, nextPayload) {{
       indicatorRoot,
       {{
         x: [[newIndex]],
-        y: [[(nextPayload.scr || [])[nextPayload.scr.length - 1]]]
+        y: [[(nextPayload.scr || [])[nextPayload.scr.length - 1]]],
+        customdata: [[indicatorTimes[indicatorTimes.length - 1]]]
       }},
       [INDICATOR_TRACE.primaryScr],
       nextCandles.x.length
@@ -413,7 +419,8 @@ async function applyIndicatorIncremental(prevPayload, nextPayload) {{
       indicatorRoot,
       {{
         x: [[newIndex]],
-        y: [[(nextPayload.pairScr || [])[nextPayload.pairScr.length - 1]]]
+        y: [[(nextPayload.pairScr || [])[nextPayload.pairScr.length - 1]]],
+        customdata: [[indicatorTimes[indicatorTimes.length - 1]]]
       }},
       [INDICATOR_TRACE.pairScr],
       nextCandles.x.length
@@ -423,7 +430,8 @@ async function applyIndicatorIncremental(prevPayload, nextPayload) {{
       indicatorRoot,
       {{
         x: [nextCandles.x],
-        y: [nextPayload.scr || []]
+        y: [nextPayload.scr || []],
+        customdata: [indicatorTimes]
       }},
       [INDICATOR_TRACE.primaryScr]
     );
@@ -431,7 +439,8 @@ async function applyIndicatorIncremental(prevPayload, nextPayload) {{
       indicatorRoot,
       {{
         x: [nextCandles.x],
-        y: [nextPayload.pairScr || []]
+        y: [nextPayload.pairScr || []],
+        customdata: [indicatorTimes]
       }},
       [INDICATOR_TRACE.pairScr]
     );
