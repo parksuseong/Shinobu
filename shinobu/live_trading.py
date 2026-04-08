@@ -1,0 +1,327 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from shinobu.data import display_name, load_live_chart_data
+from shinobu.kis import KisApiError, fetch_domestic_balance, place_domestic_order
+from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
+
+
+LIVE_ALLOCATION_KRW = 500_000.0
+MAX_LIVE_ORDERS = 200
+LIVE_STATE_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_state.json"
+LIVE_LOG_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_trading.log"
+_LIVE_STATE_LOCK = threading.RLock()
+
+
+def _now_text() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _default_state() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "started_at": "",
+        "last_checked_candle": "",
+        "last_cycle_at": "",
+        "last_order_at": "",
+        "last_status": "stopped",
+        "last_error": "",
+        "orders": [],
+    }
+
+
+def _ensure_state_file() -> None:
+    LIVE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not LIVE_STATE_FILE.exists():
+        _write_state(_default_state())
+    if not LIVE_LOG_FILE.exists():
+        LIVE_LOG_FILE.touch()
+
+
+def _read_state() -> dict[str, Any]:
+    _ensure_state_file()
+    try:
+        data = json.loads(LIVE_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = _default_state()
+
+    state = _default_state()
+    state.update(data if isinstance(data, dict) else {})
+    if not isinstance(state["orders"], list):
+        state["orders"] = []
+    return state
+
+
+def _write_state(state: dict[str, Any]) -> None:
+    LIVE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(state, ensure_ascii=False, indent=2)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(LIVE_STATE_FILE.parent)) as temp_file:
+        temp_file.write(payload)
+        temp_path = Path(temp_file.name)
+    temp_path.replace(LIVE_STATE_FILE)
+
+
+def init_live_state() -> None:
+    with _LIVE_STATE_LOCK:
+        _ensure_state_file()
+
+
+def _append_log(level: str, message: str) -> None:
+    with LIVE_LOG_FILE.open("a", encoding="utf-8") as log_file:
+        log_file.write(f"{_now_text()}  [{level}]  {message}\n")
+        log_file.flush()
+
+
+def _set_status(state: dict[str, Any], status: str, error: str = "") -> None:
+    state["last_status"] = status
+    state["last_error"] = error
+    state["last_cycle_at"] = _now_text()
+
+
+def _append_order(
+    state: dict[str, Any],
+    symbol: str,
+    side: str,
+    quantity: int,
+    price: float,
+    reason: str,
+    candle_time: pd.Timestamp,
+) -> None:
+    state["orders"].append(
+        {
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "price": float(price),
+            "reason": reason,
+            "candle_time": candle_time.strftime("%Y-%m-%d %H:%M"),
+            "timestamp": _now_text(),
+        }
+    )
+    if len(state["orders"]) > MAX_LIVE_ORDERS:
+        del state["orders"][:-MAX_LIVE_ORDERS]
+    state["last_order_at"] = _now_text()
+
+
+def set_live_enabled(enabled: bool) -> None:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        state["enabled"] = bool(enabled)
+        state["last_checked_candle"] = ""
+        state["last_error"] = ""
+        state["last_cycle_at"] = _now_text()
+        if enabled:
+            state["started_at"] = _now_text()
+            state["last_status"] = "running"
+            _append_log("시스템", "실전 투자 시작")
+        else:
+            state["last_status"] = "stopped"
+            _append_log("시스템", "실전 투자 중지")
+        _write_state(state)
+
+
+def is_live_enabled() -> bool:
+    with _LIVE_STATE_LOCK:
+        return bool(_read_state()["enabled"])
+
+
+def get_live_logs(limit: int = 20) -> list[str]:
+    with _LIVE_STATE_LOCK:
+        _ensure_state_file()
+        try:
+            lines = LIVE_LOG_FILE.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+    lines = [line for line in lines if line.strip()]
+    return list(reversed(lines[-limit:]))
+
+
+def get_live_orders() -> list[dict[str, Any]]:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        return list(state["orders"])
+
+
+def get_live_started_at() -> pd.Timestamp | None:
+    with _LIVE_STATE_LOCK:
+        started_at = _read_state().get("started_at", "")
+    if not started_at:
+        return None
+    return pd.Timestamp(started_at)
+
+
+def get_live_runtime_state() -> dict[str, str]:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+    return {
+        "last_checked_candle": str(state.get("last_checked_candle", "")),
+        "last_cycle_at": str(state.get("last_cycle_at", "")),
+        "last_order_at": str(state.get("last_order_at", "")),
+        "last_status": str(state.get("last_status", "stopped")),
+        "last_error": str(state.get("last_error", "")),
+    }
+
+
+def _load_strategy(symbol: str, adjustments: StrategyAdjustments) -> pd.DataFrame:
+    frame = load_live_chart_data(symbol, "5분봉")
+    return calculate_scr_strategy(frame, adjustments, "5분봉")
+
+
+def _get_target_rows(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.Timestamp, pd.Series, pd.Series] | None:
+    combined_index = primary.index.union(secondary.index).sort_values()
+    if len(combined_index) < 2:
+        return None
+
+    target_time = combined_index[-2]
+    aligned_primary = primary.reindex(combined_index).ffill()
+    aligned_secondary = secondary.reindex(combined_index).ffill()
+    return target_time, aligned_primary.loc[target_time], aligned_secondary.loc[target_time]
+
+
+def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> dict[str, Any] | None:
+    if positions.empty:
+        return None
+
+    target_codes = [symbol.replace(".KS", "") for symbol in symbols]
+    matches = positions[positions["종목코드"].isin(target_codes)]
+    if matches.empty:
+        return None
+
+    row = matches.sort_values("평가금액", ascending=False).iloc[0]
+    return {
+        "symbol": f"{row['종목코드']}.KS",
+        "name": row["종목명"],
+        "quantity": int(float(row["보유수량"])),
+        "current_price": float(row["현재가"]),
+    }
+
+
+def _choose_open_candidate(
+    primary_symbol: str,
+    secondary_symbol: str,
+    primary_row: pd.Series,
+    secondary_row: pd.Series,
+) -> tuple[str, pd.Series] | None:
+    candidates = []
+    if bool(primary_row.get("buy_open", False)):
+        candidates.append((primary_symbol, primary_row))
+    if bool(secondary_row.get("buy_open", False)):
+        candidates.append((secondary_symbol, secondary_row))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: float(item[1].get("scr_line", 0.0)))
+
+
+def _allocation_quantity(orderable_cash: float, price: float) -> int:
+    if price <= 0:
+        return 0
+    budget = min(float(orderable_cash), LIVE_ALLOCATION_KRW)
+    return int(budget // price)
+
+
+def process_live_trading_cycle(
+    primary_symbol: str,
+    secondary_symbol: str,
+    adjustments: StrategyAdjustments,
+) -> None:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        if not state["enabled"]:
+            return
+
+        _set_status(state, "checking")
+
+        try:
+            primary = _load_strategy(primary_symbol, adjustments)
+            secondary = _load_strategy(secondary_symbol, adjustments)
+        except Exception as exc:
+            _set_status(state, "error", str(exc))
+            _append_log("오류", f"실전 데이터 조회 실패: {exc}")
+            _write_state(state)
+            raise
+
+        target_rows = _get_target_rows(primary, secondary)
+        if target_rows is None:
+            _set_status(state, "waiting_data")
+            _append_log("대기", "완료된 5분봉이 아직 충분하지 않아 다음 주기를 기다립니다.")
+            _write_state(state)
+            return
+
+        target_time, primary_row, secondary_row = target_rows
+        candle_key = target_time.strftime("%Y-%m-%d %H:%M")
+        if state["last_checked_candle"] == candle_key:
+            _set_status(state, "idle")
+            _write_state(state)
+            return
+
+        state["last_checked_candle"] = candle_key
+        positions, summary = fetch_domestic_balance()
+        current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+        chosen_open = _choose_open_candidate(primary_symbol, secondary_symbol, primary_row, secondary_row)
+
+        if current_position is not None:
+            current_symbol = current_position["symbol"]
+            current_quantity = int(current_position["quantity"])
+            active_row = primary_row if current_symbol == primary_symbol else secondary_row
+
+            if chosen_open is not None and chosen_open[0] != current_symbol:
+                target_symbol, target_row = chosen_open
+                place_domestic_order(current_symbol.replace(".KS", ""), "sell", current_quantity)
+                _append_order(state, current_symbol, "sell", current_quantity, float(active_row["Close"]), "반대 ETF 스위칭 청산", target_time)
+                _append_log("주문", f"{display_name(current_symbol)} {current_quantity}주 매도 완료")
+
+                _, summary = fetch_domestic_balance()
+                buy_price = float(target_row["Close"])
+                buy_quantity = _allocation_quantity(summary.get("주문가능현금", 0), buy_price)
+                if buy_quantity > 0:
+                    place_domestic_order(target_symbol.replace(".KS", ""), "buy", buy_quantity)
+                    _append_order(state, target_symbol, "buy", buy_quantity, buy_price, "반대 ETF 진입", target_time)
+                    _append_log("주문", f"{display_name(target_symbol)} {buy_quantity}주 매수 완료")
+                    _set_status(state, "ordered")
+                else:
+                    _set_status(state, "waiting_cash")
+                    _append_log("경고", f"{display_name(target_symbol)} 매수 가능 수량이 없습니다.")
+                _write_state(state)
+                return
+
+            if bool(active_row.get("buy_close", False)):
+                place_domestic_order(current_symbol.replace(".KS", ""), "sell", current_quantity)
+                _append_order(state, current_symbol, "sell", current_quantity, float(active_row["Close"]), "지표 2개 과열 청산", target_time)
+                _append_log("주문", f"{display_name(current_symbol)} {current_quantity}주 청산 완료")
+                _set_status(state, "ordered")
+                _write_state(state)
+                return
+
+            _set_status(state, "holding")
+            _append_log("대기", f"{candle_key} 기준 보유 유지")
+            _write_state(state)
+            return
+
+        if chosen_open is None:
+            _set_status(state, "idle")
+            _append_log("대기", f"{candle_key} 기준 진입 신호 없음")
+            _write_state(state)
+            return
+
+        target_symbol, target_row = chosen_open
+        buy_price = float(target_row["Close"])
+        buy_quantity = _allocation_quantity(summary.get("주문가능현금", 0), buy_price)
+        if buy_quantity <= 0:
+            _set_status(state, "waiting_cash")
+            _append_log("경고", f"{display_name(target_symbol)} 매수 가능 수량이 없습니다.")
+            _write_state(state)
+            return
+
+        place_domestic_order(target_symbol.replace(".KS", ""), "buy", buy_quantity)
+        _append_order(state, target_symbol, "buy", buy_quantity, buy_price, "buy open 진입", target_time)
+        _append_log("주문", f"{display_name(target_symbol)} {buy_quantity}주 매수 완료")
+        _set_status(state, "ordered")
+        _write_state(state)
