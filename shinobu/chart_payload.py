@@ -48,9 +48,17 @@ def _pair_scr(frame: pd.DataFrame, pair_frame: pd.DataFrame | None) -> list[floa
     return [None if pd.isna(value) else float(value) for value in aligned["scr_line"].tolist()]
 
 
-def _build_signal_markers(frame: pd.DataFrame, signal_frame: pd.DataFrame | None, label: str, signal_column: str, y_column: str, multiplier: float = 1.0) -> list[dict[str, Any]]:
+def _build_signal_markers(
+    frame: pd.DataFrame,
+    signal_frame: pd.DataFrame | None,
+    label: str,
+    signal_column: str,
+    y_column: str,
+    multiplier: float = 1.0,
+) -> list[dict[str, Any]]:
     if signal_frame is None or signal_frame.empty or signal_column not in signal_frame.columns:
         return []
+
     rows = signal_frame[signal_frame[signal_column]].copy()
     if rows.empty:
         return []
@@ -100,13 +108,16 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
         x_value = positions.get(order["candle_time"])
         if pd.isna(x_value):
             continue
-        y_value = float(candle["Low"]) * 0.985 if order["side"] == "buy" else float(candle["High"]) * 1.015
+
+        side = str(order.get("side", ""))
+        y_value = float(candle["Low"]) * 0.985 if side == "buy" else float(candle["High"]) * 1.015
+        label = f"실매수 - {market_data.display_name(order['symbol'])}" if side == "buy" else f"실매도 - {market_data.display_name(order['symbol'])}"
         markers.append(
             {
                 "x": int(x_value),
                 "y": y_value,
-                "label": f"{'실매수' if order['side'] == 'buy' else '실매도'} · {market_data.display_name(order['symbol'])}",
-                "side": str(order["side"]),
+                "label": label,
+                "side": side,
                 "time": pd.Timestamp(order["candle_time"]).strftime("%Y-%m-%d %H:%M"),
                 "price": float(order.get("price", 0) or 0),
                 "reason": str(order.get("reason", "")),
@@ -115,7 +126,12 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     return markers
 
 
-def build_chart_payload(kind: str, symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments | None = None) -> dict[str, Any]:
+def build_chart_payload(
+    kind: str,
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments | None = None,
+) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
     started_at = get_live_started_at()
     pair_name = market_data.display_name(pair_symbol) if pair_symbol else None
@@ -157,14 +173,14 @@ def build_chart_payload(kind: str, symbol: str, pair_symbol: str | None, adjustm
         payload["scr"] = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()]
         payload["pairScr"] = _pair_scr(frame, pair_frame)
         payload["signals"] = {
-            "primaryOpenMain": _build_signal_markers(frame, frame, f"buy open · {market_data.display_name(symbol)}", "buy_open", "Low", 0.985),
-            "primaryCloseMain": _build_signal_markers(frame, frame, f"buy close · {market_data.display_name(symbol)}", "buy_close", "High", 1.015),
-            "pairOpenMain": _build_signal_markers(frame, pair_frame, f"buy open · {pair_name or '곱버스'}", "buy_open", "Low", 0.985),
-            "pairCloseMain": _build_signal_markers(frame, pair_frame, f"buy close · {pair_name or '곱버스'}", "buy_close", "High", 1.015),
-            "primaryOpenIndicator": _build_signal_markers(frame, frame, f"buy open · {market_data.display_name(symbol)}", "buy_open", "scr_line"),
-            "primaryCloseIndicator": _build_signal_markers(frame, frame, f"buy close · {market_data.display_name(symbol)}", "buy_close", "scr_line"),
-            "pairOpenIndicator": _build_signal_markers(frame, pair_frame, f"buy open · {pair_name or '곱버스'}", "buy_open", "scr_line"),
-            "pairCloseIndicator": _build_signal_markers(frame, pair_frame, f"buy close · {pair_name or '곱버스'}", "buy_close", "scr_line"),
+            "primaryOpenMain": _build_signal_markers(frame, frame, f"전략 open - {market_data.display_name(symbol)}", "buy_open", "Low", 0.985),
+            "primaryCloseMain": _build_signal_markers(frame, frame, f"전략 close - {market_data.display_name(symbol)}", "buy_close", "High", 1.015),
+            "pairOpenMain": _build_signal_markers(frame, pair_frame, f"전략 open - {pair_name or '곱버스'}", "buy_open", "Low", 0.985),
+            "pairCloseMain": _build_signal_markers(frame, pair_frame, f"전략 close - {pair_name or '곱버스'}", "buy_close", "High", 1.015),
+            "primaryOpenIndicator": _build_signal_markers(frame, frame, f"전략 open - {market_data.display_name(symbol)}", "buy_open", "scr_line"),
+            "primaryCloseIndicator": _build_signal_markers(frame, frame, f"전략 close - {market_data.display_name(symbol)}", "buy_close", "scr_line"),
+            "pairOpenIndicator": _build_signal_markers(frame, pair_frame, f"전략 open - {pair_name or '곱버스'}", "buy_open", "scr_line"),
+            "pairCloseIndicator": _build_signal_markers(frame, pair_frame, f"전략 close - {pair_name or '곱버스'}", "buy_close", "scr_line"),
         }
     else:
         payload["signals"] = {}

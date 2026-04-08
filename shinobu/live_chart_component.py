@@ -41,7 +41,8 @@ const MAIN_TRACE = {{
   primaryClose: 2,
   pairOpen: 3,
   pairClose: 4,
-  orders: 5
+  orderBuy: 5,
+  orderSell: 6
 }};
 
 const INDICATOR_TRACE = {{
@@ -49,13 +50,14 @@ const INDICATOR_TRACE = {{
   primaryCloseMain: 1,
   pairOpenMain: 2,
   pairCloseMain: 3,
-  orders: 4,
-  primaryOpen: 5,
-  primaryClose: 6,
-  pairOpen: 7,
-  pairClose: 8,
-  primaryScr: 9,
-  pairScr: 10
+  orderBuy: 4,
+  orderSell: 5,
+  primaryOpen: 6,
+  primaryClose: 7,
+  pairOpen: 8,
+  pairClose: 9,
+  primaryScr: 10,
+  pairScr: 11
 }};
 
 function detailHover(items) {{
@@ -112,20 +114,25 @@ function candleArrays(payload) {{
 }}
 
 function markerSeries(payload) {{
+  const orders = payload.orders || [];
+  const buyOrders = orders.filter((item) => item.side === "buy");
+  const sellOrders = orders.filter((item) => item.side === "sell");
   return {{
     main: [
       payload.signals.primaryOpenMain || [],
       payload.signals.primaryCloseMain || [],
       payload.signals.pairOpenMain || [],
       payload.signals.pairCloseMain || [],
-      payload.orders || []
+      buyOrders,
+      sellOrders
     ],
     indicator: [
       payload.signals.primaryOpenMain || [],
       payload.signals.primaryCloseMain || [],
       payload.signals.pairOpenMain || [],
       payload.signals.pairCloseMain || [],
-      payload.orders || [],
+      buyOrders,
+      sellOrders,
       payload.signals.primaryOpenIndicator || [],
       payload.signals.primaryCloseIndicator || [],
       payload.signals.pairOpenIndicator || [],
@@ -146,6 +153,7 @@ function tickData(payload) {{
 function buildMainFigure(payload) {{
   const candle = candleArrays(payload);
   const ticks = tickData(payload);
+  const markers = markerSeries(payload).main;
   const candleHoverText = payload.candles.map((item) => {{
     const timeText = (item.t || "").replace("T", " ").slice(0, 16);
     return `시간 ${{timeText}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
@@ -167,11 +175,12 @@ function buildMainFigure(payload) {{
         hovertemplate: "%{{hovertext}}<extra></extra>",
         showlegend: false
       }},
-      mainMarkerTrace(payload.signals.primaryOpenMain || [], "#3b82f6", "circle"),
-      mainMarkerTrace(payload.signals.primaryCloseMain || [], "#ef4444", "circle"),
-      mainMarkerTrace(payload.signals.pairOpenMain || [], "#3b82f6", "star"),
-      mainMarkerTrace(payload.signals.pairCloseMain || [], "#ef4444", "star"),
-      mainMarkerTrace(payload.orders || [], "#f59e0b", "diamond")
+      mainMarkerTrace(markers[0], "#3b82f6", "circle"),
+      mainMarkerTrace(markers[1], "#ef4444", "circle"),
+      mainMarkerTrace(markers[2], "#3b82f6", "star"),
+      mainMarkerTrace(markers[3], "#ef4444", "star"),
+      mainMarkerTrace(markers[4], "#22c55e", "diamond"),
+      mainMarkerTrace(markers[5], "#f59e0b", "diamond")
     ],
     layout: {{
       paper_bgcolor: "#131722",
@@ -218,17 +227,19 @@ function buildIndicatorFigure(payload) {{
   const candle = candleArrays(payload);
   const ticks = tickData(payload);
   const indicatorTimes = candle.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
+  const markers = markerSeries(payload).indicator;
   return {{
     data: [
-      indicatorMarkerTrace(payload.signals.primaryOpenMain || [], "#3b82f6", "circle"),
-      indicatorMarkerTrace(payload.signals.primaryCloseMain || [], "#ef4444", "circle"),
-      indicatorMarkerTrace(payload.signals.pairOpenMain || [], "#3b82f6", "star"),
-      indicatorMarkerTrace(payload.signals.pairCloseMain || [], "#ef4444", "star"),
-      indicatorMarkerTrace(payload.orders || [], "#f59e0b", "diamond"),
-      indicatorMarkerTrace(payload.signals.primaryOpenIndicator || [], "#3b82f6", "circle"),
-      indicatorMarkerTrace(payload.signals.primaryCloseIndicator || [], "#ef4444", "circle"),
-      indicatorMarkerTrace(payload.signals.pairOpenIndicator || [], "#3b82f6", "star"),
-      indicatorMarkerTrace(payload.signals.pairCloseIndicator || [], "#ef4444", "star"),
+      indicatorMarkerTrace(markers[0], "#3b82f6", "circle"),
+      indicatorMarkerTrace(markers[1], "#ef4444", "circle"),
+      indicatorMarkerTrace(markers[2], "#3b82f6", "star"),
+      indicatorMarkerTrace(markers[3], "#ef4444", "star"),
+      indicatorMarkerTrace(markers[4], "#22c55e", "diamond"),
+      indicatorMarkerTrace(markers[5], "#f59e0b", "diamond"),
+      indicatorMarkerTrace(markers[6], "#3b82f6", "circle"),
+      indicatorMarkerTrace(markers[7], "#ef4444", "circle"),
+      indicatorMarkerTrace(markers[8], "#3b82f6", "star"),
+      indicatorMarkerTrace(markers[9], "#ef4444", "star"),
       {{
         type: "scatter",
         mode: "lines",
