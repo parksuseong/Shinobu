@@ -25,7 +25,7 @@ from shinobu.live_trading import (
     record_asset_snapshot,
     set_live_enabled,
 )
-from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
+LIVE_TIMEFRAME = "5분봉"
 
 
 LIVE_TIMEFRAME = "5분봉"
@@ -39,7 +39,7 @@ POSITIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 NEGATIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_negative.svg"
 
 
-st.set_page_config(page_title="해동밀교 군자금 확보", page_icon="차트", layout="wide")
+st.set_page_config(page_title="Shinobu Project", page_icon="??", layout="wide")
 
 
 display_name = market_data.display_name
@@ -48,7 +48,7 @@ load_ui_chart_data = getattr(market_data, "load_ui_chart_data", market_data.load
 
 
 def render_header() -> None:
-    st.title("해동밀교 군자금 확보")
+    st.title("Shinobu Project")
     st.caption("실전 5분봉 자동매매")
 
 
