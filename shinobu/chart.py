@@ -327,7 +327,7 @@ def build_candlestick_chart(
             pair_name,
             pair_symbol_code,
             include_scr_panel,
-            show_on_main=False,
+            show_on_main=True,
             show_on_indicator=True,
         )
 
