@@ -25,7 +25,7 @@ from shinobu.live_trading import (
     record_asset_snapshot,
     set_live_enabled,
 )
-from shinobu.strategy import StrategyAdjustments
+from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
 LIVE_TIMEFRAME = "5분봉"
 
 
