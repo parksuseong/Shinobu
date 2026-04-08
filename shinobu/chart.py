@@ -148,6 +148,8 @@ def _add_asset_signal_group(
     asset_name: str,
     asset_symbol: str,
     include_scr_panel: bool,
+    show_on_main: bool = True,
+    show_on_indicator: bool = True,
 ) -> None:
     if "buy_open" not in signal_frame.columns or "buy_close" not in signal_frame.columns:
         return
@@ -158,28 +160,29 @@ def _add_asset_signal_group(
     buy_open_rows, buy_open_y = _signal_rows_with_base_y(signal_frame, base_frame, "buy_open", "Low", 0.985)
     buy_close_rows, buy_close_y = _signal_rows_with_base_y(signal_frame, base_frame, "buy_close", "High", 1.015)
 
-    _add_signal_markers(
-        figure,
-        buy_open_rows,
-        base_positions.reindex(buy_open_rows.index).tolist(),
-        f"buy open · {asset_name}",
-        BUY_OPEN_COLOR,
-        marker_symbol,
-        buy_open_y,
-        1,
-    )
-    _add_signal_markers(
-        figure,
-        buy_close_rows,
-        base_positions.reindex(buy_close_rows.index).tolist(),
-        f"buy close · {asset_name}",
-        BUY_CLOSE_COLOR,
-        marker_symbol,
-        buy_close_y,
-        1,
-    )
+    if show_on_main:
+        _add_signal_markers(
+            figure,
+            buy_open_rows,
+            base_positions.reindex(buy_open_rows.index).tolist(),
+            f"buy open · {asset_name}",
+            BUY_OPEN_COLOR,
+            marker_symbol,
+            buy_open_y,
+            1,
+        )
+        _add_signal_markers(
+            figure,
+            buy_close_rows,
+            base_positions.reindex(buy_close_rows.index).tolist(),
+            f"buy close · {asset_name}",
+            BUY_CLOSE_COLOR,
+            marker_symbol,
+            buy_close_y,
+            1,
+        )
 
-    if include_scr_panel and "scr_line" in signal_frame.columns:
+    if show_on_indicator and include_scr_panel and "scr_line" in signal_frame.columns:
         indicator_open_rows = signal_frame[signal_frame["buy_open"]]
         indicator_close_rows = signal_frame[signal_frame["buy_close"]]
         _add_signal_markers(
@@ -306,9 +309,27 @@ def build_candlestick_chart(
 
     _add_candles(figure, frame, x_values)
 
-    _add_asset_signal_group(figure, frame, frame, symbol_name, symbol_code, include_scr_panel)
+    _add_asset_signal_group(
+        figure,
+        frame,
+        frame,
+        symbol_name,
+        symbol_code,
+        include_scr_panel,
+        show_on_main=True,
+        show_on_indicator=True,
+    )
     if pair_frame is not None and pair_name is not None and pair_symbol_code is not None:
-        _add_asset_signal_group(figure, frame, pair_frame, pair_name, pair_symbol_code, include_scr_panel)
+        _add_asset_signal_group(
+            figure,
+            frame,
+            pair_frame,
+            pair_name,
+            pair_symbol_code,
+            include_scr_panel,
+            show_on_main=False,
+            show_on_indicator=True,
+        )
 
     if include_scr_panel:
         figure.add_trace(
@@ -316,17 +337,31 @@ def build_candlestick_chart(
                 x=x_values,
                 y=frame["scr_line"],
                 mode="lines",
-                line={"color": SCR_LINE_COLOR, "width": 1.7},
-                hovertemplate="SCR %{y:.2f}<extra></extra>",
-                name="SCR",
+                line={"color": SCR_LINE_COLOR, "width": 1.7, "dash": "dot"},
+                hovertemplate=f"{symbol_name} SCR " + "%{y:.2f}<extra></extra>",
+                name=f"{symbol_name} SCR",
             ),
             row=2,
             col=1,
         )
+        if pair_frame is not None and "scr_line" in pair_frame.columns:
+            pair_scr = pair_frame.reindex(frame.index).ffill()
+            figure.add_trace(
+                go.Scatter(
+                    x=x_values,
+                    y=pair_scr["scr_line"],
+                    mode="lines",
+                    line={"color": "#f59e0b", "width": 1.4, "dash": "dot"},
+                    hovertemplate=f"{pair_name or '인버스'} SCR " + "%{y:.2f}<extra></extra>",
+                    name=f"{pair_name or '인버스'} SCR",
+                ),
+                row=2,
+                col=1,
+            )
 
     title_text = f"{symbol_name} · {timeframe_label}"
     if include_scr_panel:
-        title_text += " · 실전 · SCR"
+        title_text += " · 실전"
 
     figure.update_layout(
         height=500 if include_scr_panel else 380,
@@ -349,7 +384,23 @@ def build_candlestick_chart(
                 "showarrow": False,
                 "font": {"size": 14, "color": "#e5e7eb", "family": "Malgun Gothic"},
                 "align": "left",
-            }
+            },
+            *(
+                [
+                    {
+                        "x": 0.01,
+                        "y": 0.205,
+                        "xref": "paper",
+                        "yref": "paper",
+                        "text": "보조지표 (흰색 점선: 레버리지 / 주황 점선: 인버스)",
+                        "showarrow": False,
+                        "font": {"size": 12, "color": "#9aa4b2", "family": "Malgun Gothic"},
+                        "align": "left",
+                    }
+                ]
+                if include_scr_panel
+                else []
+            ),
         ],
     )
 
@@ -377,7 +428,7 @@ def build_candlestick_chart(
 
     if include_scr_panel:
         figure.update_yaxes(
-            title_text="SCR",
+            title_text="보조지표",
             side="right",
             range=[-1.6, 1.6],
             tickmode="array",
