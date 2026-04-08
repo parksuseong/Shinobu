@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 
 def build_live_chart_html(
     *,
@@ -11,10 +13,8 @@ def build_live_chart_html(
     rsi_pct: int,
 ) -> str:
     pair_query = pair_symbol or ""
-    endpoint = (
-        f"{server_url}/chart?kind=overlay&symbol={symbol}"
-        f"&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}"
-    )
+    parsed_server = urlparse(server_url)
+    chart_port = parsed_server.port or 8765
     return f"""
 <div style="display:flex;flex-direction:column;gap:10px;">
   <div id="main-chart-root" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
@@ -24,7 +24,10 @@ def build_live_chart_html(
 <script>
 const mainRoot = document.getElementById("main-chart-root");
 const indicatorRoot = document.getElementById("indicator-chart-root");
-const endpoint = "{endpoint}";
+const chartBaseUrl = `${{window.location.protocol}}//${{window.location.hostname}}:{chart_port}`;
+const endpoint =
+  `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
+  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}`;
 
 let initializedMain = false;
 let initializedIndicator = false;

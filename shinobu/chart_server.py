@@ -9,7 +9,7 @@ from shinobu.chart_payload import build_chart_payload
 from shinobu.strategy import StrategyAdjustments
 
 
-CHART_SERVER_HOST = "127.0.0.1"
+CHART_SERVER_HOST = "0.0.0.0"
 CHART_SERVER_PORT = 8765
 _SERVER_LOCK = threading.Lock()
 _SERVER_STARTED = False
