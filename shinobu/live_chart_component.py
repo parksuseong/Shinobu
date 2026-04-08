@@ -24,7 +24,8 @@ def build_live_chart_html(
 <script>
 const mainRoot = document.getElementById("main-chart-root");
 const indicatorRoot = document.getElementById("indicator-chart-root");
-const chartBaseUrl = `${{window.location.protocol}}//${{window.location.hostname}}:{chart_port}`;
+const hostWindow = window.parent && window.parent.location ? window.parent : window;
+const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
 const endpoint =
   `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
   `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}`;
