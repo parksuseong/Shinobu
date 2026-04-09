@@ -280,7 +280,15 @@ def _choose_open_candidate(
 def _allocation_quantity(orderable_cash: float, price: float) -> int:
     if price <= 0:
         return 0
-    return int(float(orderable_cash) // price)
+    # Reserve a little room for market-order slippage and brokerage-side checks.
+    safe_cash = max(float(orderable_cash) * 0.97, 0.0)
+    safe_price = float(price) * 1.01
+    return int(safe_cash // safe_price)
+
+
+def _is_cash_exceeded_error(exc: Exception) -> bool:
+    message = str(exc)
+    return "APBK0952" in message or "주문가능금액을 초과" in message
 
 
 def _position_quantity_for_symbol(positions: pd.DataFrame, symbol: str) -> int:
@@ -351,21 +359,48 @@ def _submit_live_order(
     baseline_quantity: int,
 ) -> None:
     last_error: Exception | None = None
+    working_quantity = max(int(quantity), 0)
     for attempt in range(1, LIVE_ORDER_MAX_RETRIES + 1):
         try:
-            broker_output = place_domestic_order(symbol.replace(".KS", ""), side, quantity)
-            _append_order(state, symbol, side, quantity, expected_price, reason, candle_time)
+            if working_quantity <= 0:
+                raise KisApiError("주문 수량이 0주가 되어 주문을 중단합니다.")
+
+            if side == "buy":
+                fetch_domestic_balance.clear()
+                _, latest_summary = fetch_domestic_balance()
+                latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
+                recalculated_quantity = _allocation_quantity(latest_cash, expected_price)
+                if recalculated_quantity <= 0:
+                    raise KisApiError("주문 직전 재조회 기준 매수 가능 수량이 없습니다.")
+                if recalculated_quantity < working_quantity:
+                    _append_log(
+                        "정보",
+                        f"{display_name(symbol)} 주문 직전 재조회로 수량을 {working_quantity}주 -> {recalculated_quantity}주로 조정합니다.",
+                    )
+                    working_quantity = recalculated_quantity
+
+            broker_output = place_domestic_order(symbol.replace(".KS", ""), side, working_quantity)
+            _append_order(state, symbol, side, working_quantity, expected_price, reason, candle_time)
             if attempt > 1:
                 _append_log("정보", f"{display_name(symbol)} {side.upper()} 주문 재시도 성공 ({attempt}/{LIVE_ORDER_MAX_RETRIES})")
             _append_log(
                 "주문",
-                f"{display_name(symbol)} {side.upper()} {quantity}주 시장가 주문 접수 ({_format_order_response(broker_output)})",
+                f"{display_name(symbol)} {side.upper()} {working_quantity}주 시장가 주문 접수 ({_format_order_response(broker_output)})",
             )
-            filled, fill_message = _confirm_fill_after_order(symbol, side, baseline_quantity, quantity)
-            _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {quantity}주 {fill_message}")
+            filled, fill_message = _confirm_fill_after_order(symbol, side, baseline_quantity, working_quantity)
+            _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {working_quantity}주 {fill_message}")
             return
         except Exception as exc:
             last_error = exc
+            if side == "buy" and _is_cash_exceeded_error(exc) and working_quantity > 1:
+                reduced_quantity = max(working_quantity - max(1, working_quantity // 10), 1)
+                _append_log(
+                    "경고",
+                    f"{display_name(symbol)} BUY 주문가능금액 초과로 수량을 {working_quantity}주 -> {reduced_quantity}주로 줄여 재시도합니다.",
+                )
+                working_quantity = reduced_quantity
+                time.sleep(LIVE_ORDER_RETRY_DELAY_SECONDS)
+                continue
             if attempt < LIVE_ORDER_MAX_RETRIES and _is_retryable_order_error(exc):
                 _append_log(
                     "경고",
