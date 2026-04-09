@@ -718,33 +718,25 @@ def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
     positive = emotion_state == "positive"
     negative = emotion_state == "negative"
 
-    left, right = st.columns([1.35, 1], vertical_alignment="top")
-    with left:
-        emotion_left, emotion_right = st.columns(2)
-        with emotion_left:
-            _render_emotion_card(
-                "",
-                "롱이다!!!!!!!!!!",
-                POSITIVE_IMAGE_PATH,
-                POSITIVE_FALLBACK_PATH,
-                positive,
-                "positive",
-            )
-        with emotion_right:
-            _render_emotion_card(
-                "",
-                "숏이다!!!!!!!!!!",
-                NEGATIVE_IMAGE_PATH,
-                NEGATIVE_FALLBACK_PATH,
-                negative,
-                "negative",
-            )
-    with right:
-        figure = _build_asset_history_figure()
-        if figure is None:
-            st.info("아직 자산 이력이 충분하지 않습니다.")
-        else:
-            st.plotly_chart(figure, use_container_width=True, theme=None, config={"displaylogo": False})
+    emotion_left, emotion_right = st.columns(2)
+    with emotion_left:
+        _render_emotion_card(
+            "",
+            "롱이다!!!!!!!!!!",
+            POSITIVE_IMAGE_PATH,
+            POSITIVE_FALLBACK_PATH,
+            positive,
+            "positive",
+        )
+    with emotion_right:
+        _render_emotion_card(
+            "",
+            "숏이다!!!!!!!!!!",
+            NEGATIVE_IMAGE_PATH,
+            NEGATIVE_FALLBACK_PATH,
+            negative,
+            "negative",
+        )
 @st.fragment(run_every="10s")
 def render_live_account_panel() -> None:
     panel = st.empty()
