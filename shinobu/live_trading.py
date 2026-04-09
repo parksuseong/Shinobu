@@ -16,6 +16,11 @@ from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
 
 
 LIVE_ALLOCATION_KRW = 500_000.0
+SIGNAL_TO_TRADE_SYMBOL = {
+    "122630.KS": "069500.KS",
+    "252670.KS": "114800.KS",
+}
+TRADE_TO_SIGNAL_SYMBOL = {value: key for key, value in SIGNAL_TO_TRADE_SYMBOL.items()}
 MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
 LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 8.0
@@ -136,6 +141,29 @@ def set_live_enabled(enabled: bool) -> None:
         _write_state(state)
 
 
+def place_manual_test_buy() -> dict[str, Any]:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+
+        positions, summary = fetch_domestic_balance()
+        if not positions.empty and "code" in positions.columns:
+            existing = positions[positions["code"].astype(str) == "114800"]
+            if not existing.empty:
+                raise KisApiError("이미 KODEX 인버스를 보유 중입니다.")
+
+        orderable_cash = float(summary.get("orderable_cash", 0) or 0)
+        if orderable_cash <= 0:
+            raise KisApiError("주문가능현금이 부족합니다.")
+
+        result = place_domestic_order("114800", "buy", 1)
+        candle_time = pd.Timestamp.now().floor("5min")
+        _append_order(state, "114800.KS", "buy", 1, 0.0, "수동 테스트 매수", candle_time)
+        _append_log("수동주문", "KODEX 인버스 1주 시장가 매수 요청")
+        _set_status(state, "ordered")
+        _write_state(state)
+        return result
+
+
 def is_live_enabled() -> bool:
     with _LIVE_STATE_LOCK:
         return bool(_read_state()["enabled"])
@@ -227,15 +255,18 @@ def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> 
     if positions.empty or "code" not in positions.columns:
         return None
 
-    target_codes = [symbol.replace(".KS", "") for symbol in symbols]
+    target_symbols = [SIGNAL_TO_TRADE_SYMBOL.get(symbol, symbol) for symbol in symbols]
+    target_codes = [symbol.replace(".KS", "") for symbol in target_symbols]
     matches = positions[positions["code"].isin(target_codes)]
     if matches.empty:
         return None
 
     sort_column = "eval_amount" if "eval_amount" in matches.columns else "quantity"
     row = matches.sort_values(sort_column, ascending=False).iloc[0]
+    held_trade_symbol = f"{row['code']}.KS"
     return {
-        "symbol": f"{row['code']}.KS",
+        "symbol": held_trade_symbol,
+        "signal_symbol": TRADE_TO_SIGNAL_SYMBOL.get(held_trade_symbol, held_trade_symbol),
         "name": row.get("name", ""),
         "quantity": int(float(row.get("quantity", 0))),
         "current_price": float(row.get("current_price", 0)),
@@ -330,6 +361,10 @@ def _submit_live_order(
     _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {quantity}주 {fill_message}")
 
 
+def _trade_symbol(signal_symbol: str) -> str:
+    return SIGNAL_TO_TRADE_SYMBOL.get(signal_symbol, signal_symbol)
+
+
 def process_live_trading_cycle(
     primary_symbol: str,
     secondary_symbol: str,
@@ -372,11 +407,13 @@ def process_live_trading_cycle(
 
         if current_position is not None:
             current_symbol = current_position["symbol"]
+            current_signal_symbol = current_position.get("signal_symbol", current_symbol)
             current_quantity = int(current_position["quantity"])
-            active_row = primary_row if current_symbol == primary_symbol else secondary_row
+            active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
 
-            if chosen_open is not None and chosen_open[0] != current_symbol:
-                target_symbol, target_row = chosen_open
+            if chosen_open is not None and chosen_open[0] != current_signal_symbol:
+                target_signal_symbol, target_row = chosen_open
+                target_symbol = _trade_symbol(target_signal_symbol)
                 _submit_live_order(
                     state,
                     current_symbol,
@@ -436,7 +473,8 @@ def process_live_trading_cycle(
             _write_state(state)
             return
 
-        target_symbol, target_row = chosen_open
+        target_signal_symbol, target_row = chosen_open
+        target_symbol = _trade_symbol(target_signal_symbol)
         buy_price = float(target_row["Close"])
         buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
         if buy_quantity <= 0:

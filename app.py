@@ -24,6 +24,7 @@ from shinobu.live_trading import (
     get_live_started_at,
     init_live_state,
     is_live_enabled,
+    place_manual_test_buy,
     process_live_trading_cycle,
     record_asset_snapshot,
     set_live_enabled,
@@ -368,9 +369,9 @@ def _emotion_by_position(positions: pd.DataFrame) -> str:
         return "neutral"
 
     codes = positions[code_column].astype(str).tolist()
-    if "122630" in codes:
+    if "122630" in codes or "069500" in codes:
         return "positive"
-    if "252670" in codes:
+    if "252670" in codes or "114800" in codes:
         return "negative"
     return "neutral"
 def _extract_total_assets(summary: dict) -> float:
@@ -839,6 +840,20 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
             key="live_stop_button",
             on_click=_handle_live_stop,
         )
+
+    if st.button("인버스 1주 시장가 매수 테스트", use_container_width=True, key="manual_inverse_test_buy_button"):
+        try:
+            result = place_manual_test_buy()
+            st.session_state["manual_test_order_message"] = f"수동 테스트 매수 요청 완료: {result}"
+            st.session_state["manual_test_order_error"] = ""
+        except Exception as exc:
+            st.session_state["manual_test_order_message"] = ""
+            st.session_state["manual_test_order_error"] = str(exc)
+
+    if st.session_state.get("manual_test_order_message"):
+        st.success(st.session_state["manual_test_order_message"])
+    if st.session_state.get("manual_test_order_error"):
+        st.error(st.session_state["manual_test_order_error"])
 
     if pair_symbol is None:
         st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
