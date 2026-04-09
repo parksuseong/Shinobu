@@ -16,7 +16,6 @@ from shinobu.chart_server import ensure_chart_server
 from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.live_trading import (
-    LIVE_ALLOCATION_KRW,
     get_asset_history,
     get_live_logs,
     get_live_orders,
@@ -258,6 +257,57 @@ def mask_account_number(account_number: str) -> str:
     return f"{account_number[:2]}{'*' * max(len(account_number) - 2, 0)}"
 
 
+def _format_positions_frame(positions: pd.DataFrame) -> pd.DataFrame:
+    if positions.empty:
+        return positions
+
+    display_columns = ["code", "name", "quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"]
+    view = positions.loc[:, [column for column in display_columns if column in positions.columns]].copy()
+    view = view.rename(
+        columns={
+            "code": "종목코드",
+            "name": "종목명",
+            "quantity": "보유수량",
+            "avg_price": "평균단가",
+            "current_price": "현재가",
+            "eval_amount": "평가금액",
+            "profit_amount": "평가손익",
+            "profit_rate": "수익률(%)",
+        }
+    )
+    for column in ["보유수량", "평균단가", "현재가", "평가금액", "평가손익"]:
+        if column in view.columns:
+            view[column] = view[column].map(lambda value: f"{float(value):,.0f}")
+    if "수익률(%)" in view.columns:
+        view["수익률(%)"] = view["수익률(%)"].map(lambda value: f"{float(value):+.2f}")
+    return view
+
+
+def _format_five_min_bucket_label(timestamp: pd.Timestamp) -> str:
+    start = pd.Timestamp(timestamp).floor("5min")
+    end = start + pd.Timedelta(minutes=5)
+    return f"{start.strftime('%m-%d %H:%M')}~{end.strftime('%H:%M')}"
+
+
+def _group_execution_ledger_by_5m(executions: pd.DataFrame) -> pd.DataFrame:
+    if executions.empty:
+        return executions
+
+    ledger = executions.copy()
+    ledger["bucket_start"] = pd.to_datetime(ledger["timestamp"]).dt.floor("5min")
+    grouped = (
+        ledger.groupby(["bucket_start", "symbol", "name", "side"], as_index=False)
+        .agg(
+            quantity=("quantity", "sum"),
+            amount=("amount", "sum"),
+            order_count=("order_no", "nunique"),
+        )
+    )
+    grouped["price"] = grouped["amount"] / grouped["quantity"]
+    grouped["time_range"] = grouped["bucket_start"].map(_format_five_min_bucket_label)
+    return grouped.sort_values("bucket_start", ascending=False).reset_index(drop=True)
+
+
 def _account_return_rate(summary: dict) -> float:
     purchase_amount = float(summary.get("매입금액", 0) or 0)
     profit = float(summary.get("평가손익", 0) or 0)
@@ -430,25 +480,28 @@ def _build_asset_history_figure() -> go.Figure | None:
     return figure
 
 
-@st.cache_data(ttl=15, show_spinner=False)
-def get_live_trade_history(started_at_text: str) -> pd.DataFrame:
-    if not started_at_text:
-        return pd.DataFrame()
-
-    started_at = pd.to_datetime(started_at_text, errors="coerce")
-    if pd.isna(started_at):
-        return pd.DataFrame()
-
-    start_date = started_at.strftime("%Y%m%d")
+@st.cache_data(ttl=60, show_spinner=False)
+def get_live_trade_history(lookback_days: int = 7) -> pd.DataFrame:
+    history_window_start = pd.Timestamp.now(tz=None).normalize() - pd.Timedelta(days=max(int(lookback_days), 1) - 1)
+    fetch_start = history_window_start
+    start_date = fetch_start.strftime("%Y%m%d")
     end_date = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
-    executions = fetch_domestic_daily_ccld(start_date, end_date)
+    frames = []
+    for symbol in ["069500.KS", "114800.KS"]:
+        frame = fetch_domestic_daily_ccld(start_date, end_date, symbol=symbol, max_pages=2)
+        if not frame.empty:
+            frames.append(frame)
+    executions = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if executions.empty:
         return executions
 
     executions = executions.copy()
     executions["timestamp"] = pd.to_datetime(executions["timestamp"], errors="coerce")
     executions = executions.dropna(subset=["timestamp"])
-    executions = executions.loc[executions["timestamp"] >= started_at].sort_values("timestamp")
+    dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in executions.columns]
+    if dedupe_keys:
+        executions = executions.drop_duplicates(subset=dedupe_keys, keep="first")
+    executions = executions.loc[executions["symbol"].isin(["069500.KS", "114800.KS"])].sort_values("timestamp")
     if executions.empty:
         return pd.DataFrame()
 
@@ -519,12 +572,39 @@ def get_live_trade_history(started_at_text: str) -> pd.DataFrame:
         else:
             del open_lots[symbol]
 
-    return pd.DataFrame(trades)
+    history = pd.DataFrame(trades)
+    if history.empty:
+        return history
+    history["exit_time"] = pd.to_datetime(history["exit_time"], errors="coerce")
+    history = history.loc[history["exit_time"] >= history_window_start]
+    return history.reset_index(drop=True)
 
 
-def _render_live_trade_history() -> None:
-    st.markdown("#### 실전 거래 내역")
-    started_at = get_live_started_at()
+@st.cache_data(ttl=60, show_spinner=False)
+def get_recent_execution_ledger(lookback_days: int = 7) -> pd.DataFrame:
+    start = (pd.Timestamp.now(tz=None).normalize() - pd.Timedelta(days=max(int(lookback_days), 1) - 1)).strftime("%Y%m%d")
+    end = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
+    frames = []
+    for symbol in ["069500.KS", "114800.KS"]:
+        frame = fetch_domestic_daily_ccld(start, end, symbol=symbol, max_pages=2)
+        if not frame.empty:
+            frames.append(frame)
+    executions = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if executions.empty:
+        return executions
+    executions = executions.copy()
+    executions = executions.loc[executions["symbol"].isin(["069500.KS", "114800.KS"])]
+    if executions.empty:
+        return executions
+    executions["timestamp"] = pd.to_datetime(executions["timestamp"], errors="coerce")
+    dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in executions.columns]
+    if dedupe_keys:
+        executions = executions.drop_duplicates(subset=dedupe_keys, keep="first")
+    executions = executions.dropna(subset=["timestamp"]).sort_values("timestamp", ascending=False)
+    return executions.reset_index(drop=True)
+
+
+def _render_open_live_positions() -> None:
     try:
         current_positions, _ = fetch_domestic_balance()
     except Exception:
@@ -540,29 +620,14 @@ def _render_live_trade_history() -> None:
     if open_view.empty:
         st.caption("현재 보유 중인 실전 포지션이 없습니다.")
     else:
-        open_view = open_view.loc[:, [column for column in ["code", "name", "quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"] if column in open_view.columns]].copy()
-        open_view = open_view.rename(
-            columns={
-                "code": "종목코드",
-                "name": "종목명",
-                "quantity": "보유수량",
-                "avg_price": "평균단가",
-                "current_price": "현재가",
-                "eval_amount": "평가금액",
-                "profit_amount": "평가손익",
-                "profit_rate": "수익률(%)",
-            }
-        )
-        for column in ["보유수량", "평균단가", "현재가", "평가금액", "평가손익"]:
-            if column in open_view.columns:
-                open_view[column] = open_view[column].map(lambda value: f"{float(value):,.0f}")
-        if "수익률(%)" in open_view.columns:
-            open_view["수익률(%)"] = open_view["수익률(%)"].map(lambda value: f"{float(value):+.2f}")
-        st.dataframe(open_view, use_container_width=True, hide_index=True)
+        st.dataframe(_format_positions_frame(open_view), use_container_width=True, hide_index=True)
 
+
+def _render_closed_live_trades() -> None:
     st.markdown("##### 청산 완료 거래")
     try:
-        history = get_live_trade_history(started_at.isoformat() if started_at is not None else "")
+        history = get_live_trade_history(7)
+        executions = get_recent_execution_ledger(7)
     except KisApiError as exc:
         st.caption(f"거래내역 조회 오류: {exc}")
         return
@@ -570,46 +635,80 @@ def _render_live_trade_history() -> None:
         st.caption(f"거래내역 집계 오류: {exc}")
         return
     if history.empty:
-        st.caption("아직 집계된 체결 거래가 없습니다.")
+        st.caption("최근 7일 기준으로 집계된 청산 완료 거래가 없습니다.")
+    else:
+        wins = int((history["pnl_amount"] > 0).sum())
+        draws = int((history["pnl_amount"] == 0).sum())
+        losses = int((history["pnl_amount"] < 0).sum())
+        total = len(history)
+        win_rate = (wins / total * 100.0) if total else 0.0
+        realized = float(history["pnl_amount"].sum())
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("거래수", f"{total}")
+        col2.metric("승/무/패", f"{wins}/{draws}/{losses}")
+        col3.metric("승률", f"{win_rate:.1f}%")
+        col4.metric("실현손익", f"{realized:,.0f}원")
+
+        view = history.sort_values("exit_time", ascending=False).copy()
+        view["진입구간"] = pd.to_datetime(view["entry_time"]).map(_format_five_min_bucket_label)
+        view["청산구간"] = pd.to_datetime(view["exit_time"]).map(_format_five_min_bucket_label)
+        view["entry_time"] = pd.to_datetime(view["entry_time"]).dt.strftime("%m-%d %H:%M")
+        view["exit_time"] = pd.to_datetime(view["exit_time"]).dt.strftime("%m-%d %H:%M")
+        view["quantity"] = view["quantity"].map(lambda value: f"{float(value):,.0f}")
+        view["entry_price"] = view["entry_price"].map(lambda value: f"{float(value):,.0f}")
+        view["exit_price"] = view["exit_price"].map(lambda value: f"{float(value):,.0f}")
+        view["pnl_amount"] = view["pnl_amount"].map(lambda value: f"{float(value):+,.0f}")
+        view["pnl_rate"] = view["pnl_rate"].map(lambda value: f"{float(value):+.2f}%")
+        view = view.rename(
+            columns={
+                "name": "종목",
+                "entry_time": "진입",
+                "exit_time": "청산",
+                "quantity": "수량",
+                "entry_price": "진입가",
+                "exit_price": "청산가",
+                "pnl_amount": "손익",
+                "pnl_rate": "수익률",
+                "result": "결과",
+            }
+        )
+        st.dataframe(
+            view[["종목", "진입구간", "청산구간", "수량", "진입가", "청산가", "손익", "수익률", "결과"]].head(20),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    if executions.empty:
+        st.caption("최근 7일 체결 원장도 비어 있습니다.")
         return
 
-    wins = int((history["pnl_amount"] > 0).sum())
-    losses = int((history["pnl_amount"] < 0).sum())
-    total = len(history)
-    win_rate = (wins / total * 100.0) if total else 0.0
-    realized = float(history["pnl_amount"].sum())
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("거래수", f"{total}")
-    col2.metric("승률", f"{win_rate:.1f}%")
-    col3.metric("실현손익", f"{realized:,.0f}원")
-
-    view = history.sort_values("exit_time", ascending=False).copy()
-    view["entry_time"] = pd.to_datetime(view["entry_time"]).dt.strftime("%m-%d %H:%M")
-    view["exit_time"] = pd.to_datetime(view["exit_time"]).dt.strftime("%m-%d %H:%M")
-    view["quantity"] = view["quantity"].map(lambda value: f"{float(value):,.0f}")
-    view["entry_price"] = view["entry_price"].map(lambda value: f"{float(value):,.0f}")
-    view["exit_price"] = view["exit_price"].map(lambda value: f"{float(value):,.0f}")
-    view["pnl_amount"] = view["pnl_amount"].map(lambda value: f"{float(value):+,.0f}")
-    view["pnl_rate"] = view["pnl_rate"].map(lambda value: f"{float(value):+.2f}%")
-    view = view.rename(
+    st.markdown("###### 최근 7일 체결 원장")
+    ledger = _group_execution_ledger_by_5m(executions)
+    ledger = ledger.loc[:, [column for column in ["time_range", "name", "side", "quantity", "price", "amount", "order_count"] if column in ledger.columns]].copy()
+    if "side" in ledger.columns:
+        ledger["side"] = ledger["side"].map({"buy": "매수", "sell": "매도"}).fillna(ledger["side"])
+    for column in ["quantity", "price", "amount", "order_count"]:
+        if column in ledger.columns:
+            ledger[column] = ledger[column].map(lambda value: f"{float(value):,.0f}")
+    ledger = ledger.rename(
         columns={
+            "time_range": "구간",
             "name": "종목",
-            "entry_time": "진입",
-            "exit_time": "청산",
+            "side": "구분",
             "quantity": "수량",
-            "entry_price": "진입가",
-            "exit_price": "청산가",
-            "pnl_amount": "손익",
-            "pnl_rate": "수익률",
-            "result": "결과",
+            "price": "가격",
+            "amount": "금액",
+            "order_count": "주문건수",
         }
     )
     st.dataframe(
-        view[["종목", "진입", "청산", "수량", "진입가", "청산가", "손익", "수익률", "결과"]],
+        ledger.head(20),
         use_container_width=True,
         hide_index=True,
     )
+
+
 def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
     total_assets = _extract_total_assets(summary)
     if total_assets > 0:
@@ -665,39 +764,40 @@ def render_live_account_panel() -> None:
             st.warning(f"계좌 조회 중 알 수 없는 오류가 발생했습니다: {exc}")
             return
 
+        purchase_amount = float(summary.get("purchase_amount", 0) or 0)
+        profit_amount = float(summary.get("profit_amount", 0) or 0)
+        profit_rate = (profit_amount / purchase_amount * 100.0) if purchase_amount > 0 else 0.0
+
         col1, col2 = st.columns(2)
         col1.metric("총자산", f"{summary.get('total_assets', 0):,.0f}원")
-        col2.metric("예수금", f"{summary.get('cash', 0):,.0f}원")
+        col2.metric("잔고", f"{summary.get('orderable_cash', 0):,.0f}원")
         col3, col4 = st.columns(2)
-        col3.metric("평가금액", f"{summary.get('eval_amount', 0):,.0f}원")
-        col4.metric("평가손익", f"{summary.get('profit_amount', 0):,.0f}원")
-        st.caption(
-            f"계좌 {mask_account_number(summary.get('account_number', ''))} / 주문가능현금 {summary.get('orderable_cash', 0):,.0f}원"
-        )
+        col3.metric("평가손익", f"{profit_amount:,.0f}원")
+        col4.metric("수익률", f"{profit_rate:+.2f}%")
+        st.caption(f"계좌 {mask_account_number(summary.get('account_number', ''))}")
 
+        st.markdown("##### 보유종목")
         if positions.empty:
             st.info("현재 보유 포지션이 없습니다.")
-            return
+        else:
+            st.dataframe(_format_positions_frame(positions), use_container_width=True, hide_index=True)
 
-        display_columns = ["code", "name", "quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"]
-        styled = positions.loc[:, [column for column in display_columns if column in positions.columns]].copy()
-        rename_map = {
-            "code": "종목코드",
-            "name": "종목명",
-            "quantity": "보유수량",
-            "avg_price": "평균단가",
-            "current_price": "현재가",
-            "eval_amount": "평가금액",
-            "profit_amount": "평가손익",
-            "profit_rate": "수익률(%)",
-        }
-        styled = styled.rename(columns=rename_map)
-        for column in ["보유수량", "평균단가", "현재가", "평가금액", "평가손익"]:
-            if column in styled.columns:
-                styled[column] = styled[column].map(lambda value: f"{float(value):,.0f}")
-        if "수익률(%)" in styled.columns:
-            styled["수익률(%)"] = styled["수익률(%)"].map(lambda value: f"{float(value):+.2f}")
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+
+@st.fragment(run_every="10s")
+def render_live_trade_history_panel() -> None:
+    panel = st.empty()
+    with panel.container():
+        st.markdown("#### 실전 거래 내역")
+        _render_open_live_positions()
+
+
+@st.fragment(run_every="60s")
+def render_closed_live_trade_history_panel() -> None:
+    panel = st.empty()
+    with panel.container():
+        _render_closed_live_trades()
+
+
 @st.fragment(run_every="10s")
 def render_emotion_section() -> None:
     try:
@@ -892,9 +992,7 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
         """,
         unsafe_allow_html=True,
     )
-    st.caption(
-        f"실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. 최대 투입금은 {LIVE_ALLOCATION_KRW:,.0f}원입니다."
-    )
+    st.caption("실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. 매수 시 주문가능현금을 최대한 사용합니다.")
 
     runtime = get_live_runtime_state()
     status_name = {
@@ -962,7 +1060,8 @@ def main() -> None:
             render_live_trade_chart(loaded_symbol, pair_symbol, adjustments)
         with history_slot.container():
             st.markdown("---")
-            _render_live_trade_history()
+            render_live_trade_history_panel()
+            render_closed_live_trade_history_panel()
 
 
 if __name__ == "__main__":

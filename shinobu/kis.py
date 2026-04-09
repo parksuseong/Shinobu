@@ -276,7 +276,7 @@ def place_domestic_order(symbol: str, side: str, quantity: int, order_type: str 
 
 
 @st.cache_data(ttl=15, show_spinner=False)
-def fetch_domestic_daily_ccld(start_date: str, end_date: str) -> pd.DataFrame:
+def fetch_domestic_daily_ccld(start_date: str, end_date: str, symbol: str = "", max_pages: int = 3) -> pd.DataFrame:
     cano, acnt_prdt_cd = _account_params()
     tr_id = "TTTC0081R" if _is_real_account() else "VTTC0081R"
     params = {
@@ -286,8 +286,8 @@ def fetch_domestic_daily_ccld(start_date: str, end_date: str) -> pd.DataFrame:
         "INQR_END_DT": end_date,
         "SLL_BUY_DVSN_CD": "00",
         "INQR_DVSN": "00",
-        "PDNO": "",
-        "CCLD_DVSN": "00",
+        "PDNO": symbol.replace(".KS", "").strip(),
+        "CCLD_DVSN": "01",
         "ORD_GNO_BRNO": "",
         "ODNO": "",
         "INQR_DVSN_3": "00",
@@ -298,7 +298,9 @@ def fetch_domestic_daily_ccld(start_date: str, end_date: str) -> pd.DataFrame:
     }
 
     rows: list[dict[str, object]] = []
+    page_count = 0
     while True:
+        page_count += 1
         url = f"{KIS_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld?{urllib.parse.urlencode(params)}"
         response = _request_json("GET", url, headers=_build_headers(tr_id))
         items = response.get("output1", [])
@@ -338,7 +340,7 @@ def fetch_domestic_daily_ccld(start_date: str, end_date: str) -> pd.DataFrame:
 
         fk = str(response.get("ctx_area_fk100") or "").strip()
         nk = str(response.get("ctx_area_nk100") or "").strip()
-        if not fk and not nk:
+        if (not fk and not nk) or page_count >= max(int(max_pages), 1):
             break
         params["CTX_AREA_FK100"] = fk
         params["CTX_AREA_NK100"] = nk

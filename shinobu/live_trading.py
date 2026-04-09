@@ -15,7 +15,6 @@ from shinobu.kis import KisApiError, fetch_domestic_balance, place_domestic_orde
 from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
 
 
-LIVE_ALLOCATION_KRW = 500_000.0
 SIGNAL_TO_TRADE_SYMBOL = {
     "122630.KS": "069500.KS",
     "252670.KS": "114800.KS",
@@ -25,6 +24,18 @@ MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
 LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 8.0
 LIVE_FILL_CONFIRM_POLL_SECONDS = 1.0
+LIVE_ORDER_MAX_RETRIES = 3
+LIVE_ORDER_RETRY_DELAY_SECONDS = 1.5
+RETRYABLE_ORDER_ERROR_PATTERNS = (
+    "getaddrinfo failed",
+    "name or service not known",
+    "network is unreachable",
+    "connection reset",
+    "remote end closed",
+    "temporarily unavailable",
+    "timed out",
+    "timeout",
+)
 LIVE_STATE_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_state.json"
 LIVE_LOG_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_trading.log"
 _LIVE_STATE_LOCK = threading.RLock()
@@ -269,8 +280,7 @@ def _choose_open_candidate(
 def _allocation_quantity(orderable_cash: float, price: float) -> int:
     if price <= 0:
         return 0
-    budget = min(float(orderable_cash), LIVE_ALLOCATION_KRW)
-    return int(budget // price)
+    return int(float(orderable_cash) // price)
 
 
 def _position_quantity_for_symbol(positions: pd.DataFrame, symbol: str) -> int:
@@ -301,11 +311,23 @@ def _format_order_response(order_output: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def _is_retryable_order_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(pattern in message for pattern in RETRYABLE_ORDER_ERROR_PATTERNS)
+
+
 def _confirm_fill_after_order(symbol: str, side: str, baseline_quantity: int, expected_quantity: int) -> tuple[bool, str]:
     deadline = time.monotonic() + LIVE_FILL_CONFIRM_TIMEOUT_SECONDS
     while time.monotonic() <= deadline:
-        fetch_domestic_balance.clear()
-        positions, _ = fetch_domestic_balance()
+        try:
+            fetch_domestic_balance.clear()
+            positions, _ = fetch_domestic_balance()
+        except Exception as exc:
+            if time.monotonic() <= deadline:
+                _append_log("경고", f"{display_name(symbol)} 체결 확인 재시도: {exc}")
+                time.sleep(LIVE_FILL_CONFIRM_POLL_SECONDS)
+                continue
+            return False, f"체결 확인 실패: {exc}"
         current_quantity = _position_quantity_for_symbol(positions, symbol)
         if side == "buy":
             if current_quantity >= baseline_quantity + max(expected_quantity, 1):
@@ -328,14 +350,36 @@ def _submit_live_order(
     candle_time: pd.Timestamp,
     baseline_quantity: int,
 ) -> None:
-    broker_output = place_domestic_order(symbol.replace(".KS", ""), side, quantity)
-    _append_order(state, symbol, side, quantity, expected_price, reason, candle_time)
-    _append_log(
-        "주문",
-        f"{display_name(symbol)} {side.upper()} {quantity}주 시장가 주문 접수 ({_format_order_response(broker_output)})",
-    )
-    filled, fill_message = _confirm_fill_after_order(symbol, side, baseline_quantity, quantity)
-    _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {quantity}주 {fill_message}")
+    last_error: Exception | None = None
+    for attempt in range(1, LIVE_ORDER_MAX_RETRIES + 1):
+        try:
+            broker_output = place_domestic_order(symbol.replace(".KS", ""), side, quantity)
+            _append_order(state, symbol, side, quantity, expected_price, reason, candle_time)
+            if attempt > 1:
+                _append_log("정보", f"{display_name(symbol)} {side.upper()} 주문 재시도 성공 ({attempt}/{LIVE_ORDER_MAX_RETRIES})")
+            _append_log(
+                "주문",
+                f"{display_name(symbol)} {side.upper()} {quantity}주 시장가 주문 접수 ({_format_order_response(broker_output)})",
+            )
+            filled, fill_message = _confirm_fill_after_order(symbol, side, baseline_quantity, quantity)
+            _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {quantity}주 {fill_message}")
+            return
+        except Exception as exc:
+            last_error = exc
+            if attempt < LIVE_ORDER_MAX_RETRIES and _is_retryable_order_error(exc):
+                _append_log(
+                    "경고",
+                    f"{display_name(symbol)} {side.upper()} 주문 재시도 예정 ({attempt}/{LIVE_ORDER_MAX_RETRIES}): {exc}",
+                )
+                time.sleep(LIVE_ORDER_RETRY_DELAY_SECONDS * attempt)
+                continue
+            break
+
+    message = str(last_error) if last_error is not None else "알 수 없는 주문 오류"
+    _set_status(state, "error", message)
+    _append_log("오류", f"{display_name(symbol)} {side.upper()} 주문 실패: {message}")
+    _write_state(state)
+    raise KisApiError(message)
 
 
 def _trade_symbol(signal_symbol: str) -> str:
@@ -372,15 +416,27 @@ def process_live_trading_cycle(
 
         target_time, primary_row, secondary_row = target_rows
         candle_key = target_time.strftime("%Y-%m-%d %H:%M")
-        if state["last_checked_candle"] == candle_key:
+        positions, summary = fetch_domestic_balance()
+        current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+        chosen_open = _choose_open_candidate(primary_symbol, secondary_symbol, primary_row, secondary_row)
+        recheck_same_candle = False
+
+        if current_position is not None:
+            current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
+            active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
+            if bool(active_row.get("buy_close", False)):
+                recheck_same_candle = True
+            if chosen_open is not None and chosen_open[0] != current_signal_symbol:
+                recheck_same_candle = True
+        elif chosen_open is not None:
+            recheck_same_candle = True
+
+        if state["last_checked_candle"] == candle_key and not recheck_same_candle:
             _set_status(state, "idle")
             _write_state(state)
             return
 
         state["last_checked_candle"] = candle_key
-        positions, summary = fetch_domestic_balance()
-        current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
-        chosen_open = _choose_open_candidate(primary_symbol, secondary_symbol, primary_row, secondary_row)
 
         if current_position is not None:
             current_symbol = current_position["symbol"]
@@ -389,6 +445,8 @@ def process_live_trading_cycle(
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
 
             if chosen_open is not None and chosen_open[0] != current_signal_symbol:
+                if recheck_same_candle:
+                    _append_log("정보", f"{candle_key} 기준 반대 신호 청산/스위치 재확인")
                 target_signal_symbol, target_row = chosen_open
                 target_symbol = _trade_symbol(target_signal_symbol)
                 _submit_live_order(
@@ -425,6 +483,8 @@ def process_live_trading_cycle(
                 return
 
             if bool(active_row.get("buy_close", False)):
+                if recheck_same_candle:
+                    _append_log("정보", f"{candle_key} 기준 close 신호 청산 재시도")
                 _submit_live_order(
                     state,
                     current_symbol,
@@ -436,6 +496,27 @@ def process_live_trading_cycle(
                     baseline_quantity=current_quantity,
                 )
                 _set_status(state, "ordered")
+                _write_state(state)
+                return
+
+            if chosen_open is not None and chosen_open[0] == current_signal_symbol:
+                add_price = float(active_row["Close"])
+                add_quantity = _allocation_quantity(summary.get("orderable_cash", 0), add_price)
+                if add_quantity > 0:
+                    _submit_live_order(
+                        state,
+                        current_symbol,
+                        "buy",
+                        add_quantity,
+                        add_price,
+                        "동일 방향 추가매수",
+                        target_time,
+                        baseline_quantity=current_quantity,
+                    )
+                    _set_status(state, "ordered")
+                else:
+                    _set_status(state, "waiting_cash")
+                    _append_log("경고", f"{display_name(current_symbol)} 추가매수 가능 수량이 없습니다.")
                 _write_state(state)
                 return
 
@@ -452,6 +533,8 @@ def process_live_trading_cycle(
 
         target_signal_symbol, target_row = chosen_open
         target_symbol = _trade_symbol(target_signal_symbol)
+        if recheck_same_candle and state.get("last_checked_candle") == candle_key:
+            _append_log("정보", f"{candle_key} 기준 open 신호 진입 재시도")
         buy_price = float(target_row["Close"])
         buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
         if buy_quantity <= 0:
