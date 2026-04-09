@@ -141,29 +141,6 @@ def set_live_enabled(enabled: bool) -> None:
         _write_state(state)
 
 
-def place_manual_test_buy() -> dict[str, Any]:
-    with _LIVE_STATE_LOCK:
-        state = _read_state()
-
-        positions, summary = fetch_domestic_balance()
-        if not positions.empty and "code" in positions.columns:
-            existing = positions[positions["code"].astype(str) == "114800"]
-            if not existing.empty:
-                raise KisApiError("이미 KODEX 인버스를 보유 중입니다.")
-
-        orderable_cash = float(summary.get("orderable_cash", 0) or 0)
-        if orderable_cash <= 0:
-            raise KisApiError("주문가능현금이 부족합니다.")
-
-        result = place_domestic_order("114800", "buy", 1)
-        candle_time = pd.Timestamp.now().floor("5min")
-        _append_order(state, "114800.KS", "buy", 1, 0.0, "수동 테스트 매수", candle_time)
-        _append_log("수동주문", "KODEX 인버스 1주 시장가 매수 요청")
-        _set_status(state, "ordered")
-        _write_state(state)
-        return result
-
-
 def is_live_enabled() -> bool:
     with _LIVE_STATE_LOCK:
         return bool(_read_state()["enabled"])

@@ -24,7 +24,6 @@ from shinobu.live_trading import (
     get_live_started_at,
     init_live_state,
     is_live_enabled,
-    place_manual_test_buy,
     process_live_trading_cycle,
     record_asset_snapshot,
     set_live_enabled,
@@ -527,6 +526,42 @@ def _render_live_trade_history() -> None:
     st.markdown("#### 실전 거래 내역")
     started_at = get_live_started_at()
     try:
+        current_positions, _ = fetch_domestic_balance()
+    except Exception:
+        current_positions = pd.DataFrame()
+
+    trade_codes = {"069500", "114800"}
+    if not current_positions.empty and "code" in current_positions.columns:
+        open_view = current_positions[current_positions["code"].astype(str).isin(trade_codes)].copy()
+    else:
+        open_view = pd.DataFrame()
+
+    st.markdown("##### 미청산 주문 / 보유중")
+    if open_view.empty:
+        st.caption("현재 보유 중인 실전 포지션이 없습니다.")
+    else:
+        open_view = open_view.loc[:, [column for column in ["code", "name", "quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"] if column in open_view.columns]].copy()
+        open_view = open_view.rename(
+            columns={
+                "code": "종목코드",
+                "name": "종목명",
+                "quantity": "보유수량",
+                "avg_price": "평균단가",
+                "current_price": "현재가",
+                "eval_amount": "평가금액",
+                "profit_amount": "평가손익",
+                "profit_rate": "수익률(%)",
+            }
+        )
+        for column in ["보유수량", "평균단가", "현재가", "평가금액", "평가손익"]:
+            if column in open_view.columns:
+                open_view[column] = open_view[column].map(lambda value: f"{float(value):,.0f}")
+        if "수익률(%)" in open_view.columns:
+            open_view["수익률(%)"] = open_view["수익률(%)"].map(lambda value: f"{float(value):+.2f}")
+        st.dataframe(open_view, use_container_width=True, hide_index=True)
+
+    st.markdown("##### 청산 완료 거래")
+    try:
         history = get_live_trade_history(started_at.isoformat() if started_at is not None else "")
     except KisApiError as exc:
         st.caption(f"거래내역 조회 오류: {exc}")
@@ -840,20 +875,6 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
             key="live_stop_button",
             on_click=_handle_live_stop,
         )
-
-    if st.button("인버스 1주 시장가 매수 테스트", use_container_width=True, key="manual_inverse_test_buy_button"):
-        try:
-            result = place_manual_test_buy()
-            st.session_state["manual_test_order_message"] = f"수동 테스트 매수 요청 완료: {result}"
-            st.session_state["manual_test_order_error"] = ""
-        except Exception as exc:
-            st.session_state["manual_test_order_message"] = ""
-            st.session_state["manual_test_order_error"] = str(exc)
-
-    if st.session_state.get("manual_test_order_message"):
-        st.success(st.session_state["manual_test_order_message"])
-    if st.session_state.get("manual_test_order_error"):
-        st.error(st.session_state["manual_test_order_error"])
 
     if pair_symbol is None:
         st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
