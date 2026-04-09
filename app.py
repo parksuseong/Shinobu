@@ -770,7 +770,7 @@ def render_live_account_panel() -> None:
 
         col1, col2 = st.columns(2)
         col1.metric("총자산", f"{summary.get('total_assets', 0):,.0f}원")
-        col2.metric("현재 매수가능 금액", f"{summary.get('orderable_cash', 0):,.0f}원")
+        col2.metric("평가금액", f"{summary.get('eval_amount', 0):,.0f}원")
         col3, col4 = st.columns(2)
         col3.metric("평가손익", f"{profit_amount:,.0f}원")
         col4.metric("수익률", f"{profit_rate:+.2f}%")
