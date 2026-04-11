@@ -27,15 +27,20 @@ from shinobu.live_trading import (
     record_asset_snapshot,
     set_live_enabled,
 )
-from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
-LIVE_TIMEFRAME = "5분봉"
-
+from shinobu.strategy import (
+    DEFAULT_STRATEGY_PROFILE_NAME,
+    StrategyAdjustments,
+    calculate_scr_strategy,
+    get_strategy_label,
+    normalize_strategy_profile_name,
+)
 
 LIVE_TIMEFRAME = "5분봉"
 PRIMARY_SYMBOL = "122630.KS"
 LIVE_CHART_STATE_KEY = "live_chart_state"
 LIVE_FIGURE_STATE_KEY = "live_figure_state"
 MAX_LIVE_CHART_CANDLES = 50
+STRATEGY_PROFILE_STATE_KEY = "strategy_profile"
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.png"
 NEGATIVE_IMAGE_PATH = ASSET_DIR / "shinobu_negative.png"
@@ -43,7 +48,7 @@ POSITIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 NEGATIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_negative.svg"
 
 
-st.set_page_config(page_title="Shinobu Project", page_icon="??", layout="wide")
+st.set_page_config(page_title="Shinobu Project", page_icon="S", layout="wide")
 
 
 display_name = market_data.display_name
@@ -51,10 +56,88 @@ get_pair_symbol = market_data.get_pair_symbol
 load_ui_chart_data = getattr(market_data, "load_ui_chart_data", market_data.load_live_chart_data)
 
 
-def render_header() -> None:
+def render_header(profile_name: str) -> None:
     st.title("Shinobu Project")
-    st.caption("실전 5분봉 자동매매")
+    st.caption("\uC2E4\uC804 5\uBD84\uBD09 \uC790\uB3D9\uB9E4\uB9E4")
+    st.markdown(f"\uD604\uC7AC \uC804\uB7B5: **{get_strategy_label(profile_name)}**")
 
+
+def init_strategy_profile_state() -> None:
+    if STRATEGY_PROFILE_STATE_KEY not in st.session_state:
+        st.session_state[STRATEGY_PROFILE_STATE_KEY] = DEFAULT_STRATEGY_PROFILE_NAME
+
+
+def get_current_strategy_profile() -> str:
+    init_strategy_profile_state()
+    return normalize_strategy_profile_name(st.session_state.get(STRATEGY_PROFILE_STATE_KEY))
+
+
+def _set_strategy_profile(profile_name: str) -> None:
+    st.session_state[STRATEGY_PROFILE_STATE_KEY] = normalize_strategy_profile_name(profile_name)
+
+
+def render_strategy_profile_selector() -> str:
+    current_profile = get_current_strategy_profile()
+    st.markdown("#### 전략 선택")
+    aggressive_help = (
+        "공격적 전략\n"
+        "- Stochastic: 직전 봉이 45 이하였다면 과매도 후보로 봅니다.\n"
+        "- CCI: 직전 봉이 -20 이하였다면 과매도 후보로 봅니다.\n"
+        "- RSI: 직전 봉이 48 이하였다면 과매도 후보로 봅니다.\n"
+        "- 진입: 직전 봉에서 세 지표 중 2개 이상이 과매도였고, 현재 봉에서 세 지표 중 1개 이상이 기준선을 상향 돌파하면 진입합니다.\n"
+        "- 청산: Stochastic 80 이상, CCI 100 이상, RSI 70 이상 중 2개 이상이 과열이면 청산합니다.\n"
+        "- 특징: 진입 문턱이 가장 낮아서 신호가 자주 뜨고, 대신 흔들림 구간의 오신호도 늘 수 있습니다."
+    )
+    original_help = (
+        "중립 전략\n"
+        "- Stochastic: 직전 봉이 20 이하였는지 확인합니다.\n"
+        "- CCI: 직전 봉이 -100 이하였는지 확인합니다.\n"
+        "- RSI: 직전 봉이 30 이하였는지 확인합니다.\n"
+        "- 진입: 직전 봉에서 세 지표가 모두 과매도였고, 현재 봉에서 Stochastic 20 / CCI -100 / RSI 30을 모두 동시에 상향 돌파하면 진입합니다.\n"
+        "- 청산: Stochastic 80 이상, CCI 100 이상, RSI 70 이상 중 2개 이상이 과열이면 청산합니다.\n"
+        "- 특징: 원본 SCR 규칙에 가장 가까운 기본 전략입니다."
+    )
+    defensive_help = (
+        "방어적 전략\n"
+        "- Stochastic: 직전 봉이 15 이하였는지 확인합니다.\n"
+        "- CCI: 직전 봉이 -120 이하였는지 확인합니다.\n"
+        "- RSI: 직전 봉이 28 이하였는지 확인합니다.\n"
+        "- 진입: 직전 봉에서 세 지표가 모두 깊은 과매도였고, 현재 봉에서도 세 지표가 동시에 기준선을 상향 돌파해야 진입합니다.\n"
+        "- 청산: Stochastic 78 이상, CCI 100 이상, RSI 68 이상 중 1개만 과열이어도 청산합니다.\n"
+        "- 특징: 진입은 가장 엄격하고, 청산은 가장 빠른 보수형 전략입니다."
+    )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.button(
+            "공격적",
+            key="strategy_aggressive_button",
+            use_container_width=True,
+            type="primary" if current_profile == "aggressive" else "secondary",
+            on_click=_set_strategy_profile,
+            args=("aggressive",),
+            help=aggressive_help,
+        )
+    with col2:
+        st.button(
+            "중립",
+            key="strategy_original_button",
+            use_container_width=True,
+            type="primary" if current_profile == "original" else "secondary",
+            on_click=_set_strategy_profile,
+            args=("original",),
+            help=original_help,
+        )
+    with col3:
+        st.button(
+            "방어적",
+            key="strategy_defensive_button",
+            use_container_width=True,
+            type="primary" if current_profile == "defensive" else "secondary",
+            on_click=_set_strategy_profile,
+            args=("defensive",),
+            help=defensive_help,
+        )
+    return get_current_strategy_profile()
 
 def init_live_chart_state() -> None:
     if LIVE_CHART_STATE_KEY not in st.session_state:
@@ -69,10 +152,17 @@ def get_cached_raw_frame(symbol: str, timeframe_label: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=5, show_spinner=False)
-def get_cached_strategy_frame(symbol: str, timeframe_label: str, stoch_pct: int, cci_pct: int, rsi_pct: int) -> pd.DataFrame:
+def get_cached_strategy_frame(
+    symbol: str,
+    timeframe_label: str,
+    stoch_pct: int,
+    cci_pct: int,
+    rsi_pct: int,
+    profile_name: str,
+) -> pd.DataFrame:
     adjustments = StrategyAdjustments(stoch_pct=stoch_pct, cci_pct=cci_pct, rsi_pct=rsi_pct)
     raw = get_cached_raw_frame(symbol, timeframe_label)
-    return calculate_scr_strategy(raw, adjustments, timeframe_label)
+    return calculate_scr_strategy(raw, adjustments, timeframe_label, profile_name=profile_name)
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
@@ -110,7 +200,7 @@ def _merge_live_frame(cache_frame: pd.DataFrame, latest_frame: pd.DataFrame) -> 
     return merged.tail(MAX_LIVE_CHART_CANDLES).copy()
 
 
-def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments) -> pd.DataFrame:
+def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
     init_live_chart_state()
     started_at = get_live_started_at()
     state = st.session_state[LIVE_CHART_STATE_KEY]
@@ -126,6 +216,7 @@ def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments) -> pd.Da
         adjustments.stoch_pct,
         adjustments.cci_pct,
         adjustments.rsi_pct,
+        profile_name,
     )
     latest_frame = filter_frame_from_live_start(latest_frame)
 
@@ -141,13 +232,14 @@ def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments) -> pd.Da
     return frames[symbol]
 
 
-def get_preview_chart_frame(symbol: str, adjustments: StrategyAdjustments) -> pd.DataFrame:
+def get_preview_chart_frame(symbol: str, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
     frame = get_cached_strategy_frame(
         symbol,
         LIVE_TIMEFRAME,
         adjustments.stoch_pct,
         adjustments.cci_pct,
         adjustments.rsi_pct,
+        profile_name,
     )
     return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
 
@@ -338,21 +430,30 @@ def _get_thumbnail_base64(image_path: str, max_width: int = 280, max_height: int
 
 
 def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_path: Path, highlighted: bool, tone: str) -> None:
-    border = "#2a2e39"
-    background = "#131722"
-    accent = "#e5e7eb"
-    if tone == "negative":
-        accent = "#e5e7eb"
-    if highlighted:
-        accent = "#3b82f6" if tone == "positive" else "#ef4444"
+    active_border = "#3b82f6" if tone == "positive" else "#ef4444"
+    active_glow = "rgba(59, 130, 246, 0.34)" if tone == "positive" else "rgba(239, 68, 68, 0.34)"
+    active_background = "rgba(25, 55, 110, 0.92)" if tone == "positive" else "rgba(110, 30, 30, 0.92)"
+    inactive_background = "rgba(19, 23, 34, 0.82)"
+    border = active_border if highlighted else "#2a2e39"
+    background = active_background if highlighted else inactive_background
+    accent = active_border if highlighted else "#94a3b8"
+    text_shadow = f"0 0 18px {active_glow}" if highlighted else "none"
+    header_shadow = f"0 0 20px {active_glow}" if highlighted else "none"
+    image_overlay = (
+        "linear-gradient(180deg, rgba(59,130,246,0.28) 0%, rgba(59,130,246,0.08) 100%)"
+        if tone == "positive"
+        else "linear-gradient(180deg, rgba(239,68,68,0.28) 0%, rgba(239,68,68,0.08) 100%)"
+    )
+    image_opacity = "1" if highlighted else "0.42"
+    image_filter = "saturate(1.08) contrast(1.04)" if highlighted else "grayscale(0.22) saturate(0.72) brightness(0.78)"
 
     caption_size = "30px" if highlighted else "22px"
     caption_weight = "900" if highlighted else "700"
     st.markdown(
         f"""
-        <div style="border:2px solid {border};background:{background};border-radius:14px;padding:10px 10px 6px 10px;">
+        <div style="border:2px solid {border};background:{background};border-radius:14px;padding:10px 10px 6px 10px;box-shadow:{header_shadow};transition:all 0.2s ease;">
             <div style="font-size:13px;color:#e5e7eb;font-weight:700;margin-bottom:4px;">{title}</div>
-            <div style="font-size:{caption_size};font-weight:{caption_weight};color:{accent};margin-bottom:10px;text-align:center;">{caption}</div>
+            <div style="font-size:{caption_size};font-weight:{caption_weight};color:{accent};margin-bottom:10px;text-align:center;text-shadow:{text_shadow};letter-spacing:-0.02em;">{caption}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -369,16 +470,28 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
             border-radius: 12px;
             overflow: hidden;
             margin-top: 8px;
-            background: #0f1420;
+            position: relative;
+            background: {background};
+            border: 2px solid {border};
+            box-shadow: {header_shadow};
             display: flex;
             align-items: center;
             justify-content: center;
+        }}
+        #{card_id}::after {{
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: {image_overlay if highlighted else "rgba(15,20,32,0.42)"};
+            pointer-events: none;
         }}
         #{card_id} img, #{card_id} svg {{
             width: 100%;
             height: 100%;
             object-fit: contain;
             display: block;
+            opacity: {image_opacity};
+            filter: {image_filter};
         }}
         </style>
         """,
@@ -739,40 +852,38 @@ def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
         )
 @st.fragment(run_every="10s")
 def render_live_account_panel() -> None:
-    panel = st.empty()
-    with panel.container():
-        st.markdown("#### 실계좌")
-        if not has_kis_account():
-            st.info("한투 계좌 정보가 없어 계좌 화면을 표시할 수 없습니다.")
-            return
+    st.markdown("#### 실계좌")
+    if not has_kis_account():
+        st.info("한투 계좌 정보가 없어 계좌 화면을 표시할 수 없습니다.")
+        return
 
-        try:
-            with st.spinner("계좌 정보를 불러오는 중..."):
-                positions, summary = fetch_domestic_balance()
-        except KisApiError as exc:
-            st.warning(f"계좌 조회 오류: {exc}")
-            return
-        except Exception as exc:
-            st.warning(f"계좌 조회 중 알 수 없는 오류가 발생했습니다: {exc}")
-            return
+    try:
+        with st.spinner("계좌 정보를 불러오는 중..."):
+            positions, summary = fetch_domestic_balance()
+    except KisApiError as exc:
+        st.warning(f"계좌 조회 오류: {exc}")
+        return
+    except Exception as exc:
+        st.warning(f"계좌 조회 중 알 수 없는 오류가 발생했습니다: {exc}")
+        return
 
-        purchase_amount = float(summary.get("purchase_amount", 0) or 0)
-        profit_amount = float(summary.get("profit_amount", 0) or 0)
-        profit_rate = (profit_amount / purchase_amount * 100.0) if purchase_amount > 0 else 0.0
+    purchase_amount = float(summary.get("purchase_amount", 0) or 0)
+    profit_amount = float(summary.get("profit_amount", 0) or 0)
+    profit_rate = (profit_amount / purchase_amount * 100.0) if purchase_amount > 0 else 0.0
 
-        col1, col2 = st.columns(2)
-        col1.metric("총자산", f"{summary.get('total_assets', 0):,.0f}원")
-        col2.metric("평가금액", f"{summary.get('eval_amount', 0):,.0f}원")
-        col3, col4 = st.columns(2)
-        col3.metric("평가손익", f"{profit_amount:,.0f}원")
-        col4.metric("수익률", f"{profit_rate:+.2f}%")
-        st.caption(f"계좌 {mask_account_number(summary.get('account_number', ''))}")
+    col1, col2 = st.columns(2)
+    col1.metric("총자산", f"{summary.get('total_assets', 0):,.0f}원")
+    col2.metric("평가금액", f"{summary.get('eval_amount', 0):,.0f}원")
+    col3, col4 = st.columns(2)
+    col3.metric("평가손익", f"{profit_amount:,.0f}원")
+    col4.metric("수익률", f"{profit_rate:+.2f}%")
+    st.caption(f"계좌 {mask_account_number(summary.get('account_number', ''))}")
 
-        st.markdown("##### 보유종목")
-        if positions.empty:
-            st.info("현재 보유 포지션이 없습니다.")
-        else:
-            st.dataframe(_format_positions_frame(positions), use_container_width=True, hide_index=True)
+    st.markdown("##### 보유종목")
+    if positions.empty:
+        st.info("현재 보유 포지션이 없습니다.")
+    else:
+        st.dataframe(_format_positions_frame(positions), use_container_width=True, hide_index=True)
 
 
 @st.fragment(run_every="10s")
@@ -798,7 +909,7 @@ def render_emotion_section() -> None:
         return
     render_emotion_panel(positions, summary)
 @st.fragment(run_every="15s")
-def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
+def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
     components.html(
         build_live_chart_html(
             server_url=ensure_chart_server(),
@@ -807,6 +918,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             stoch_pct=adjustments.stoch_pct,
             cci_pct=adjustments.cci_pct,
             rsi_pct=adjustments.rsi_pct,
+            profile_name=profile_name,
         ),
         height=640,
     )
@@ -929,12 +1041,12 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     """
     components.html(html, height=580)
 @st.fragment(run_every="5s")
-def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
+def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
     if not is_live_enabled() or pair_symbol is None:
         return
 
     try:
-        process_live_trading_cycle(loaded_symbol, pair_symbol, adjustments)
+        process_live_trading_cycle(loaded_symbol, pair_symbol, adjustments, profile_name=profile_name)
     except KisApiError:
         return
     except Exception:
@@ -1030,16 +1142,19 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
 def main() -> None:
     init_live_state()
     init_live_chart_state()
+    init_strategy_profile_state()
     loaded_symbol = PRIMARY_SYMBOL
     adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
-
-    render_header()
     pair_symbol = get_pair_symbol(loaded_symbol)
+    profile_name = get_current_strategy_profile()
+
+    render_header(profile_name)
+    profile_name = render_strategy_profile_selector()
 
     left, right = st.columns([2.2, 1], vertical_alignment="top")
     with right:
         render_live_account_panel()
-        run_live_engine(loaded_symbol, pair_symbol, adjustments)
+        run_live_engine(loaded_symbol, pair_symbol, adjustments, profile_name)
         render_live_trading_panel(loaded_symbol, pair_symbol, adjustments)
     with left:
         render_live_trade_header(loaded_symbol, pair_symbol)
@@ -1049,7 +1164,7 @@ def main() -> None:
         with emotion_slot.container():
             render_emotion_section()
         with chart_slot.container():
-            render_live_trade_chart(loaded_symbol, pair_symbol, adjustments)
+            render_live_trade_chart(loaded_symbol, pair_symbol, adjustments, profile_name)
         with history_slot.container():
             st.markdown("---")
             render_live_trade_history_panel()

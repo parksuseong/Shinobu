@@ -33,9 +33,9 @@ def _load_raw_frame(symbol: str, started_at: pd.Timestamp | None) -> pd.DataFram
     return filter_frame_from_live_start(frame)
 
 
-def _load_strategy_frame(symbol: str, started_at: pd.Timestamp | None, adjustments: StrategyAdjustments) -> pd.DataFrame:
+def _load_strategy_frame(symbol: str, started_at: pd.Timestamp | None, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
     frame = market_data.load_live_chart_data(symbol, LIVE_TIMEFRAME)
-    frame = calculate_scr_strategy(frame, adjustments, LIVE_TIMEFRAME)
+    frame = calculate_scr_strategy(frame, adjustments, LIVE_TIMEFRAME, profile_name=profile_name)
     if started_at is None:
         return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
     return filter_frame_from_live_start(frame)
@@ -259,14 +259,15 @@ def build_chart_payload(
     symbol: str,
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
+    profile_name: str = "original",
 ) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
     started_at = get_live_started_at()
     pair_name = market_data.display_name(pair_symbol) if pair_symbol else None
 
     if kind == "overlay":
-        frame = _load_strategy_frame(symbol, started_at, current_adjustments)
-        pair_frame = _load_strategy_frame(pair_symbol, started_at, current_adjustments) if pair_symbol else None
+        frame = _load_strategy_frame(symbol, started_at, current_adjustments, profile_name)
+        pair_frame = _load_strategy_frame(pair_symbol, started_at, current_adjustments, profile_name) if pair_symbol else None
         include_scr = True
     else:
         frame = _load_raw_frame(symbol, started_at)

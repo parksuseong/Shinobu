@@ -115,7 +115,7 @@ def issue_access_token() -> str:
     app_key = get_secret("KIS_APP_KEY")
     app_secret = get_secret("KIS_APP_SECRET")
     if not app_key or not app_secret:
-        raise KisApiError("?? API ?? ????.")
+        raise KisApiError("íí¬ API í¤ê° ììµëë¤.")
 
     response = _request_json(
         "POST",
@@ -128,7 +128,7 @@ def issue_access_token() -> str:
     )
     token = response.get("access_token")
     if not token:
-        raise KisApiError(f"?? ?? ?? ??: {response}")
+        raise KisApiError(f"íí¬ í í° ë°ê¸ ì¤í¨: {response}")
 
     expires_in = int(response.get("expires_in") or 86400)
     _write_cached_token(str(token), expires_in)

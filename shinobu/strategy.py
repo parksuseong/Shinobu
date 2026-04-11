@@ -9,13 +9,6 @@ STOCH_PERIOD = 14
 CCI_PERIOD = 20
 RSI_PERIOD = 14
 
-STOCH_OVERSOLD = 35.0
-STOCH_OVERBOUGHT = 80.0
-CCI_OVERSOLD = -50.0
-CCI_OVERBOUGHT = 100.0
-RSI_OVERSOLD = 45.0
-RSI_OVERBOUGHT = 70.0
-
 
 @dataclass(frozen=True)
 class StrategyAdjustments:
@@ -48,20 +41,22 @@ class StrategyProfile:
     label: str
 
 
-DEFAULT_PROFILE = StrategyProfile(
-    stoch_oversold=35.0,
+DEFAULT_STRATEGY_PROFILE_NAME = "original"
+
+ORIGINAL_5M_PROFILE = StrategyProfile(
+    stoch_oversold=20.0,
     stoch_overbought=80.0,
-    cci_oversold=-50.0,
+    cci_oversold=-100.0,
     cci_overbought=100.0,
-    rsi_oversold=45.0,
+    rsi_oversold=30.0,
     rsi_overbought=70.0,
-    open_prev_need=2,
-    open_cross_need=1,
-    close_need=1,
-    label="기본",
+    open_prev_need=3,
+    open_cross_need=3,
+    close_need=2,
+    label="\uC911\uB9BD",
 )
 
-FAST_5M_PROFILE = StrategyProfile(
+AGGRESSIVE_5M_PROFILE = StrategyProfile(
     stoch_oversold=45.0,
     stoch_overbought=80.0,
     cci_oversold=-20.0,
@@ -71,8 +66,29 @@ FAST_5M_PROFILE = StrategyProfile(
     open_prev_need=2,
     open_cross_need=1,
     close_need=2,
-    label="5분봉 약공격",
+    label="\uACF5\uACA9\uC801",
 )
+
+DEFENSIVE_5M_PROFILE = StrategyProfile(
+    stoch_oversold=15.0,
+    stoch_overbought=78.0,
+    cci_oversold=-120.0,
+    cci_overbought=100.0,
+    rsi_oversold=28.0,
+    rsi_overbought=68.0,
+    open_prev_need=3,
+    open_cross_need=3,
+    close_need=1,
+    label="\uBC29\uC5B4\uC801",
+)
+
+DEFAULT_PROFILE = ORIGINAL_5M_PROFILE
+
+STRATEGY_PROFILE_OPTIONS = {
+    "original": ORIGINAL_5M_PROFILE,
+    "aggressive": AGGRESSIVE_5M_PROFILE,
+    "defensive": DEFENSIVE_5M_PROFILE,
+}
 
 
 def _calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
@@ -102,9 +118,18 @@ def _calculate_stochastic_fast(frame: pd.DataFrame, period: int = STOCH_PERIOD) 
     return ((frame["Close"] - lowest_low) / denominator) * 100
 
 
-def _get_strategy_profile(timeframe_label: str | None) -> StrategyProfile:
-    if timeframe_label == "5분봉":
-        return FAST_5M_PROFILE
+def normalize_strategy_profile_name(profile_name: str | None) -> str:
+    candidate = (profile_name or DEFAULT_STRATEGY_PROFILE_NAME).strip().lower()
+    return candidate if candidate in STRATEGY_PROFILE_OPTIONS else DEFAULT_STRATEGY_PROFILE_NAME
+
+
+def get_strategy_label(profile_name: str | None) -> str:
+    return STRATEGY_PROFILE_OPTIONS[normalize_strategy_profile_name(profile_name)].label
+
+
+def _get_strategy_profile(timeframe_label: str | None, profile_name: str | None = None) -> StrategyProfile:
+    if timeframe_label == "5\uBD84\uBD09":
+        return STRATEGY_PROFILE_OPTIONS[normalize_strategy_profile_name(profile_name)]
     return DEFAULT_PROFILE
 
 
@@ -167,6 +192,7 @@ def calculate_scr_strategy(
     frame: pd.DataFrame,
     adjustments: StrategyAdjustments | None = None,
     timeframe_label: str | None = None,
+    profile_name: str | None = None,
 ) -> pd.DataFrame:
     strategy = frame.copy()
     strategy["stoch"] = _calculate_stochastic_fast(strategy)
@@ -180,7 +206,7 @@ def calculate_scr_strategy(
     ) / 3.0
     strategy["scr_line"] = strategy["scr_line"].clip(-1.5, 1.5)
 
-    profile = _get_strategy_profile(timeframe_label)
+    profile = _get_strategy_profile(timeframe_label, profile_name)
     thresholds = _build_thresholds(adjustments, profile)
     raw_buy_open, raw_buy_close = _build_raw_conditions(strategy, thresholds, profile)
 
@@ -221,6 +247,7 @@ def calculate_scr_strategy(
         "open_cross_need": profile.open_cross_need,
         "close_need": profile.close_need,
         "profile_label": profile.label,
+        "profile_name": normalize_strategy_profile_name(profile_name),
     }
     return strategy
 
@@ -234,14 +261,14 @@ def build_signal_logs(frame: pd.DataFrame, timeframe_label: str) -> list[str]:
         price_text = f"{row['Close']:,.0f}"
         logs.append(
             f"{time_text}  {timeframe_label}  {row['signal']}  "
-            f"(가격 {price_text} / SCR {row['scr_line']:.2f})"
+            f"(\uAC00\uACA9 {price_text} / SCR {row['scr_line']:.2f})"
         )
 
-    if not logs:
+    if not logs and not frame.empty:
         latest = frame.iloc[-1]
         logs.append(
-            f"{frame.index[-1].strftime('%Y-%m-%d %H:%M')}  아직 신호 없음  "
-            f"(가격 {latest['Close']:,.0f} / SCR {latest['scr_line']:.2f})"
+            f"{frame.index[-1].strftime('%Y-%m-%d %H:%M')}  \uC544\uC9C1 \uC2E0\uD638 \uC5C6\uC74C  "
+            f"(\uAC00\uACA9 {latest['Close']:,.0f} / SCR {latest['scr_line']:.2f})"
         )
 
     return list(reversed(logs))

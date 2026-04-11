@@ -24,7 +24,7 @@ MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
 LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 8.0
 LIVE_FILL_CONFIRM_POLL_SECONDS = 1.0
-LIVE_ORDER_MAX_RETRIES = 3
+LIVE_ORDER_MAX_RETRIES = 12
 LIVE_ORDER_RETRY_DELAY_SECONDS = 1.5
 RETRYABLE_ORDER_ERROR_PATTERNS = (
     "getaddrinfo failed",
@@ -55,6 +55,10 @@ def _default_state() -> dict[str, Any]:
         "last_asset_snapshot_order_at": "",
         "last_status": "stopped",
         "last_error": "",
+        "pending_target_mode": "none",
+        "pending_target_symbol": "",
+        "pending_target_reason": "",
+        "pending_target_candle": "",
         "orders": [],
         "asset_history": [],
     }
@@ -133,6 +137,23 @@ def _append_order(
     if len(state["orders"]) > MAX_LIVE_ORDERS:
         del state["orders"][:-MAX_LIVE_ORDERS]
     state["last_order_at"] = _now_text()
+
+
+def _set_pending_target(
+    state: dict[str, Any],
+    mode: str,
+    symbol: str = "",
+    reason: str = "",
+    candle_time: pd.Timestamp | None = None,
+) -> None:
+    state["pending_target_mode"] = mode
+    state["pending_target_symbol"] = symbol
+    state["pending_target_reason"] = reason
+    state["pending_target_candle"] = candle_time.strftime("%Y-%m-%d %H:%M") if candle_time is not None else ""
+
+
+def _clear_pending_target(state: dict[str, Any]) -> None:
+    _set_pending_target(state, "none")
 
 
 def set_live_enabled(enabled: bool) -> None:
@@ -223,9 +244,9 @@ def get_asset_history() -> list[dict[str, Any]]:
         return list(state.get("asset_history", []))
 
 
-def _load_strategy(symbol: str, adjustments: StrategyAdjustments) -> pd.DataFrame:
+def _load_strategy(symbol: str, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
     frame = load_live_chart_data(symbol, "5분봉")
-    return calculate_scr_strategy(frame, adjustments, "5분봉")
+    return calculate_scr_strategy(frame, adjustments, "5분봉", profile_name=profile_name)
 
 
 def _get_target_rows(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.Timestamp, pd.Series, pd.Series] | None:
@@ -280,10 +301,7 @@ def _choose_open_candidate(
 def _allocation_quantity(orderable_cash: float, price: float) -> int:
     if price <= 0:
         return 0
-    # Reserve a little room for market-order slippage and brokerage-side checks.
-    safe_cash = max(float(orderable_cash) * 0.97, 0.0)
-    safe_price = float(price) * 1.01
-    return int(safe_cash // safe_price)
+    return int(max(float(orderable_cash), 0.0) // float(price))
 
 
 def _is_cash_exceeded_error(exc: Exception) -> bool:
@@ -360,7 +378,9 @@ def _submit_live_order(
 ) -> None:
     last_error: Exception | None = None
     working_quantity = max(int(quantity), 0)
-    for attempt in range(1, LIVE_ORDER_MAX_RETRIES + 1):
+    attempt = 0
+    while attempt < LIVE_ORDER_MAX_RETRIES:
+        attempt += 1
         try:
             if working_quantity <= 0:
                 raise KisApiError("주문 수량이 0주가 되어 주문을 중단합니다.")
@@ -393,13 +413,17 @@ def _submit_live_order(
         except Exception as exc:
             last_error = exc
             if side == "buy" and _is_cash_exceeded_error(exc) and working_quantity > 1:
-                reduced_quantity = max(working_quantity - max(1, working_quantity // 10), 1)
+                fetch_domestic_balance.clear()
+                _, latest_summary = fetch_domestic_balance()
+                latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
+                recalculated_quantity = int(latest_cash // max(float(expected_price) * 1.001, 1.0))
+                reduced_quantity = recalculated_quantity if 0 < recalculated_quantity < working_quantity else working_quantity - 1
                 _append_log(
                     "경고",
-                    f"{display_name(symbol)} BUY 주문가능금액 초과로 수량을 {working_quantity}주 -> {reduced_quantity}주로 줄여 재시도합니다.",
+                    f"{display_name(symbol)} BUY 주문가능금액 초과로 수량을 {working_quantity}주 -> {reduced_quantity}주로 낮춰 즉시 재시도합니다.",
                 )
                 working_quantity = reduced_quantity
-                time.sleep(LIVE_ORDER_RETRY_DELAY_SECONDS)
+                time.sleep(0.2)
                 continue
             if attempt < LIVE_ORDER_MAX_RETRIES and _is_retryable_order_error(exc):
                 _append_log(
@@ -425,6 +449,7 @@ def process_live_trading_cycle(
     primary_symbol: str,
     secondary_symbol: str,
     adjustments: StrategyAdjustments,
+    profile_name: str = "original",
 ) -> None:
     with _LIVE_STATE_LOCK:
         state = _read_state()
@@ -434,8 +459,8 @@ def process_live_trading_cycle(
         _set_status(state, "checking")
 
         try:
-            primary = _load_strategy(primary_symbol, adjustments)
-            secondary = _load_strategy(secondary_symbol, adjustments)
+            primary = _load_strategy(primary_symbol, adjustments, profile_name)
+            secondary = _load_strategy(secondary_symbol, adjustments, profile_name)
         except Exception as exc:
             _set_status(state, "error", str(exc))
             _append_log("오류", f"실전 데이터 조회 실패: {exc}")
@@ -454,139 +479,168 @@ def process_live_trading_cycle(
         positions, summary = fetch_domestic_balance()
         current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
         chosen_open = _choose_open_candidate(primary_symbol, secondary_symbol, primary_row, secondary_row)
-        recheck_same_candle = False
+        pending_mode = str(state.get("pending_target_mode", "none") or "none")
+        pending_symbol = str(state.get("pending_target_symbol", "") or "")
+        pending_reason = str(state.get("pending_target_reason", "") or "")
+        pending_candle = str(state.get("pending_target_candle", "") or "")
 
         if current_position is not None:
             current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
-            if bool(active_row.get("buy_close", False)):
-                recheck_same_candle = True
             if chosen_open is not None and chosen_open[0] != current_signal_symbol:
-                recheck_same_candle = True
+                _set_pending_target(
+                    state,
+                    "symbol",
+                    _trade_symbol(chosen_open[0]),
+                    "반대 ETF 스위치",
+                    target_time,
+                )
+            elif bool(active_row.get("buy_close", False)):
+                _set_pending_target(state, "cash", reason="지표 과열 청산", candle_time=target_time)
         elif chosen_open is not None:
-            recheck_same_candle = True
+            _set_pending_target(
+                state,
+                "symbol",
+                _trade_symbol(chosen_open[0]),
+                "buy open 진입",
+                target_time,
+            )
 
-        if state["last_checked_candle"] == candle_key and not recheck_same_candle:
+        pending_mode = str(state.get("pending_target_mode", "none") or "none")
+        pending_symbol = str(state.get("pending_target_symbol", "") or "")
+        pending_reason = str(state.get("pending_target_reason", "") or "")
+        pending_candle = str(state.get("pending_target_candle", "") or "")
+
+        should_reconcile = pending_mode != "none"
+        if state["last_checked_candle"] == candle_key and not should_reconcile:
             _set_status(state, "idle")
             _write_state(state)
             return
 
         state["last_checked_candle"] = candle_key
 
-        if current_position is not None:
+        if pending_mode == "cash":
+            if current_position is None:
+                _clear_pending_target(state)
+                _set_status(state, "idle")
+                _append_log("정보", f"{pending_candle or candle_key} 기준 청산 목표 달성")
+                _write_state(state)
+                return
+
             current_symbol = current_position["symbol"]
             current_signal_symbol = current_position.get("signal_symbol", current_symbol)
-            current_quantity = int(current_position["quantity"])
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
+            current_quantity = int(current_position["quantity"])
+            _append_log("정보", f"{pending_candle or candle_key} 기준 미완료 청산 감지, 보정 주문을 재시도합니다.")
+            _submit_live_order(
+                state,
+                current_symbol,
+                "sell",
+                current_quantity,
+                float(active_row["Close"]),
+                pending_reason or "지표 과열 청산",
+                target_time,
+                baseline_quantity=current_quantity,
+            )
+            fetch_domestic_balance.clear()
+            positions, _ = fetch_domestic_balance()
+            if _find_current_pair_position(positions, [primary_symbol, secondary_symbol]) is None:
+                _clear_pending_target(state)
+            _set_status(state, "ordered")
+            _write_state(state)
+            return
 
-            if chosen_open is not None and chosen_open[0] != current_signal_symbol:
-                if recheck_same_candle:
-                    _append_log("정보", f"{candle_key} 기준 반대 신호 청산/스위치 재확인")
-                target_signal_symbol, target_row = chosen_open
-                target_symbol = _trade_symbol(target_signal_symbol)
+        if pending_mode == "symbol" and pending_symbol:
+            if current_position is not None and current_position["symbol"] == pending_symbol:
+                _clear_pending_target(state)
+                if chosen_open is not None and _trade_symbol(chosen_open[0]) == pending_symbol:
+                    active_row = primary_row if chosen_open[0] == primary_symbol else secondary_row
+                    current_quantity = int(current_position["quantity"])
+                    add_price = float(active_row["Close"])
+                    add_quantity = _allocation_quantity(summary.get("orderable_cash", 0), add_price)
+                    if add_quantity > 0:
+                        _submit_live_order(
+                            state,
+                            pending_symbol,
+                            "buy",
+                            add_quantity,
+                            add_price,
+                            "동일 방향 추가매수",
+                            target_time,
+                            baseline_quantity=current_quantity,
+                        )
+                        _set_status(state, "ordered")
+                    else:
+                        _set_status(state, "holding")
+                        _append_log("대기", f"{candle_key} 기준 보유 유지")
+                    _write_state(state)
+                    return
+                _set_status(state, "holding")
+                _append_log("대기", f"{candle_key} 기준 보유 유지")
+                _write_state(state)
+                return
+
+            if current_position is not None and current_position["symbol"] != pending_symbol:
+                current_symbol = current_position["symbol"]
+                current_signal_symbol = current_position.get("signal_symbol", current_symbol)
+                active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
+                current_quantity = int(current_position["quantity"])
+                _append_log("정보", f"{pending_candle or candle_key} 기준 목표 포지션 불일치 감지, 기존 보유분을 먼저 청산합니다.")
                 _submit_live_order(
                     state,
                     current_symbol,
                     "sell",
                     current_quantity,
                     float(active_row["Close"]),
-                    "반대 ETF 스위치 청산",
+                    pending_reason or "목표 포지션 보정 청산",
                     target_time,
                     baseline_quantity=current_quantity,
                 )
-
                 fetch_domestic_balance.clear()
-                _, summary = fetch_domestic_balance()
-                buy_price = float(target_row["Close"])
-                buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
-                if buy_quantity > 0:
-                    _submit_live_order(
-                        state,
-                        target_symbol,
-                        "buy",
-                        buy_quantity,
-                        buy_price,
-                        "반대 ETF 진입",
-                        target_time,
-                        baseline_quantity=0,
-                    )
-                    _set_status(state, "ordered")
-                else:
-                    _set_status(state, "waiting_cash")
-                    _append_log("경고", f"{display_name(target_symbol)} 매수 가능 수량이 없습니다.")
+                positions, summary = fetch_domestic_balance()
+                current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+                if current_position is not None:
+                    _set_status(state, "error", "기존 포지션 청산 후에도 잔고가 남아 있어 스위칭을 보류합니다.")
+                    _append_log("경고", "청산 후에도 기존 포지션이 남아 있어 다음 주기에 다시 확인합니다.")
+                    _write_state(state)
+                    return
+
+            target_signal_symbol = TRADE_TO_SIGNAL_SYMBOL.get(pending_symbol, pending_symbol)
+            target_row = primary_row if target_signal_symbol == primary_symbol else secondary_row
+            buy_price = float(target_row["Close"])
+            buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
+            if buy_quantity <= 0:
+                _set_status(state, "waiting_cash")
+                _append_log("경고", f"{display_name(pending_symbol)} 매수 가능 수량이 없습니다. 다음 주기에 다시 확인합니다.")
                 _write_state(state)
                 return
 
-            if bool(active_row.get("buy_close", False)):
-                if recheck_same_candle:
-                    _append_log("정보", f"{candle_key} 기준 close 신호 청산 재시도")
-                _submit_live_order(
-                    state,
-                    current_symbol,
-                    "sell",
-                    current_quantity,
-                    float(active_row["Close"]),
-                    "지표 과열 청산",
-                    target_time,
-                    baseline_quantity=current_quantity,
-                )
-                _set_status(state, "ordered")
-                _write_state(state)
-                return
+            _append_log("정보", f"{pending_candle or candle_key} 기준 목표 포지션 미달성 감지, 진입 주문을 재시도합니다.")
+            _submit_live_order(
+                state,
+                pending_symbol,
+                "buy",
+                buy_quantity,
+                buy_price,
+                pending_reason or "buy open 진입",
+                target_time,
+                baseline_quantity=0,
+            )
+            fetch_domestic_balance.clear()
+            positions, _ = fetch_domestic_balance()
+            current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+            if current_position is not None and current_position["symbol"] == pending_symbol:
+                _clear_pending_target(state)
+            _set_status(state, "ordered")
+            _write_state(state)
+            return
 
-            if chosen_open is not None and chosen_open[0] == current_signal_symbol:
-                add_price = float(active_row["Close"])
-                add_quantity = _allocation_quantity(summary.get("orderable_cash", 0), add_price)
-                if add_quantity > 0:
-                    _submit_live_order(
-                        state,
-                        current_symbol,
-                        "buy",
-                        add_quantity,
-                        add_price,
-                        "동일 방향 추가매수",
-                        target_time,
-                        baseline_quantity=current_quantity,
-                    )
-                    _set_status(state, "ordered")
-                else:
-                    _set_status(state, "waiting_cash")
-                    _append_log("경고", f"{display_name(current_symbol)} 추가매수 가능 수량이 없습니다.")
-                _write_state(state)
-                return
-
+        if current_position is not None:
             _set_status(state, "holding")
             _append_log("대기", f"{candle_key} 기준 보유 유지")
             _write_state(state)
             return
 
-        if chosen_open is None:
-            _set_status(state, "idle")
-            _append_log("대기", f"{candle_key} 기준 진입 신호 없음")
-            _write_state(state)
-            return
-
-        target_signal_symbol, target_row = chosen_open
-        target_symbol = _trade_symbol(target_signal_symbol)
-        if recheck_same_candle and state.get("last_checked_candle") == candle_key:
-            _append_log("정보", f"{candle_key} 기준 open 신호 진입 재시도")
-        buy_price = float(target_row["Close"])
-        buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
-        if buy_quantity <= 0:
-            _set_status(state, "waiting_cash")
-            _append_log("경고", f"{display_name(target_symbol)} 매수 가능 수량이 없습니다.")
-            _write_state(state)
-            return
-
-        _submit_live_order(
-            state,
-            target_symbol,
-            "buy",
-            buy_quantity,
-            buy_price,
-            "buy open 진입",
-            target_time,
-            baseline_quantity=0,
-        )
-        _set_status(state, "ordered")
+        _set_status(state, "idle")
+        _append_log("대기", f"{candle_key} 기준 진입 신호 없음")
         _write_state(state)

@@ -297,8 +297,8 @@ def _load_live_chart_data_impl(symbol: str, timeframe_label: str) -> pd.DataFram
                 load_intraday_recent(short_code, lookback_minutes=LIVE_RECENT_WINDOW_MINUTES),
             )
             return _resample_domestic_intraday(minute_frame, INTRADAY_RESAMPLE_MINUTES[timeframe_label])
-        if timeframe_label in {"?쇰큺", "二쇰큺", "?붾큺"}:
-            period_code = {"?쇰큺": "D", "二쇰큺": "W", "?붾큺": "M"}[timeframe_label]
+        if timeframe_label in {"ì¼ë´", "ì£¼ë´", "ìë´"}:
+            period_code = {"ì¼ë´": "D", "ì£¼ë´": "W", "ìë´": "M"}[timeframe_label]
             return fetch_domestic_daily(short_code, period_code)
         raise KisApiError("unsupported live timeframe")
 

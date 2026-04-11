@@ -11,6 +11,7 @@ def build_live_chart_html(
     stoch_pct: int,
     cci_pct: int,
     rsi_pct: int,
+    profile_name: str,
 ) -> str:
     pair_query = pair_symbol or ""
     parsed_server = urlparse(server_url)
@@ -28,7 +29,7 @@ const hostWindow = window.parent && window.parent.location ? window.parent : win
 const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
 const endpoint =
   `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
-  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}`;
+  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&profile_name={profile_name}`;
 
 let initializedMain = false;
 let initializedIndicator = false;
@@ -180,8 +181,8 @@ function buildMainFigure(payload) {{
       mainMarkerTrace(markers[1], "#ef4444", "circle"),
       mainMarkerTrace(markers[2], "#3b82f6", "star"),
       mainMarkerTrace(markers[3], "#ef4444", "star"),
-      mainMarkerTrace(markers[4], "#22c55e", "diamond"),
-      mainMarkerTrace(markers[5], "#f59e0b", "diamond")
+      mainMarkerTrace(markers[4], "#22c55e", "heart"),
+      mainMarkerTrace(markers[5], "#f59e0b", "heart")
     ],
     layout: {{
       paper_bgcolor: "#131722",
@@ -235,8 +236,8 @@ function buildIndicatorFigure(payload) {{
       indicatorMarkerTrace(markers[1], "#ef4444", "circle"),
       indicatorMarkerTrace(markers[2], "#3b82f6", "star"),
       indicatorMarkerTrace(markers[3], "#ef4444", "star"),
-      indicatorMarkerTrace(markers[4], "#22c55e", "diamond"),
-      indicatorMarkerTrace(markers[5], "#f59e0b", "diamond"),
+      indicatorMarkerTrace(markers[4], "#22c55e", "heart"),
+      indicatorMarkerTrace(markers[5], "#f59e0b", "heart"),
       indicatorMarkerTrace(markers[6], "#3b82f6", "circle"),
       indicatorMarkerTrace(markers[7], "#ef4444", "circle"),
       indicatorMarkerTrace(markers[8], "#3b82f6", "star"),
