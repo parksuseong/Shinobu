@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
 
 
@@ -16,15 +17,18 @@ def build_live_chart_html(
     pair_query = pair_symbol or ""
     parsed_server = urlparse(server_url)
     chart_port = parsed_server.port or 8765
+    root_suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", f"{symbol}-{pair_query or 'none'}-{profile_name}-{stoch_pct}-{cci_pct}-{rsi_pct}")
+    main_root_id = f"main-chart-root-{root_suffix}"
+    indicator_root_id = f"indicator-chart-root-{root_suffix}"
     return f"""
 <div style="display:flex;flex-direction:column;gap:10px;">
-  <div id="main-chart-root" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
-  <div id="indicator-chart-root" style="width:100%;height:220px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+  <div id="{main_root_id}" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+  <div id="{indicator_root_id}" style="width:100%;height:220px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
 </div>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>
-const mainRoot = document.getElementById("main-chart-root");
-const indicatorRoot = document.getElementById("indicator-chart-root");
+const mainRoot = document.getElementById("{main_root_id}");
+const indicatorRoot = document.getElementById("{indicator_root_id}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
 const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
 const endpoint =

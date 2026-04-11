@@ -10,7 +10,7 @@ from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
 
 
 LIVE_TIMEFRAME = "5분봉"
-MAX_LIVE_CHART_CANDLES = 50
+MAX_LIVE_CHART_CANDLES = 100
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
