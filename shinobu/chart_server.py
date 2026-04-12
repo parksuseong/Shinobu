@@ -35,8 +35,8 @@ class _ChartHandler(BaseHTTPRequestHandler):
             cci_pct=int(query.get("cci_pct", ["0"])[0]),
             rsi_pct=int(query.get("rsi_pct", ["0"])[0]),
         )
-        profile_name = query.get("profile_name", ["original"])[0]
-        payload = build_chart_payload(kind, symbol, pair_symbol, adjustments, profile_name=profile_name)
+        strategy_name = query.get("strategy_name", query.get("profile_name", ["src_v2_adx"]))[0]
+        payload = build_chart_payload(kind, symbol, pair_symbol, adjustments, strategy_name=strategy_name)
         self._send_json(payload)
 
     def log_message(self, format: str, *args) -> None:

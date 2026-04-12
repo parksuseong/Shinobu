@@ -6,11 +6,13 @@ import pandas as pd
 
 from shinobu import data as market_data
 from shinobu.live_trading import get_live_orders, get_live_started_at
-from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
+from shinobu.strategy import StrategyAdjustments, calculate_strategy
+from shinobu.strategy_cache import calculate_strategy_cached
 
 
 LIVE_TIMEFRAME = "5분봉"
-MAX_LIVE_CHART_CANDLES = 100
+MAX_LIVE_CHART_CANDLES = 1200
+MAX_LIVE_CHART_BUSINESS_DAYS = 2
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
@@ -18,27 +20,42 @@ def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
     if started_at is None:
         return frame.iloc[0:0].copy()
 
-    before = frame.loc[frame.index < started_at].tail(MAX_LIVE_CHART_CANDLES)
+    before = frame.loc[frame.index < started_at]
     after = frame.loc[frame.index >= started_at]
     combined = pd.concat([before, after]).sort_index()
     if combined.empty and not frame.empty:
-        return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
-    return combined.tail(MAX_LIVE_CHART_CANDLES).copy()
+        return limit_frame_to_recent_business_days(frame)
+    return limit_frame_to_recent_business_days(combined)
+
+
+def limit_frame_to_recent_business_days(frame: pd.DataFrame, max_days: int = MAX_LIVE_CHART_BUSINESS_DAYS) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    trade_days = pd.Index(pd.to_datetime(frame.index).normalize().unique()).sort_values()
+    recent_days = trade_days[-max_days:]
+    limited = frame.loc[frame.index.normalize().isin(recent_days)].copy()
+    return limited.tail(MAX_LIVE_CHART_CANDLES).copy()
 
 
 def _load_raw_frame(symbol: str, started_at: pd.Timestamp | None) -> pd.DataFrame:
-    frame = market_data.load_live_chart_data(symbol, LIVE_TIMEFRAME)
+    frame = market_data.load_live_chart_data_for_strategy(symbol, LIVE_TIMEFRAME, "src_v2_adx")
     if started_at is None:
-        return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
-    return filter_frame_from_live_start(frame)
+        return limit_frame_to_recent_business_days(frame)
+    return limit_frame_to_recent_business_days(filter_frame_from_live_start(frame))
 
 
-def _load_strategy_frame(symbol: str, started_at: pd.Timestamp | None, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
-    frame = market_data.load_live_chart_data(symbol, LIVE_TIMEFRAME)
-    frame = calculate_scr_strategy(frame, adjustments, LIVE_TIMEFRAME, profile_name=profile_name)
+def _load_strategy_frame(symbol: str, started_at: pd.Timestamp | None, adjustments: StrategyAdjustments, strategy_name: str) -> pd.DataFrame:
+    frame = market_data.load_live_chart_data_for_strategy(symbol, LIVE_TIMEFRAME, strategy_name)
+    frame = calculate_strategy_cached(
+        frame,
+        adjustments,
+        LIVE_TIMEFRAME,
+        strategy_name=strategy_name,
+        symbol=symbol,
+    )
     if started_at is None:
-        return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
-    return filter_frame_from_live_start(frame)
+        return limit_frame_to_recent_business_days(frame)
+    return limit_frame_to_recent_business_days(filter_frame_from_live_start(frame))
 
 
 def _pair_scr(frame: pd.DataFrame, pair_frame: pd.DataFrame | None) -> list[float | None]:
@@ -174,6 +191,13 @@ def _append_indicator_marker(
     )
 
 
+def _marker_label(prefix: str, instrument_name: str, signal_row: pd.Series) -> str:
+    detail = str(signal_row.get("signal_detail", "") or "").strip()
+    if detail:
+        return f"{prefix} - {instrument_name} ({detail})"
+    return f"{prefix} - {instrument_name}"
+
+
 def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol: str | None, pair_frame: pd.DataFrame | None) -> dict[str, list[dict[str, Any]]]:
     empty = {
         "primaryOpenMain": [],
@@ -211,26 +235,26 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
                 current_position = pair_symbol
 
             if current_position == symbol:
-                label = f"전략 open - {primary_name}"
+                label = _marker_label("전략 open", primary_name, primary_row)
                 _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, label, "open")
                 _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, label, "buy_open")
             elif current_position == pair_symbol and pair_row is not None:
-                label = f"전략 open - {pair_name}"
+                label = _marker_label("전략 open", pair_name, pair_row)
                 _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, label, "open")
                 _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, label, "buy_open")
             continue
 
         if current_position == symbol:
             if pair_open and pair_row is not None:
-                close_label = f"전략 close - {primary_name}"
-                open_label = f"전략 open - {pair_name}"
+                close_label = _marker_label("전략 close", primary_name, primary_row)
+                open_label = _marker_label("전략 open", pair_name, pair_row)
                 _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, close_label, "buy_close")
                 _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, open_label, "open")
                 _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, open_label, "buy_open")
                 current_position = pair_symbol
             elif primary_close:
-                close_label = f"전략 close - {primary_name}"
+                close_label = _marker_label("전략 close", primary_name, primary_row)
                 _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, close_label, "buy_close")
                 current_position = None
@@ -238,15 +262,15 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
 
         if current_position == pair_symbol and pair_row is not None:
             if primary_open:
-                close_label = f"전략 close - {pair_name}"
-                open_label = f"전략 open - {primary_name}"
+                close_label = _marker_label("전략 close", pair_name, pair_row)
+                open_label = _marker_label("전략 open", primary_name, primary_row)
                 _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, close_label, "buy_close")
                 _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, open_label, "open")
                 _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, open_label, "buy_open")
                 current_position = symbol
             elif pair_close:
-                close_label = f"전략 close - {pair_name}"
+                close_label = _marker_label("전략 close", pair_name, pair_row)
                 _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, close_label, "buy_close")
                 current_position = None
@@ -259,15 +283,15 @@ def build_chart_payload(
     symbol: str,
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
-    profile_name: str = "original",
+    strategy_name: str = "src_v2_adx",
 ) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
     started_at = get_live_started_at()
     pair_name = market_data.display_name(pair_symbol) if pair_symbol else None
 
     if kind == "overlay":
-        frame = _load_strategy_frame(symbol, started_at, current_adjustments, profile_name)
-        pair_frame = _load_strategy_frame(pair_symbol, started_at, current_adjustments, profile_name) if pair_symbol else None
+        frame = _load_strategy_frame(symbol, started_at, current_adjustments, strategy_name)
+        pair_frame = _load_strategy_frame(pair_symbol, started_at, current_adjustments, strategy_name) if pair_symbol else None
         include_scr = True
     else:
         frame = _load_raw_frame(symbol, started_at)
@@ -296,6 +320,14 @@ def build_chart_payload(
         "candles": candles,
         "tickText": tick_text,
         "orders": _build_order_markers(frame, [value for value in [symbol, pair_symbol] if value is not None]),
+        "debug": {
+            "max_candles": MAX_LIVE_CHART_CANDLES,
+            "business_days": MAX_LIVE_CHART_BUSINESS_DAYS,
+            "frame_rows": len(frame),
+            "first_time": frame.index.min().isoformat() if not frame.empty else "",
+            "last_time": frame.index.max().isoformat() if not frame.empty else "",
+            "trade_days": [day.strftime("%Y-%m-%d") for day in pd.Index(frame.index.normalize().unique()).sort_values()],
+        },
     }
 
     if include_scr:

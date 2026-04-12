@@ -4,271 +4,154 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from shinobu.strategy_src import SrcAdjustments, calculate_src_strategy
+from shinobu.strategy_src_v2 import calculate_src_v2_strategy
+from shinobu.strategy_src_v2_adx import calculate_src_v2_adx_strategy
 
-STOCH_PERIOD = 14
-CCI_PERIOD = 20
-RSI_PERIOD = 14
 
-
-@dataclass(frozen=True)
-class StrategyAdjustments:
-    stoch_pct: int = 0
-    cci_pct: int = 0
-    rsi_pct: int = 0
+StrategyAdjustments = SrcAdjustments
 
 
 @dataclass(frozen=True)
-class StrategyThresholds:
-    stoch_oversold: float
-    stoch_overbought: float
-    cci_oversold: float
-    cci_overbought: float
-    rsi_oversold: float
-    rsi_overbought: float
-
-
-@dataclass(frozen=True)
-class StrategyProfile:
-    stoch_oversold: float
-    stoch_overbought: float
-    cci_oversold: float
-    cci_overbought: float
-    rsi_oversold: float
-    rsi_overbought: float
-    open_prev_need: int
-    open_cross_need: int
-    close_need: int
+class StrategyOption:
+    key: str
     label: str
+    title: str
+    help_text: str
 
 
-DEFAULT_STRATEGY_PROFILE_NAME = "original"
+DEFAULT_STRATEGY_NAME = "src_v2_adx"
+DEFAULT_STRATEGY_HISTORY_BUSINESS_DAYS = 5
 
-ORIGINAL_5M_PROFILE = StrategyProfile(
-    stoch_oversold=20.0,
-    stoch_overbought=80.0,
-    cci_oversold=-100.0,
-    cci_overbought=100.0,
-    rsi_oversold=30.0,
-    rsi_overbought=70.0,
-    open_prev_need=3,
-    open_cross_need=3,
-    close_need=2,
-    label="\uC911\uB9BD",
-)
-
-AGGRESSIVE_5M_PROFILE = StrategyProfile(
-    stoch_oversold=45.0,
-    stoch_overbought=80.0,
-    cci_oversold=-20.0,
-    cci_overbought=100.0,
-    rsi_oversold=48.0,
-    rsi_overbought=70.0,
-    open_prev_need=2,
-    open_cross_need=1,
-    close_need=2,
-    label="\uACF5\uACA9\uC801",
-)
-
-DEFENSIVE_5M_PROFILE = StrategyProfile(
-    stoch_oversold=15.0,
-    stoch_overbought=78.0,
-    cci_oversold=-120.0,
-    cci_overbought=100.0,
-    rsi_oversold=28.0,
-    rsi_overbought=68.0,
-    open_prev_need=3,
-    open_cross_need=3,
-    close_need=1,
-    label="\uBC29\uC5B4\uC801",
-)
-
-DEFAULT_PROFILE = ORIGINAL_5M_PROFILE
-
-STRATEGY_PROFILE_OPTIONS = {
-    "original": ORIGINAL_5M_PROFILE,
-    "aggressive": AGGRESSIVE_5M_PROFILE,
-    "defensive": DEFENSIVE_5M_PROFILE,
+STRATEGY_HISTORY_BUSINESS_DAYS = {
+    "src_active": 5,
+    "src_normal": 5,
+    "src_v2_normal": 5,
+    "src_v2_adx": 25,
 }
 
 
-def _calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
-    delta = close.diff()
-    gain = delta.clip(lower=0.0)
-    loss = -delta.clip(upper=0.0)
-    avg_gain = gain.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    rs = avg_gain / avg_loss.replace(0, pd.NA)
-    return 100 - (100 / (1 + rs))
+STRATEGY_OPTIONS = {
+    "src_active": StrategyOption(
+        key="src_active",
+        label="SRC Active",
+        title="Active",
+        help_text=(
+            "SRC Active\n"
+            "- 지표 기간: Stochastic 14 / CCI 20 / RSI 14\n"
+            "- 과매도: Stochastic 38 이하, CCI -60 이하, RSI 42 이하\n"
+            "- 과열: Stochastic 78 이상, CCI 96 이상, RSI 66 이상\n"
+            "- 진입: 직전 봉에서 2개 이상 과매도, 현재 봉에서 1개 이상 상향 돌파\n"
+            "- 청산: 2개 이상 과열이면 청산\n"
+            "- 특징: 이전 Active보다 매매를 조금 줄이면서도 Normal보다 훨씬 빠르게 반응합니다."
+        ),
+    ),
+    "src_normal": StrategyOption(
+        key="src_normal",
+        label="SRC Normal",
+        title="Normal",
+        help_text=(
+            "SRC Normal\n"
+            "- 지표 기간: Stochastic 14 / CCI 20 / RSI 14\n"
+            "- 과매도: Stochastic 20 이하, CCI -100 이하, RSI 30 이하\n"
+            "- 과열: Stochastic 80 이상, CCI 100 이상, RSI 70 이상\n"
+            "- 진입: 직전 봉에서 3개 모두 과매도, 현재 봉에서 3개 모두 상향 돌파\n"
+            "- 청산: 3개가 모두 과열이어야 청산합니다.\n"
+            "- 특징: Active보다 진입과 청산 모두 더 보수적이라 포지션을 더 길게 가져갑니다."
+        ),
+    ),
+    "src_v2_normal": StrategyOption(
+        key="src_v2_normal",
+        label="SRC V2 Normal",
+        title="V2 Normal",
+        help_text=(
+            "SRC V2 Normal\n"
+            "- 지표 기간: Stochastic 14 / CCI 20 / RSI 14\n"
+            "- 과매도: Stochastic 10 이하, CCI -130 이하, RSI 44 이하\n"
+            "- 과열: Stochastic 80 이상, CCI 150 이상, RSI 75 이상\n"
+            "- 진입: 직전 봉에서 3개 모두 과매도, 현재 봉에서 2개 이상 상향 돌파\n"
+            "- 청산: 3개 모두 과열이면 청산\n"
+            "- 추가: 손절 -3.0%, 트레일링 스탑 -5.0%\n"
+            "- 특징: 손실은 더 짧게 제한하고, 이익 구간은 더 길게 보유하도록 조정했습니다."
+        ),
+    ),
+    "src_v2_adx": StrategyOption(
+        key="src_v2_adx",
+        label="SRC V2 ADX",
+        title="V2 ADX",
+        help_text=(
+            "SRC V2 ADX\n"
+            "- 지표 기간: Stochastic 14 / CCI 20 / RSI 14\n"
+            "- 기본 진입/청산: SRC V2 Normal과 동일\n"
+            "- 일봉 ADX 25 미만: 기존 SRC V2 Normal 진입 조건 사용\n"
+            "- 일봉 ADX 25 이상: 역풍 구간으로 보고 진입을 더 엄격하게 제한\n"
+            "- 엄격 진입: Stochastic 8 이하, CCI -150 이하, RSI 42 이하 + 3개 동시 상향 돌파 + SCR 0.20 이상\n"
+            "- 청산: 3개 모두 과열, 손절 -3.0%, 트레일링 스탑 -5.0%\n"
+            "- 특징: 강한 추세장에서 애매한 반등 진입을 줄여 손절 누적을 완화합니다."
+        ),
+    ),
+}
 
 
-def _calculate_cci(frame: pd.DataFrame, period: int = CCI_PERIOD) -> pd.Series:
-    typical_price = (frame["High"] + frame["Low"] + frame["Close"]) / 3
-    sma = typical_price.rolling(period).mean()
-    mean_deviation = typical_price.rolling(period).apply(
-        lambda values: (abs(values - values.mean())).mean(),
-        raw=False,
-    )
-    return (typical_price - sma) / (0.015 * mean_deviation.replace(0, pd.NA))
+_STRATEGY_ALIASES = {
+    "active": "src_active",
+    "normal": "src_normal",
+    "src active": "src_active",
+    "src normal": "src_normal",
+    "src_v2": "src_v2_normal",
+    "src v2": "src_v2_normal",
+    "v2": "src_v2_normal",
+    "src_v2_normal": "src_v2_normal",
+    "src v2 normal": "src_v2_normal",
+    "src_v2_adx": "src_v2_adx",
+    "src v2 adx": "src_v2_adx",
+}
 
 
-def _calculate_stochastic_fast(frame: pd.DataFrame, period: int = STOCH_PERIOD) -> pd.Series:
-    lowest_low = frame["Low"].rolling(period).min()
-    highest_high = frame["High"].rolling(period).max()
-    denominator = (highest_high - lowest_low).replace(0, pd.NA)
-    return ((frame["Close"] - lowest_low) / denominator) * 100
+def normalize_strategy_name(strategy_name: str | None) -> str:
+    candidate = (strategy_name or DEFAULT_STRATEGY_NAME).strip().lower()
+    candidate = _STRATEGY_ALIASES.get(candidate, candidate)
+    return candidate if candidate in STRATEGY_OPTIONS else DEFAULT_STRATEGY_NAME
 
 
-def normalize_strategy_profile_name(profile_name: str | None) -> str:
-    candidate = (profile_name or DEFAULT_STRATEGY_PROFILE_NAME).strip().lower()
-    return candidate if candidate in STRATEGY_PROFILE_OPTIONS else DEFAULT_STRATEGY_PROFILE_NAME
+def get_strategy_label(strategy_name: str | None) -> str:
+    return STRATEGY_OPTIONS[normalize_strategy_name(strategy_name)].label
 
 
-def get_strategy_label(profile_name: str | None) -> str:
-    return STRATEGY_PROFILE_OPTIONS[normalize_strategy_profile_name(profile_name)].label
+def get_strategy_title(strategy_name: str | None) -> str:
+    return STRATEGY_OPTIONS[normalize_strategy_name(strategy_name)].title
 
 
-def _get_strategy_profile(timeframe_label: str | None, profile_name: str | None = None) -> StrategyProfile:
-    if timeframe_label == "5\uBD84\uBD09":
-        return STRATEGY_PROFILE_OPTIONS[normalize_strategy_profile_name(profile_name)]
-    return DEFAULT_PROFILE
+def get_strategy_help_text(strategy_name: str | None) -> str:
+    return STRATEGY_OPTIONS[normalize_strategy_name(strategy_name)].help_text
 
 
-def _build_thresholds(
-    adjustments: StrategyAdjustments | None,
-    profile: StrategyProfile,
-) -> StrategyThresholds:
-    current = adjustments or StrategyAdjustments()
-    stoch_oversold = profile.stoch_oversold * (1 + (current.stoch_pct / 100))
-    stoch_overbought = profile.stoch_overbought * (1 - (current.stoch_pct / 100))
-    cci_oversold = profile.cci_oversold * (1 - (current.cci_pct / 100))
-    cci_overbought = profile.cci_overbought * (1 - (current.cci_pct / 100))
-    rsi_oversold = profile.rsi_oversold * (1 + (current.rsi_pct / 100))
-    rsi_overbought = profile.rsi_overbought * (1 - (current.rsi_pct / 100))
-
-    return StrategyThresholds(
-        stoch_oversold=stoch_oversold,
-        stoch_overbought=stoch_overbought,
-        cci_oversold=cci_oversold,
-        cci_overbought=cci_overbought,
-        rsi_oversold=rsi_oversold,
-        rsi_overbought=rsi_overbought,
-    )
+def list_strategy_options() -> list[StrategyOption]:
+    return [
+        STRATEGY_OPTIONS["src_active"],
+        STRATEGY_OPTIONS["src_normal"],
+        STRATEGY_OPTIONS["src_v2_normal"],
+        STRATEGY_OPTIONS["src_v2_adx"],
+    ]
 
 
-def _build_raw_conditions(
-    strategy: pd.DataFrame,
-    thresholds: StrategyThresholds,
-    profile: StrategyProfile,
-) -> tuple[pd.Series, pd.Series]:
-    strategy["oversold_count"] = (
-        (strategy["stoch"] <= thresholds.stoch_oversold).astype(int)
-        + (strategy["cci"] <= thresholds.cci_oversold).astype(int)
-        + (strategy["rsi"] <= thresholds.rsi_oversold).astype(int)
-    )
-    strategy["overbought_count"] = (
-        (strategy["stoch"] >= thresholds.stoch_overbought).astype(int)
-        + (strategy["cci"] >= thresholds.cci_overbought).astype(int)
-        + (strategy["rsi"] >= thresholds.rsi_overbought).astype(int)
-    )
-
-    previous = strategy.shift(1)
-    cross_up_count = (
-        ((previous["stoch"] <= thresholds.stoch_oversold) & (strategy["stoch"] > thresholds.stoch_oversold)).astype(int)
-        + ((previous["cci"] <= thresholds.cci_oversold) & (strategy["cci"] > thresholds.cci_oversold)).astype(int)
-        + ((previous["rsi"] <= thresholds.rsi_oversold) & (strategy["rsi"] > thresholds.rsi_oversold)).astype(int)
-    )
-    raw_buy_open = (
-        (previous["oversold_count"].fillna(0).astype(int) >= profile.open_prev_need)
-        & (cross_up_count >= profile.open_cross_need)
-    )
-    raw_buy_close = (
-        (previous["overbought_count"].fillna(0).astype(int) < profile.close_need)
-        & (strategy["overbought_count"] >= profile.close_need)
-    )
-    return raw_buy_open.fillna(False), raw_buy_close.fillna(False)
+def get_strategy_history_business_days(strategy_name: str | None) -> int:
+    normalized = normalize_strategy_name(strategy_name)
+    return int(STRATEGY_HISTORY_BUSINESS_DAYS.get(normalized, DEFAULT_STRATEGY_HISTORY_BUSINESS_DAYS))
 
 
-def calculate_scr_strategy(
+def calculate_strategy(
     frame: pd.DataFrame,
     adjustments: StrategyAdjustments | None = None,
     timeframe_label: str | None = None,
-    profile_name: str | None = None,
+    strategy_name: str | None = None,
+    initial_state: dict[str, object] | None = None,
 ) -> pd.DataFrame:
-    strategy = frame.copy()
-    strategy["stoch"] = _calculate_stochastic_fast(strategy)
-    strategy["cci"] = _calculate_cci(strategy)
-    strategy["rsi"] = _calculate_rsi(strategy["Close"])
-
-    strategy["scr_line"] = (
-        ((strategy["stoch"] - 50.0) / 50.0)
-        + (strategy["cci"] / 200.0)
-        + ((strategy["rsi"] - 50.0) / 50.0)
-    ) / 3.0
-    strategy["scr_line"] = strategy["scr_line"].clip(-1.5, 1.5)
-
-    profile = _get_strategy_profile(timeframe_label, profile_name)
-    thresholds = _build_thresholds(adjustments, profile)
-    raw_buy_open, raw_buy_close = _build_raw_conditions(strategy, thresholds, profile)
-
-    buy_open_flags: list[bool] = []
-    buy_close_flags: list[bool] = []
-    in_position = False
-
-    for open_signal, close_signal in zip(raw_buy_open.tolist(), raw_buy_close.tolist(), strict=False):
-        buy_open = False
-        buy_close = False
-
-        if not in_position and open_signal:
-            buy_open = True
-            in_position = True
-        elif in_position and close_signal:
-            buy_close = True
-            in_position = False
-
-        buy_open_flags.append(buy_open)
-        buy_close_flags.append(buy_close)
-
-    strategy["buy_open"] = pd.Series(buy_open_flags, index=strategy.index, dtype=bool)
-    strategy["buy_close"] = pd.Series(buy_close_flags, index=strategy.index, dtype=bool)
-    strategy["sell_open"] = False
-    strategy["sell_close"] = False
-    strategy["signal"] = ""
-    strategy.loc[strategy["buy_open"], "signal"] = "buy open"
-    strategy.loc[strategy["buy_close"], "signal"] = "buy close"
-
-    strategy.attrs["thresholds"] = {
-        "stoch_oversold": thresholds.stoch_oversold,
-        "stoch_overbought": thresholds.stoch_overbought,
-        "cci_oversold": thresholds.cci_oversold,
-        "cci_overbought": thresholds.cci_overbought,
-        "rsi_oversold": thresholds.rsi_oversold,
-        "rsi_overbought": thresholds.rsi_overbought,
-        "open_prev_need": profile.open_prev_need,
-        "open_cross_need": profile.open_cross_need,
-        "close_need": profile.close_need,
-        "profile_label": profile.label,
-        "profile_name": normalize_strategy_profile_name(profile_name),
-    }
-    return strategy
-
-
-def build_signal_logs(frame: pd.DataFrame, timeframe_label: str) -> list[str]:
-    logs: list[str] = []
-    signal_rows = frame[frame["signal"] != ""].tail(12)
-
-    for timestamp, row in signal_rows.iterrows():
-        time_text = timestamp.strftime("%Y-%m-%d %H:%M")
-        price_text = f"{row['Close']:,.0f}"
-        logs.append(
-            f"{time_text}  {timeframe_label}  {row['signal']}  "
-            f"(\uAC00\uACA9 {price_text} / SCR {row['scr_line']:.2f})"
-        )
-
-    if not logs and not frame.empty:
-        latest = frame.iloc[-1]
-        logs.append(
-            f"{frame.index[-1].strftime('%Y-%m-%d %H:%M')}  \uC544\uC9C1 \uC2E0\uD638 \uC5C6\uC74C  "
-            f"(\uAC00\uACA9 {latest['Close']:,.0f} / SCR {latest['scr_line']:.2f})"
-        )
-
-    return list(reversed(logs))
+    normalized = normalize_strategy_name(strategy_name)
+    if normalized == "src_active":
+        return calculate_src_strategy(frame, adjustments, timeframe_label, profile_name="active", initial_state=initial_state)
+    if normalized == "src_v2_normal":
+        return calculate_src_v2_strategy(frame, adjustments, timeframe_label, initial_state=initial_state)
+    if normalized == "src_v2_adx":
+        return calculate_src_v2_adx_strategy(frame, adjustments, timeframe_label, initial_state=initial_state)
+    return calculate_src_strategy(frame, adjustments, timeframe_label, profile_name="normal", initial_state=initial_state)

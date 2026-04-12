@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
 from zoneinfo import ZoneInfo
 import urllib.request
 
@@ -13,6 +14,7 @@ import yfinance as yf
 from config import has_kis_credentials
 from shinobu.kis import KisApiError, fetch_domestic_daily, fetch_domestic_intraday_history
 from shinobu.live_data import load_intraday_recent, load_intraday_seed, merge_intraday_frames
+from shinobu.strategy import get_strategy_history_business_days
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -42,6 +44,7 @@ PAIR_SYMBOL_MAP = {
 
 LIVE_INTRADAY_LOOKBACK_DAYS = 5
 LIVE_RECENT_WINDOW_MINUTES = 720
+RAW_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "raw_cache"
 
 INTRADAY_RESAMPLE_MINUTES = {
     "5분봉": 5,
@@ -285,17 +288,68 @@ def _load_chart_data_impl(symbol: str, timeframe_label: str) -> pd.DataFrame:
     return _load_yfinance_data(symbol, timeframe_label)
 
 
-def _load_live_chart_data_impl(symbol: str, timeframe_label: str) -> pd.DataFrame:
+def _business_days_to_lookback_days(business_days: int) -> int:
+    return max(int(business_days * 2), LIVE_INTRADAY_LOOKBACK_DAYS)
+
+
+def _raw_cache_path(symbol: str, timeframe_label: str, lookback_days: int) -> Path:
+    safe_symbol = symbol.replace(".", "_")
+    safe_timeframe = timeframe_label.replace("/", "_")
+    RAW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return RAW_CACHE_DIR / f"{safe_symbol}_{safe_timeframe}_{int(lookback_days)}d.pkl"
+
+
+def _load_cached_minute_frame(symbol: str, timeframe_label: str, lookback_days: int) -> pd.DataFrame:
+    cache_path = _raw_cache_path(symbol, timeframe_label, lookback_days)
+    if not cache_path.exists():
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+    try:
+        cached = pd.read_pickle(cache_path)
+    except Exception:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+
+    if not isinstance(cached, pd.DataFrame) or cached.empty:
+        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+    return cached.sort_index()
+
+
+def _write_cached_minute_frame(symbol: str, timeframe_label: str, lookback_days: int, frame: pd.DataFrame) -> None:
+    cache_path = _raw_cache_path(symbol, timeframe_label, lookback_days)
+    trimmed = frame.sort_index()
+    pd.to_pickle(trimmed, cache_path)
+
+
+def _load_persisted_intraday_frame(symbol: str, timeframe_label: str, lookback_days: int) -> pd.DataFrame:
+    cutoff = pd.Timestamp.now().floor("min") - pd.Timedelta(days=lookback_days)
+    cached = _load_cached_minute_frame(symbol, timeframe_label, lookback_days)
+    has_enough_history = not cached.empty and pd.Timestamp(cached.index.min()) <= cutoff
+
+    if has_enough_history:
+        seed_frame = cached.loc[cached.index >= cutoff].copy()
+    else:
+        seed_frame = load_intraday_seed(symbol, lookback_days=lookback_days)
+
+    recent_frame = load_intraday_recent(symbol, lookback_minutes=LIVE_RECENT_WINDOW_MINUTES)
+    merged = merge_intraday_frames(seed_frame, recent_frame)
+    merged = merged.loc[merged.index >= cutoff].copy()
+    if not merged.empty:
+        _write_cached_minute_frame(symbol, timeframe_label, lookback_days, merged)
+    return merged
+
+
+def _load_live_chart_data_impl(
+    symbol: str,
+    timeframe_label: str,
+    lookback_days: int = LIVE_INTRADAY_LOOKBACK_DAYS,
+) -> pd.DataFrame:
     if is_domestic_stock_symbol(symbol):
         if not has_kis_credentials():
             raise KisApiError("live domestic chart requires KIS credentials")
 
         short_code = display_symbol(symbol)
         if timeframe_label in INTRADAY_RESAMPLE_MINUTES:
-            minute_frame = merge_intraday_frames(
-                load_intraday_seed(short_code, lookback_days=LIVE_INTRADAY_LOOKBACK_DAYS),
-                load_intraday_recent(short_code, lookback_minutes=LIVE_RECENT_WINDOW_MINUTES),
-            )
+            minute_frame = _load_persisted_intraday_frame(short_code, timeframe_label, lookback_days)
             return _resample_domestic_intraday(minute_frame, INTRADAY_RESAMPLE_MINUTES[timeframe_label])
         if timeframe_label in {"ì¼ë´", "ì£¼ë´", "ìë´"}:
             period_code = {"ì¼ë´": "D", "ì£¼ë´": "W", "ìë´": "M"}[timeframe_label]
@@ -305,12 +359,17 @@ def _load_live_chart_data_impl(symbol: str, timeframe_label: str) -> pd.DataFram
     return _load_yfinance_data(symbol, timeframe_label)
 
 
-def _load_ui_chart_data_impl(symbol: str, timeframe_label: str, timeout_seconds: float = 10.0) -> pd.DataFrame:
+def _load_ui_chart_data_impl(
+    symbol: str,
+    timeframe_label: str,
+    timeout_seconds: float = 10.0,
+    lookback_days: int = LIVE_INTRADAY_LOOKBACK_DAYS,
+) -> pd.DataFrame:
     if not is_domestic_stock_symbol(symbol) or not has_kis_credentials():
         return _load_yfinance_data(symbol, timeframe_label)
 
     executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(_load_live_chart_data_impl, symbol, timeframe_label)
+    future = executor.submit(_load_live_chart_data_impl, symbol, timeframe_label, lookback_days)
     try:
         return future.result(timeout=timeout_seconds)
     except (FuturesTimeoutError, KisApiError, Exception):
@@ -332,6 +391,20 @@ def load_live_chart_data(symbol: str, timeframe_label: str) -> pd.DataFrame:
 @st.cache_data(ttl=5, show_spinner=False)
 def load_ui_chart_data(symbol: str, timeframe_label: str) -> pd.DataFrame:
     return _load_ui_chart_data_impl(symbol, timeframe_label)
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def load_live_chart_data_for_strategy(symbol: str, timeframe_label: str, strategy_name: str) -> pd.DataFrame:
+    business_days = get_strategy_history_business_days(strategy_name)
+    lookback_days = _business_days_to_lookback_days(business_days)
+    return _load_live_chart_data_impl(symbol, timeframe_label, lookback_days=lookback_days)
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def load_ui_chart_data_for_strategy(symbol: str, timeframe_label: str, strategy_name: str) -> pd.DataFrame:
+    business_days = get_strategy_history_business_days(strategy_name)
+    lookback_days = _business_days_to_lookback_days(business_days)
+    return _load_ui_chart_data_impl(symbol, timeframe_label, lookback_days=lookback_days)
 
 
 def get_notice(timeframe_label: str, symbol: str | None = None) -> str:

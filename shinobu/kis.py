@@ -222,6 +222,24 @@ def fetch_domestic_balance() -> tuple[pd.DataFrame, dict]:
         )
 
     positions_frame = pd.DataFrame(positions)
+    if not positions_frame.empty and "code" in positions_frame.columns:
+        numeric_columns = [
+            column
+            for column in ["quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"]
+            if column in positions_frame.columns
+        ]
+        positions_frame = (
+            positions_frame.groupby(["code", "name"], as_index=False)
+            .agg(
+                {
+                    **{column: "sum" for column in ["quantity", "eval_amount", "profit_amount"] if column in numeric_columns},
+                    **{column: "last" for column in ["avg_price", "current_price", "profit_rate"] if column in numeric_columns},
+                }
+            )
+            .sort_values(["eval_amount", "quantity"], ascending=False)
+            .reset_index(drop=True)
+        )
+
     summary = {
         "cash": float(summary_raw.get("dnca_tot_amt") or 0),
         "orderable_cash": float(summary_raw.get("nxdy_excc_amt") or 0),

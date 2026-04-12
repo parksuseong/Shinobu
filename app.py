@@ -15,6 +15,7 @@ from shinobu.chart import build_candlestick_chart, update_candlestick_chart
 from shinobu.chart_server import ensure_chart_server
 from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
+from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
     get_asset_history,
     get_live_logs,
@@ -28,18 +29,22 @@ from shinobu.live_trading import (
     set_live_enabled,
 )
 from shinobu.strategy import (
-    DEFAULT_STRATEGY_PROFILE_NAME,
+    DEFAULT_STRATEGY_NAME,
     StrategyAdjustments,
-    calculate_scr_strategy,
+    get_strategy_help_text,
     get_strategy_label,
-    normalize_strategy_profile_name,
+    get_strategy_title,
+    list_strategy_options,
+    normalize_strategy_name,
 )
 
 LIVE_TIMEFRAME = "5분봉"
 PRIMARY_SYMBOL = "122630.KS"
 LIVE_CHART_STATE_KEY = "live_chart_state"
 LIVE_FIGURE_STATE_KEY = "live_figure_state"
-MAX_LIVE_CHART_CANDLES = 100
+LIVE_CHART_NONCE_KEY = "live_chart_nonce"
+MAX_LIVE_CHART_CANDLES = 1200
+MAX_LIVE_CHART_BUSINESS_DAYS = 2
 STRATEGY_PROFILE_STATE_KEY = "strategy_profile"
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.png"
@@ -53,7 +58,6 @@ st.set_page_config(page_title="Shinobu Project", page_icon="S", layout="wide")
 
 display_name = market_data.display_name
 get_pair_symbol = market_data.get_pair_symbol
-load_ui_chart_data = getattr(market_data, "load_ui_chart_data", market_data.load_live_chart_data)
 
 
 def render_header(profile_name: str) -> None:
@@ -64,79 +68,42 @@ def render_header(profile_name: str) -> None:
 
 def init_strategy_profile_state() -> None:
     if STRATEGY_PROFILE_STATE_KEY not in st.session_state:
-        st.session_state[STRATEGY_PROFILE_STATE_KEY] = DEFAULT_STRATEGY_PROFILE_NAME
+        st.session_state[STRATEGY_PROFILE_STATE_KEY] = DEFAULT_STRATEGY_NAME
 
 
 def get_current_strategy_profile() -> str:
     init_strategy_profile_state()
-    return normalize_strategy_profile_name(st.session_state.get(STRATEGY_PROFILE_STATE_KEY))
+    return normalize_strategy_name(st.session_state.get(STRATEGY_PROFILE_STATE_KEY))
 
 
 def _set_strategy_profile(profile_name: str) -> None:
-    st.session_state[STRATEGY_PROFILE_STATE_KEY] = normalize_strategy_profile_name(profile_name)
+    normalized = normalize_strategy_name(profile_name)
+    current = normalize_strategy_name(st.session_state.get(STRATEGY_PROFILE_STATE_KEY))
+    st.session_state[STRATEGY_PROFILE_STATE_KEY] = normalized
+    if current != normalized:
+        init_live_chart_state()
+        st.session_state[LIVE_CHART_STATE_KEY] = {"started_at": "", "frames": {}}
+        st.session_state[LIVE_FIGURE_STATE_KEY] = {}
+        st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
 
 
 def render_strategy_profile_selector() -> str:
     current_profile = get_current_strategy_profile()
     st.markdown("#### 전략 선택")
-    aggressive_help = (
-        "공격적 전략\n"
-        "- Stochastic: 직전 봉이 45 이하였다면 과매도 후보로 봅니다.\n"
-        "- CCI: 직전 봉이 -20 이하였다면 과매도 후보로 봅니다.\n"
-        "- RSI: 직전 봉이 48 이하였다면 과매도 후보로 봅니다.\n"
-        "- 진입: 직전 봉에서 세 지표 중 2개 이상이 과매도였고, 현재 봉에서 세 지표 중 1개 이상이 기준선을 상향 돌파하면 진입합니다.\n"
-        "- 청산: Stochastic 80 이상, CCI 100 이상, RSI 70 이상 중 2개 이상이 과열이면 청산합니다.\n"
-        "- 특징: 진입 문턱이 가장 낮아서 신호가 자주 뜨고, 대신 흔들림 구간의 오신호도 늘 수 있습니다."
-    )
-    original_help = (
-        "중립 전략\n"
-        "- Stochastic: 직전 봉이 20 이하였는지 확인합니다.\n"
-        "- CCI: 직전 봉이 -100 이하였는지 확인합니다.\n"
-        "- RSI: 직전 봉이 30 이하였는지 확인합니다.\n"
-        "- 진입: 직전 봉에서 세 지표가 모두 과매도였고, 현재 봉에서 Stochastic 20 / CCI -100 / RSI 30을 모두 동시에 상향 돌파하면 진입합니다.\n"
-        "- 청산: Stochastic 80 이상, CCI 100 이상, RSI 70 이상 중 2개 이상이 과열이면 청산합니다.\n"
-        "- 특징: 원본 SCR 규칙에 가장 가까운 기본 전략입니다."
-    )
-    defensive_help = (
-        "방어적 전략\n"
-        "- Stochastic: 직전 봉이 15 이하였는지 확인합니다.\n"
-        "- CCI: 직전 봉이 -120 이하였는지 확인합니다.\n"
-        "- RSI: 직전 봉이 28 이하였는지 확인합니다.\n"
-        "- 진입: 직전 봉에서 세 지표가 모두 깊은 과매도였고, 현재 봉에서도 세 지표가 동시에 기준선을 상향 돌파해야 진입합니다.\n"
-        "- 청산: Stochastic 78 이상, CCI 100 이상, RSI 68 이상 중 1개만 과열이어도 청산합니다.\n"
-        "- 특징: 진입은 가장 엄격하고, 청산은 가장 빠른 보수형 전략입니다."
-    )
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.button(
-            "공격적",
-            key="strategy_aggressive_button",
-            use_container_width=True,
-            type="primary" if current_profile == "aggressive" else "secondary",
-            on_click=_set_strategy_profile,
-            args=("aggressive",),
-            help=aggressive_help,
-        )
-    with col2:
-        st.button(
-            "중립",
-            key="strategy_original_button",
-            use_container_width=True,
-            type="primary" if current_profile == "original" else "secondary",
-            on_click=_set_strategy_profile,
-            args=("original",),
-            help=original_help,
-        )
-    with col3:
-        st.button(
-            "방어적",
-            key="strategy_defensive_button",
-            use_container_width=True,
-            type="primary" if current_profile == "defensive" else "secondary",
-            on_click=_set_strategy_profile,
-            args=("defensive",),
-            help=defensive_help,
-        )
+    options = list_strategy_options()
+    columns = st.columns(len(options))
+    for column, option in zip(columns, options, strict=False):
+        with column:
+            st.button(
+                get_strategy_title(option.key),
+                key=f"strategy_{option.key}_button",
+                use_container_width=True,
+                type="primary" if current_profile == option.key else "secondary",
+                on_click=_set_strategy_profile,
+                args=(option.key,),
+                help=get_strategy_help_text(option.key),
+            )
+    st.caption(get_strategy_help_text(current_profile).replace("\n", " | "))
     return get_current_strategy_profile()
 
 def init_live_chart_state() -> None:
@@ -144,11 +111,15 @@ def init_live_chart_state() -> None:
         st.session_state[LIVE_CHART_STATE_KEY] = {"started_at": "", "frames": {}}
     if LIVE_FIGURE_STATE_KEY not in st.session_state:
         st.session_state[LIVE_FIGURE_STATE_KEY] = {}
+    if LIVE_CHART_NONCE_KEY not in st.session_state:
+        st.session_state[LIVE_CHART_NONCE_KEY] = 0
 
 
 @st.cache_data(ttl=5, show_spinner=False)
-def get_cached_raw_frame(symbol: str, timeframe_label: str) -> pd.DataFrame:
-    return load_ui_chart_data(symbol, timeframe_label)
+def get_cached_raw_frame(symbol: str, timeframe_label: str, profile_name: str) -> pd.DataFrame:
+    if hasattr(market_data, "load_ui_chart_data_for_strategy"):
+        return market_data.load_ui_chart_data_for_strategy(symbol, timeframe_label, profile_name)
+    return market_data.load_ui_chart_data(symbol, timeframe_label)
 
 
 @st.cache_data(ttl=5, show_spinner=False)
@@ -161,8 +132,14 @@ def get_cached_strategy_frame(
     profile_name: str,
 ) -> pd.DataFrame:
     adjustments = StrategyAdjustments(stoch_pct=stoch_pct, cci_pct=cci_pct, rsi_pct=rsi_pct)
-    raw = get_cached_raw_frame(symbol, timeframe_label)
-    return calculate_scr_strategy(raw, adjustments, timeframe_label, profile_name=profile_name)
+    raw = get_cached_raw_frame(symbol, timeframe_label, profile_name)
+    return calculate_strategy_cached(
+        raw,
+        adjustments,
+        timeframe_label,
+        strategy_name=profile_name,
+        symbol=symbol,
+    )
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
@@ -170,12 +147,21 @@ def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
     if started_at is None:
         return frame.iloc[0:0].copy()
 
-    before = frame.loc[frame.index < started_at].tail(MAX_LIVE_CHART_CANDLES)
+    before = frame.loc[frame.index < started_at]
     after = frame.loc[frame.index >= started_at]
     combined = pd.concat([before, after]).sort_index()
     if combined.empty and not frame.empty:
-        return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
-    return combined.tail(MAX_LIVE_CHART_CANDLES).copy()
+        return limit_frame_to_recent_business_days(frame)
+    return limit_frame_to_recent_business_days(combined)
+
+
+def limit_frame_to_recent_business_days(frame: pd.DataFrame, max_days: int = MAX_LIVE_CHART_BUSINESS_DAYS) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    trade_days = pd.Index(pd.to_datetime(frame.index).normalize().unique()).sort_values()
+    recent_days = trade_days[-max_days:]
+    limited = frame.loc[frame.index.normalize().isin(recent_days)].copy()
+    return limited.tail(MAX_LIVE_CHART_CANDLES).copy()
 
 
 def _empty_live_frame(template: pd.DataFrame | None = None) -> pd.DataFrame:
@@ -197,7 +183,7 @@ def _merge_live_frame(cache_frame: pd.DataFrame, latest_frame: pd.DataFrame) -> 
 
     merged = pd.concat([cache_frame, appended]).sort_index()
     merged = merged[~merged.index.duplicated(keep="last")]
-    return merged.tail(MAX_LIVE_CHART_CANDLES).copy()
+    return limit_frame_to_recent_business_days(merged)
 
 
 def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
@@ -218,7 +204,7 @@ def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments, profile_
         adjustments.rsi_pct,
         profile_name,
     )
-    latest_frame = filter_frame_from_live_start(latest_frame)
+    latest_frame = limit_frame_to_recent_business_days(filter_frame_from_live_start(latest_frame))
 
     if started_at is None:
         return _empty_live_frame(latest_frame)
@@ -226,7 +212,7 @@ def get_live_chart_frame(symbol: str, adjustments: StrategyAdjustments, profile_
     frames = state["frames"]
     cache_frame = frames.get(symbol)
     if cache_frame is None:
-        frames[symbol] = latest_frame.tail(MAX_LIVE_CHART_CANDLES).copy()
+        frames[symbol] = limit_frame_to_recent_business_days(latest_frame)
     else:
         frames[symbol] = _merge_live_frame(cache_frame, latest_frame)
     return frames[symbol]
@@ -241,17 +227,17 @@ def get_preview_chart_frame(symbol: str, adjustments: StrategyAdjustments, profi
         adjustments.rsi_pct,
         profile_name,
     )
-    return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
+    return limit_frame_to_recent_business_days(frame)
 
 
 def get_preview_raw_chart_frame(symbol: str) -> pd.DataFrame:
-    frame = get_cached_raw_frame(symbol, LIVE_TIMEFRAME)
-    return frame.tail(MAX_LIVE_CHART_CANDLES).copy()
+    frame = get_cached_raw_frame(symbol, LIVE_TIMEFRAME, get_current_strategy_profile())
+    return limit_frame_to_recent_business_days(frame)
 
 
 def get_live_raw_chart_frame(symbol: str) -> pd.DataFrame:
-    frame = get_cached_raw_frame(symbol, LIVE_TIMEFRAME)
-    return filter_frame_from_live_start(frame)
+    frame = get_cached_raw_frame(symbol, LIVE_TIMEFRAME, get_current_strategy_profile())
+    return limit_frame_to_recent_business_days(filter_frame_from_live_start(frame))
 
 
 def _get_chart_figure(
@@ -349,12 +335,38 @@ def mask_account_number(account_number: str) -> str:
     return f"{account_number[:2]}{'*' * max(len(account_number) - 2, 0)}"
 
 
+def _dedupe_positions_frame(positions: pd.DataFrame) -> pd.DataFrame:
+    if positions.empty:
+        return positions
+
+    normalized = positions.copy()
+    if {"code", "name"}.issubset(normalized.columns):
+        aggregations = {
+            "quantity": "sum",
+            "avg_price": "last",
+            "current_price": "last",
+            "eval_amount": "sum",
+            "profit_amount": "sum",
+            "profit_rate": "last",
+        }
+        aggregations = {key: value for key, value in aggregations.items() if key in normalized.columns}
+        normalized = (
+            normalized.groupby(["code", "name"], as_index=False)
+            .agg(aggregations)
+            .sort_values(["eval_amount", "quantity"], ascending=False)
+            .reset_index(drop=True)
+        )
+    return normalized
+
+
 def _format_positions_frame(positions: pd.DataFrame) -> pd.DataFrame:
     if positions.empty:
         return positions
 
+    normalized = _dedupe_positions_frame(positions)
+
     display_columns = ["code", "name", "quantity", "avg_price", "current_price", "eval_amount", "profit_amount", "profit_rate"]
-    view = positions.loc[:, [column for column in display_columns if column in positions.columns]].copy()
+    view = normalized.loc[:, [column for column in display_columns if column in normalized.columns]].copy()
     view = view.rename(
         columns={
             "code": "종목코드",
@@ -860,6 +872,7 @@ def render_live_account_panel() -> None:
     try:
         with st.spinner("계좌 정보를 불러오는 중..."):
             positions, summary = fetch_domestic_balance()
+            positions = _dedupe_positions_frame(positions)
     except KisApiError as exc:
         st.warning(f"계좌 조회 오류: {exc}")
         return
@@ -888,17 +901,13 @@ def render_live_account_panel() -> None:
 
 @st.fragment(run_every="10s")
 def render_live_trade_history_panel() -> None:
-    panel = st.empty()
-    with panel.container():
-        st.markdown("#### 실전 거래 내역")
-        _render_open_live_positions()
+    st.markdown("#### 실전 거래 내역")
+    _render_open_live_positions()
 
 
 @st.fragment(run_every="60s")
 def render_closed_live_trade_history_panel() -> None:
-    panel = st.empty()
-    with panel.container():
-        _render_closed_live_trades()
+    _render_closed_live_trades()
 
 
 @st.fragment(run_every="10s")
@@ -910,6 +919,10 @@ def render_emotion_section() -> None:
     render_emotion_panel(positions, summary)
 @st.fragment(run_every="15s")
 def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
+    init_live_chart_state()
+    chart_nonce = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0))
+    strategy_label = get_strategy_label(profile_name)
+    st.caption(f"차트 반영 전략: {strategy_label}")
     components.html(
         build_live_chart_html(
             server_url=ensure_chart_server(),
@@ -918,7 +931,9 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             stoch_pct=adjustments.stoch_pct,
             cci_pct=adjustments.cci_pct,
             rsi_pct=adjustments.rsi_pct,
-            profile_name=profile_name,
+            strategy_name=profile_name,
+            strategy_label=strategy_label,
+            render_nonce=chart_nonce,
         ),
         height=640,
     )
@@ -1046,7 +1061,7 @@ def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: St
         return
 
     try:
-        process_live_trading_cycle(loaded_symbol, pair_symbol, adjustments, profile_name=profile_name)
+        process_live_trading_cycle(loaded_symbol, pair_symbol, adjustments, strategy_name=profile_name)
     except KisApiError:
         return
     except Exception:
@@ -1096,7 +1111,10 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
         """,
         unsafe_allow_html=True,
     )
-    st.caption("실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. 매수 시 주문가능현금을 최대한 사용합니다.")
+    st.caption(
+        f"실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. "
+        f"현재 전략은 {get_strategy_label(get_current_strategy_profile())}이며, 매수 시 주문가능현금을 최대한 사용합니다."
+    )
 
     runtime = get_live_runtime_state()
     status_name = {

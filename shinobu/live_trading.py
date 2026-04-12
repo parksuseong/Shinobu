@@ -7,12 +7,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 from shinobu.data import display_name, load_live_chart_data
 from shinobu.kis import KisApiError, fetch_domestic_balance, place_domestic_order
-from shinobu.strategy import StrategyAdjustments, calculate_scr_strategy
+from shinobu.strategy import StrategyAdjustments, calculate_strategy
+from shinobu.strategy_cache import calculate_strategy_cached
 
 
 SIGNAL_TO_TRADE_SYMBOL = {
@@ -22,10 +24,11 @@ SIGNAL_TO_TRADE_SYMBOL = {
 TRADE_TO_SIGNAL_SYMBOL = {value: key for key, value in SIGNAL_TO_TRADE_SYMBOL.items()}
 MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
-LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 8.0
-LIVE_FILL_CONFIRM_POLL_SECONDS = 1.0
+LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 4.0
+LIVE_FILL_CONFIRM_POLL_SECONDS = 0.35
 LIVE_ORDER_MAX_RETRIES = 12
-LIVE_ORDER_RETRY_DELAY_SECONDS = 1.5
+LIVE_ORDER_RETRY_DELAY_SECONDS = 0.35
+LIVE_ORDER_PARTIAL_RETRY_DELAY_SECONDS = 0.15
 RETRYABLE_ORDER_ERROR_PATTERNS = (
     "getaddrinfo failed",
     "name or service not known",
@@ -39,6 +42,7 @@ RETRYABLE_ORDER_ERROR_PATTERNS = (
 LIVE_STATE_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_state.json"
 LIVE_LOG_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_trading.log"
 _LIVE_STATE_LOCK = threading.RLock()
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _now_text() -> str:
@@ -244,9 +248,31 @@ def get_asset_history() -> list[dict[str, Any]]:
         return list(state.get("asset_history", []))
 
 
-def _load_strategy(symbol: str, adjustments: StrategyAdjustments, profile_name: str) -> pd.DataFrame:
-    frame = load_live_chart_data(symbol, "5분봉")
-    return calculate_scr_strategy(frame, adjustments, "5분봉", profile_name=profile_name)
+def _load_strategy(symbol: str, adjustments: StrategyAdjustments, strategy_name: str) -> pd.DataFrame:
+    try:
+        from shinobu.data import load_live_chart_data_for_strategy
+
+        frame = load_live_chart_data_for_strategy(symbol, "5분봉", strategy_name)
+    except Exception:
+        frame = load_live_chart_data(symbol, "5분봉")
+    return calculate_strategy_cached(
+        frame,
+        adjustments,
+        "5분봉",
+        strategy_name=strategy_name,
+        symbol=symbol,
+    )
+
+
+def _now_kst_naive() -> pd.Timestamp:
+    return pd.Timestamp.now(tz=KST).tz_localize(None)
+
+
+def _is_closed_5m_candle(candle_start: pd.Timestamp, now: pd.Timestamp | None = None) -> bool:
+    current = now if now is not None else _now_kst_naive()
+    candle_start = pd.Timestamp(candle_start)
+    candle_end = candle_start + pd.Timedelta(minutes=5)
+    return current >= candle_end
 
 
 def _get_target_rows(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.Timestamp, pd.Series, pd.Series] | None:
@@ -254,7 +280,11 @@ def _get_target_rows(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd
     if len(combined_index) < 2:
         return None
 
-    target_time = combined_index[-2]
+    latest_time = pd.Timestamp(combined_index[-1])
+    if _is_closed_5m_candle(latest_time):
+        target_time = latest_time
+    else:
+        target_time = pd.Timestamp(combined_index[-2])
     aligned_primary = primary.reindex(combined_index).ffill()
     aligned_secondary = secondary.reindex(combined_index).ffill()
     return target_time, aligned_primary.loc[target_time], aligned_secondary.loc[target_time]
@@ -376,6 +406,81 @@ def _submit_live_order(
     candle_time: pd.Timestamp,
     baseline_quantity: int,
 ) -> None:
+    current_baseline = int(baseline_quantity)
+    round_count = 0
+
+    while True:
+        fetch_domestic_balance.clear()
+        positions, latest_summary = fetch_domestic_balance()
+        current_quantity = _position_quantity_for_symbol(positions, symbol)
+
+        if side == "buy":
+            latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
+            working_quantity = _allocation_quantity(latest_cash, expected_price)
+            if working_quantity <= 0:
+                if round_count == 0:
+                    _set_status(state, "waiting_cash", "?? ?? ??? ?????.")
+                    _append_log("??", f"{display_name(symbol)} ?? ?? ??? ?? ??? ?????.")
+                    _write_state(state)
+                    raise KisApiError("?? ?? ?? ?? ?? ??? ????.")
+                return
+            baseline_for_fill = current_baseline
+        else:
+            working_quantity = current_quantity
+            if working_quantity <= 0:
+                return
+            baseline_for_fill = current_quantity
+
+        if round_count > 0:
+            action_text = "?? ??" if side == "buy" else "?? ??"
+            _append_log("??", f"{display_name(symbol)} {action_text} {working_quantity}?? ?? ??????.")
+
+        _submit_live_order_once(
+            state=state,
+            symbol=symbol,
+            side=side,
+            quantity=working_quantity,
+            expected_price=expected_price,
+            reason=reason,
+            candle_time=candle_time,
+            baseline_quantity=baseline_for_fill,
+        )
+
+        fetch_domestic_balance.clear()
+        positions, latest_summary = fetch_domestic_balance()
+        updated_quantity = _position_quantity_for_symbol(positions, symbol)
+
+        if side == "buy":
+            latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
+            if updated_quantity <= current_baseline:
+                _append_log("??", f"{display_name(symbol)} ?? ? ????? ?? ?? ?? ??? ?????.")
+                return
+            current_baseline = updated_quantity
+            round_count += 1
+            if latest_cash < max(float(expected_price), 1.0):
+                return
+            time.sleep(LIVE_ORDER_PARTIAL_RETRY_DELAY_SECONDS)
+            continue
+
+        if updated_quantity >= current_quantity:
+            _append_log("??", f"{display_name(symbol)} ?? ? ??? ?? ?? ?? ??? ?????.")
+            return
+        round_count += 1
+        if updated_quantity <= 0:
+            return
+        time.sleep(LIVE_ORDER_PARTIAL_RETRY_DELAY_SECONDS)
+
+
+def _submit_live_order_once(
+    state: dict[str, Any],
+    symbol: str,
+    side: str,
+    quantity: int,
+    expected_price: float,
+    reason: str,
+    candle_time: pd.Timestamp,
+    baseline_quantity: int,
+) -> None:
     last_error: Exception | None = None
     working_quantity = max(int(quantity), 0)
     attempt = 0
@@ -449,7 +554,7 @@ def process_live_trading_cycle(
     primary_symbol: str,
     secondary_symbol: str,
     adjustments: StrategyAdjustments,
-    profile_name: str = "original",
+    strategy_name: str = "src_v2_adx",
 ) -> None:
     with _LIVE_STATE_LOCK:
         state = _read_state()
@@ -459,8 +564,8 @@ def process_live_trading_cycle(
         _set_status(state, "checking")
 
         try:
-            primary = _load_strategy(primary_symbol, adjustments, profile_name)
-            secondary = _load_strategy(secondary_symbol, adjustments, profile_name)
+            primary = _load_strategy(primary_symbol, adjustments, strategy_name)
+            secondary = _load_strategy(secondary_symbol, adjustments, strategy_name)
         except Exception as exc:
             _set_status(state, "error", str(exc))
             _append_log("오류", f"실전 데이터 조회 실패: {exc}")

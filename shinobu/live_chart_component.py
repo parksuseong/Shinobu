@@ -12,16 +12,19 @@ def build_live_chart_html(
     stoch_pct: int,
     cci_pct: int,
     rsi_pct: int,
-    profile_name: str,
+    strategy_name: str,
+    strategy_label: str,
+    render_nonce: int,
 ) -> str:
     pair_query = pair_symbol or ""
     parsed_server = urlparse(server_url)
     chart_port = parsed_server.port or 8765
-    root_suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", f"{symbol}-{pair_query or 'none'}-{profile_name}-{stoch_pct}-{cci_pct}-{rsi_pct}")
+    root_suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", f"{symbol}-{pair_query or 'none'}-{strategy_name}-{render_nonce}-{stoch_pct}-{cci_pct}-{rsi_pct}")
     main_root_id = f"main-chart-root-{root_suffix}"
     indicator_root_id = f"indicator-chart-root-{root_suffix}"
     return f"""
 <div style="display:flex;flex-direction:column;gap:10px;">
+  <div style="display:none" data-strategy-name="{strategy_name}" data-strategy-label="{strategy_label}" data-render-nonce="{render_nonce}"></div>
   <div id="{main_root_id}" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
   <div id="{indicator_root_id}" style="width:100%;height:220px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
 </div>
@@ -33,7 +36,7 @@ const hostWindow = window.parent && window.parent.location ? window.parent : win
 const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
 const endpoint =
   `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
-  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&profile_name={profile_name}`;
+  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}`;
 
 let initializedMain = false;
 let initializedIndicator = false;
@@ -223,6 +226,16 @@ function buildMainFigure(payload) {{
           showarrow: false,
           text: `${{payload.symbolName}} · 5분봉 · 실전 가격`,
           font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }}
+        }},
+        {{
+          x: 0.99,
+          y: 1.04,
+          xref: "paper",
+          yref: "paper",
+          xanchor: "right",
+          showarrow: false,
+          text: "{strategy_label}",
+          font: {{ size: 13, color: "#60a5fa", family: "Malgun Gothic" }}
         }}
       ]
     }}
