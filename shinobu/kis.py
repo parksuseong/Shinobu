@@ -293,6 +293,50 @@ def place_domestic_order(symbol: str, side: str, quantity: int, order_type: str 
     return output
 
 
+def cancel_domestic_order(
+    symbol: str,
+    order_orgno: str,
+    order_no: str,
+    quantity: int,
+    order_type: str = "01",
+    price: str = "0",
+    all_quantity: bool = True,
+) -> dict:
+    if not order_orgno or not order_no:
+        raise KisApiError("취소할 주문번호 정보가 없습니다.")
+    if quantity <= 0:
+        raise KisApiError("취소 수량은 1주 이상이어야 합니다.")
+
+    cano, acnt_prdt_cd = _account_params()
+    tr_id = "TTTC0803U" if _is_real_account() else "VTTC0803U"
+    body = {
+        "CANO": cano,
+        "ACNT_PRDT_CD": acnt_prdt_cd,
+        "KRX_FWDG_ORD_ORGNO": str(order_orgno).strip(),
+        "ORGN_ODNO": str(order_no).strip(),
+        "ORD_DVSN": order_type,
+        "RVSE_CNCL_DVSN_CD": "02",
+        "ORD_QTY": str(int(quantity)),
+        "ORD_UNPR": str(price),
+        "QTY_ALL_ORD_YN": "Y" if all_quantity else "N",
+    }
+    headers = _build_headers(tr_id)
+    headers["hashkey"] = _issue_hashkey(body)
+
+    response = _request_json(
+        "POST",
+        f"{KIS_BASE_URL}/uapi/domestic-stock/v1/trading/order-rvsecncl",
+        headers=headers,
+        body=body,
+    )
+    output = response.get("output", {})
+    if not output:
+        raise KisApiError(f"한투 취소주문 실패: {response}")
+    fetch_domestic_balance.clear()
+    fetch_domestic_daily_ccld.clear()
+    return output
+
+
 @st.cache_data(ttl=15, show_spinner=False)
 def fetch_domestic_daily_ccld(start_date: str, end_date: str, symbol: str = "", max_pages: int = 3) -> pd.DataFrame:
     cano, acnt_prdt_cd = _account_params()

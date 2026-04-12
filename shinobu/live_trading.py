@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from shinobu.data import display_name, load_live_chart_data
-from shinobu.kis import KisApiError, fetch_domestic_balance, place_domestic_order
+from shinobu.kis import KisApiError, cancel_domestic_order, fetch_domestic_balance, place_domestic_order
 from shinobu.strategy import StrategyAdjustments, calculate_strategy
 from shinobu.strategy_cache import calculate_strategy_cached
 
@@ -43,6 +43,11 @@ LIVE_STATE_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_
 LIVE_LOG_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "live_trading.log"
 _LIVE_STATE_LOCK = threading.RLock()
 KST = ZoneInfo("Asia/Seoul")
+PREMARKET_MONITOR_HOUR = 8
+REGULAR_MARKET_OPEN_HOUR = 9
+REGULAR_MARKET_CLOSE_HOUR = 15
+REGULAR_MARKET_CLOSE_MINUTE = 30
+AFTER_HOURS_CLOSE_HOUR = 18
 
 
 def _now_text() -> str:
@@ -63,6 +68,7 @@ def _default_state() -> dict[str, Any]:
         "pending_target_symbol": "",
         "pending_target_reason": "",
         "pending_target_candle": "",
+        "last_regular_close_cleanup_date": "",
         "orders": [],
         "asset_history": [],
     }
@@ -126,21 +132,27 @@ def _append_order(
     price: float,
     reason: str,
     candle_time: pd.Timestamp,
-) -> None:
-    state["orders"].append(
-        {
-            "symbol": symbol,
-            "side": side,
-            "quantity": quantity,
-            "price": float(price),
-            "reason": reason,
-            "candle_time": candle_time.strftime("%Y-%m-%d %H:%M"),
-            "timestamp": _now_text(),
-        }
-    )
+) -> dict[str, Any]:
+    entry = {
+        "symbol": symbol,
+        "side": side,
+        "quantity": quantity,
+        "price": float(price),
+        "reason": reason,
+        "candle_time": candle_time.strftime("%Y-%m-%d %H:%M"),
+        "timestamp": _now_text(),
+        "order_no": "",
+        "order_orgno": "",
+        "filled": False,
+        "fill_message": "",
+        "canceled": False,
+        "cancel_message": "",
+    }
+    state["orders"].append(entry)
     if len(state["orders"]) > MAX_LIVE_ORDERS:
         del state["orders"][:-MAX_LIVE_ORDERS]
     state["last_order_at"] = _now_text()
+    return entry
 
 
 def _set_pending_target(
@@ -268,6 +280,30 @@ def _now_kst_naive() -> pd.Timestamp:
     return pd.Timestamp.now(tz=KST).tz_localize(None)
 
 
+def _is_business_day(timestamp: pd.Timestamp) -> bool:
+    return pd.Timestamp(timestamp).dayofweek < 5
+
+
+def _market_phase(now: pd.Timestamp | None = None) -> str:
+    current = pd.Timestamp(now) if now is not None else _now_kst_naive()
+    if not _is_business_day(current):
+        return "closed"
+
+    current_minutes = current.hour * 60 + current.minute
+    premarket_monitor_minutes = PREMARKET_MONITOR_HOUR * 60
+    regular_open_minutes = REGULAR_MARKET_OPEN_HOUR * 60
+    regular_close_minutes = REGULAR_MARKET_CLOSE_HOUR * 60 + REGULAR_MARKET_CLOSE_MINUTE
+    after_hours_close_minutes = AFTER_HOURS_CLOSE_HOUR * 60
+
+    if premarket_monitor_minutes <= current_minutes < regular_open_minutes:
+        return "premarket"
+    if regular_open_minutes <= current_minutes < regular_close_minutes:
+        return "regular"
+    if regular_close_minutes <= current_minutes < after_hours_close_minutes:
+        return "after_hours"
+    return "closed"
+
+
 def _is_closed_5m_candle(candle_start: pd.Timestamp, now: pd.Timestamp | None = None) -> bool:
     current = now if now is not None else _now_kst_naive()
     candle_start = pd.Timestamp(candle_start)
@@ -367,6 +403,12 @@ def _format_order_response(order_output: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def _extract_order_numbers(order_output: dict[str, Any]) -> tuple[str, str]:
+    order_orgno = str(order_output.get("KRX_FWDG_ORD_ORGNO") or order_output.get("ORD_GNO_BRNO") or "").strip()
+    order_no = str(order_output.get("ODNO") or "").strip()
+    return order_orgno, order_no
+
+
 def _is_retryable_order_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(pattern in message for pattern in RETRYABLE_ORDER_ERROR_PATTERNS)
@@ -394,6 +436,74 @@ def _confirm_fill_after_order(symbol: str, side: str, baseline_quantity: int, ex
                 return True, f"체결 확인: 보유수량 {baseline_quantity}주 -> {current_quantity}주"
         time.sleep(LIVE_FILL_CONFIRM_POLL_SECONDS)
     return False, "체결 확인 대기 시간 초과"
+
+
+def _cancel_pending_orders_after_regular_close(state: dict[str, Any], now: pd.Timestamp | None = None) -> None:
+    current = pd.Timestamp(now) if now is not None else _now_kst_naive()
+    current_date = current.strftime("%Y-%m-%d")
+    if state.get("last_regular_close_cleanup_date", "") == current_date:
+        return
+
+    canceled_any = False
+    for order in reversed(state.get("orders", [])):
+        order_timestamp = str(order.get("timestamp", "") or "")
+        if not order_timestamp.startswith(current_date):
+            continue
+        if bool(order.get("filled", False)) or bool(order.get("canceled", False)):
+            continue
+
+        order_orgno = str(order.get("order_orgno", "") or "").strip()
+        order_no = str(order.get("order_no", "") or "").strip()
+        symbol = str(order.get("symbol", "") or "").strip()
+        quantity = int(order.get("quantity", 0) or 0)
+        if not order_orgno or not order_no or not symbol or quantity <= 0:
+            continue
+
+        try:
+            cancel_output = cancel_domestic_order(
+                symbol=symbol.replace(".KS", ""),
+                order_orgno=order_orgno,
+                order_no=order_no,
+                quantity=quantity,
+            )
+            order["canceled"] = True
+            order["cancel_message"] = _format_order_response(cancel_output)
+            canceled_any = True
+            _append_log("??", f"{display_name(symbol)} ??? ??? ??? ? ??????. ({order['cancel_message']})")
+        except Exception as exc:
+            order["cancel_message"] = str(exc)
+            _append_log("??", f"{display_name(symbol)} ??? ? ?? ??? ??????: {exc}")
+
+    if state.get("pending_target_mode", "none") != "none":
+        _append_log("??", "??? ?? ? ?? ??? ??/?? ??? ??????.")
+        _clear_pending_target(state)
+
+    state["last_regular_close_cleanup_date"] = current_date
+    if canceled_any:
+        _set_status(state, "after_hours_cleanup")
+    else:
+        _set_status(state, "after_hours")
+    _write_state(state)
+
+
+def _mark_pending_orders_for_monitor(state: dict[str, Any], now: pd.Timestamp | None = None) -> None:
+    current = pd.Timestamp(now) if now is not None else _now_kst_naive()
+    current_date = current.strftime("%Y-%m-%d")
+    pending_count = 0
+    for order in state.get("orders", []):
+        order_timestamp = str(order.get("timestamp", "") or "")
+        if not order_timestamp.startswith(current_date):
+            continue
+        if bool(order.get("filled", False)) or bool(order.get("canceled", False)):
+            continue
+        pending_count += 1
+
+    if pending_count > 0:
+        _set_status(state, "premarket_pending")
+        _append_log("정보", f"장 시작 전 미체결 주문 {pending_count}건을 감시 중입니다.")
+    else:
+        _set_status(state, "premarket")
+    _write_state(state)
 
 
 def _submit_live_order(
@@ -505,7 +615,10 @@ def _submit_live_order_once(
                     working_quantity = recalculated_quantity
 
             broker_output = place_domestic_order(symbol.replace(".KS", ""), side, working_quantity)
-            _append_order(state, symbol, side, working_quantity, expected_price, reason, candle_time)
+            order_entry = _append_order(state, symbol, side, working_quantity, expected_price, reason, candle_time)
+            order_orgno, order_no = _extract_order_numbers(broker_output)
+            order_entry["order_orgno"] = order_orgno
+            order_entry["order_no"] = order_no
             if attempt > 1:
                 _append_log("정보", f"{display_name(symbol)} {side.upper()} 주문 재시도 성공 ({attempt}/{LIVE_ORDER_MAX_RETRIES})")
             _append_log(
@@ -559,6 +672,17 @@ def process_live_trading_cycle(
     with _LIVE_STATE_LOCK:
         state = _read_state()
         if not state["enabled"]:
+            return
+
+        phase = _market_phase()
+        if phase != "regular":
+            if phase == "premarket":
+                _mark_pending_orders_for_monitor(state)
+            elif phase == "after_hours":
+                _cancel_pending_orders_after_regular_close(state)
+            else:
+                _set_status(state, "market_closed")
+                _write_state(state)
             return
 
         _set_status(state, "checking")
