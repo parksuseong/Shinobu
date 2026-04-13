@@ -10,7 +10,6 @@ from shinobu.live_trading import (
     SIGNAL_TO_TRADE_SYMBOL,
     TRADE_TO_SIGNAL_SYMBOL,
     get_live_orders,
-    get_live_runtime_state,
     get_live_started_at,
 )
 from shinobu.strategy import StrategyAdjustments, calculate_strategy
@@ -137,7 +136,6 @@ def _build_payload_cache_key(
     strategy_name: str,
     visible_business_days: int,
 ) -> str:
-    runtime = get_live_runtime_state()
     started_at = get_live_started_at()
     started_at_text = started_at.isoformat() if started_at is not None else ""
     return "|".join(
@@ -148,8 +146,6 @@ def _build_payload_cache_key(
             strategy_name,
             str(int(visible_business_days)),
             f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}",
-            str(runtime.get("last_checked_candle", "") or ""),
-            str(runtime.get("last_order_at", "") or ""),
             started_at_text,
         ]
     )
@@ -176,6 +172,45 @@ def _read_cached_payload(cache_key: str) -> dict[str, Any] | None:
 
 def _write_cached_payload(cache_key: str, payload: dict[str, Any]) -> None:
     pd.to_pickle(payload, _payload_cache_path(cache_key))
+
+
+def _merge_series_payload(
+    cached_values: list[Any] | None,
+    current_values: list[Any],
+    *,
+    keep_tail_overlap: int = 3,
+) -> list[Any]:
+    if not cached_values:
+        return list(current_values)
+    if not current_values:
+        return []
+    if len(cached_values) > len(current_values):
+        return list(current_values)
+
+    prefix_length = max(0, min(len(cached_values), len(current_values)) - keep_tail_overlap)
+    if prefix_length == 0:
+        return list(current_values)
+    if list(cached_values[:prefix_length]) != list(current_values[:prefix_length]):
+        return list(current_values)
+    return list(cached_values[:prefix_length]) + list(current_values[prefix_length:])
+
+
+def _merge_payload_arrays(
+    cached_payload: dict[str, Any] | None,
+    *,
+    candles: list[dict[str, Any]],
+    tick_text: list[str],
+    scr_values: list[float | None] | None = None,
+    pair_scr_values: list[float | None] | None = None,
+) -> tuple[list[dict[str, Any]], list[str], list[float | None] | None, list[float | None] | None]:
+    if not cached_payload:
+        return candles, tick_text, scr_values, pair_scr_values
+
+    merged_candles = _merge_series_payload(cached_payload.get("candles"), candles)
+    merged_tick_text = _merge_series_payload(cached_payload.get("tickText"), tick_text)
+    merged_scr = None if scr_values is None else _merge_series_payload(cached_payload.get("scr"), scr_values)
+    merged_pair_scr = None if pair_scr_values is None else _merge_series_payload(cached_payload.get("pairScr"), pair_scr_values)
+    return merged_candles, merged_tick_text, merged_scr, merged_pair_scr
 
 
 def _load_raw_frame(symbol: str, started_at: pd.Timestamp | None) -> pd.DataFrame:
@@ -339,6 +374,64 @@ def _append_indicator_marker(
     )
 
 
+def _is_upper_main_marker(marker: dict[str, Any]) -> bool:
+    side = str(marker.get("side", "") or "").lower()
+    label = str(marker.get("label", "") or "").lower()
+    signal = str(marker.get("signal", "") or "").lower()
+    return side == "sell" or "close" in label or signal == "buy_close"
+
+
+def _apply_main_marker_vertical_offsets(
+    frame: pd.DataFrame,
+    signal_map: dict[str, list[dict[str, Any]]],
+    order_markers: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    if frame.empty:
+        return signal_map, order_markers
+
+    frame_by_time = {timestamp.strftime("%Y-%m-%d %H:%M"): row for timestamp, row in frame.iterrows()}
+    marker_refs: list[tuple[str, int, dict[str, Any]]] = []
+
+    for key in ["primaryOpenMain", "primaryCloseMain", "pairOpenMain", "pairCloseMain"]:
+        for index, marker in enumerate(signal_map.get(key, [])):
+            marker_refs.append((key, index, marker))
+    for index, marker in enumerate(order_markers):
+        marker_refs.append(("orders", index, marker))
+
+    grouped: dict[tuple[str, str], list[tuple[str, int, dict[str, Any]]]] = {}
+    for ref in marker_refs:
+        _, _, marker = ref
+        time_key = str(marker.get("time", "") or "")
+        region = "upper" if _is_upper_main_marker(marker) else "lower"
+        grouped.setdefault((time_key, region), []).append(ref)
+
+    for (time_key, region), markers in grouped.items():
+        if len(markers) <= 1:
+            continue
+        candle_row = frame_by_time.get(time_key)
+        if candle_row is None:
+            continue
+        high_price = float(candle_row.get("High", candle_row.get("Close", 0)) or 0)
+        low_price = float(candle_row.get("Low", candle_row.get("Close", 0)) or 0)
+        close_price = float(candle_row.get("Close", 0) or 0)
+        candle_range = max(high_price - low_price, close_price * 0.0025, 1.0)
+        step = candle_range * 0.42
+
+        sorted_markers = sorted(markers, key=lambda item: (0 if item[0] == "orders" else 1, int(item[2].get("x", 0))))
+        for offset_index, (bucket_name, marker_index, marker) in enumerate(sorted_markers):
+            updated = dict(marker)
+            if region == "upper":
+                updated["y"] = high_price + candle_range * 0.15 + step * offset_index
+            else:
+                updated["y"] = low_price - candle_range * 0.15 - step * offset_index
+            if bucket_name == "orders":
+                order_markers[marker_index] = updated
+            else:
+                signal_map[bucket_name][marker_index] = updated
+
+    return signal_map, order_markers
+
+
 def _marker_label(prefix: str, instrument_name: str, signal_row: pd.Series) -> str:
     detail = str(signal_row.get("signal_detail", "") or "").strip()
     if detail:
@@ -444,8 +537,6 @@ def build_chart_payload(
         visible_business_days=visible_business_days,
     )
     cached_payload = _read_cached_payload(cache_key)
-    if cached_payload is not None:
-        return cached_payload
 
     started_at = get_live_started_at()
     pair_name = market_data.display_name(pair_symbol) if pair_symbol else None
@@ -482,6 +573,29 @@ def build_chart_payload(
         for index, row in frame.iterrows()
     ]
     tick_text = [index.strftime("%m-%d %H:%M") for index in frame.index]
+    visible_orders = _filter_markers_to_visible_range(
+        _build_order_markers(full_frame, [value for value in [symbol, pair_symbol] if value is not None]),
+        _frame_position_map(frame),
+    )
+    visible_signals = (
+        _filter_signal_bucket_map(
+            _build_position_signal_markers(full_frame, symbol, pair_symbol, full_pair_frame),
+            frame,
+        )
+        if include_scr
+        else {}
+    )
+    if include_scr:
+        visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
+    scr_values = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()] if include_scr else None
+    pair_scr_values = _pair_scr(frame, pair_frame) if include_scr else None
+    candles, tick_text, scr_values, pair_scr_values = _merge_payload_arrays(
+        cached_payload,
+        candles=candles,
+        tick_text=tick_text,
+        scr_values=scr_values,
+        pair_scr_values=pair_scr_values,
+    )
 
     payload: dict[str, Any] = {
         "kind": kind,
@@ -492,10 +606,7 @@ def build_chart_payload(
         "includeScr": include_scr,
         "candles": candles,
         "tickText": tick_text,
-        "orders": _filter_markers_to_visible_range(
-            _build_order_markers(full_frame, [value for value in [symbol, pair_symbol] if value is not None]),
-            _frame_position_map(frame),
-        ),
+        "orders": visible_orders,
         "debug": {
             "max_candles": MAX_LIVE_CHART_CANDLES,
             "business_days": visible_business_days,
@@ -509,12 +620,9 @@ def build_chart_payload(
     payload["currentCandle"] = _current_candle_status(full_frame)
 
     if include_scr:
-        payload["scr"] = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()]
-        payload["pairScr"] = _pair_scr(frame, pair_frame)
-        payload["signals"] = _filter_signal_bucket_map(
-            _build_position_signal_markers(full_frame, symbol, pair_symbol, full_pair_frame),
-            frame,
-        )
+        payload["scr"] = scr_values or []
+        payload["pairScr"] = pair_scr_values or []
+        payload["signals"] = visible_signals
     else:
         payload["signals"] = {}
 
