@@ -27,11 +27,16 @@ config.local.*
 .streamlit/kis_token.json
 .streamlit/live_state.json
 .streamlit/live_trading.log
+.streamlit/raw_cache/
+.streamlit/strategy_cache/
+.streamlit/payload_cache/
+.streamlit/tmp*
 
 # Logs
 *.log
 logs/
 tmp/
+exports/
 
 # IDE / editor
 .idea/

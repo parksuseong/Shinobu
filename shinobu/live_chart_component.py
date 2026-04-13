@@ -14,6 +14,7 @@ def build_live_chart_html(
     rsi_pct: int,
     strategy_name: str,
     strategy_label: str,
+    visible_business_days: int,
     render_nonce: int,
 ) -> str:
     pair_query = pair_symbol or ""
@@ -25,6 +26,7 @@ def build_live_chart_html(
     return f"""
 <div style="display:flex;flex-direction:column;gap:10px;">
   <div style="display:none" data-strategy-name="{strategy_name}" data-strategy-label="{strategy_label}" data-render-nonce="{render_nonce}"></div>
+  <div id="chart-status-{root_suffix}" style="font-size:12px;color:#9aa4b2;margin:0 0 2px 6px;"></div>
   <div id="{main_root_id}" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
   <div id="{indicator_root_id}" style="width:100%;height:220px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
 </div>
@@ -32,16 +34,19 @@ def build_live_chart_html(
 <script>
 const mainRoot = document.getElementById("{main_root_id}");
 const indicatorRoot = document.getElementById("{indicator_root_id}");
+const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
 const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
 const endpoint =
   `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
-  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}`;
+  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&visible_business_days={visible_business_days}`;
 
 let initializedMain = false;
 let initializedIndicator = false;
 let syncingRange = false;
 let previousPayload = null;
+let countdownTimer = null;
+let liveCountdownState = null;
 
 const MAIN_TRACE = {{
   candle: 0,
@@ -78,6 +83,85 @@ function detailHover(items) {{
       item.scr !== undefined ? `SCR: ${{Number(item.scr).toFixed(2)}}` : ""
     ].filter(Boolean).join("<br>")
   );
+}}
+
+function renderCurrentCandleStatus(payload) {{
+  if (!chartStatusRoot) return;
+  const current = payload.currentCandle || null;
+  if (!current) {{
+    chartStatusRoot.innerHTML = "";
+    return;
+  }}
+  const accent = current.isUnconfirmed ? "#f59e0b" : "#22c55e";
+  const progress = Math.max(0, Math.min(Number(current.progressPct || 0), 100));
+  chartStatusRoot.innerHTML =
+    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
+    `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
+    `<span style="color:#64748b;">기준 봉 ${{
+      current.candleTime || "-"
+    }}</span>` +
+    `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
+    `<div style="width:${{progress}}%;height:100%;background:${{accent}};"></div>` +
+    `</div>` +
+    `</div>`;
+}}
+
+function renderCurrentCandleStatusFromState(current) {{
+  if (!chartStatusRoot || !current) return;
+  const accent = current.isUnconfirmed ? "#f59e0b" : "#22c55e";
+  const progress = Math.max(0, Math.min(Number(current.progressPct || 0), 100));
+  chartStatusRoot.innerHTML =
+    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
+    `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
+    `<span style="color:#64748b;">기준 봉 ${{
+      current.candleTime || "-"
+    }}</span>` +
+    `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
+    `<div style="width:${{progress}}%;height:100%;background:${{accent}};"></div>` +
+    `</div>` +
+    `</div>`;
+}}
+
+function startCurrentCandleCountdown(payload) {{
+  if (countdownTimer) {{
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }}
+  const current = payload.currentCandle || null;
+  if (!current) {{
+    liveCountdownState = null;
+    renderCurrentCandleStatus(payload);
+    return;
+  }}
+
+  liveCountdownState = {{ ...current }};
+  renderCurrentCandleStatusFromState(liveCountdownState);
+  if (!liveCountdownState.isUnconfirmed) {{
+    return;
+  }}
+
+  countdownTimer = setInterval(() => {{
+    if (!liveCountdownState || !liveCountdownState.isUnconfirmed) {{
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      return;
+    }}
+    const nextRemaining = Math.max(0, Number(liveCountdownState.remainingSeconds || 0) - 1);
+    liveCountdownState.remainingSeconds = nextRemaining;
+    liveCountdownState.remainingText =
+      `${{String(Math.floor(nextRemaining / 60)).padStart(2, "0")}}:${{String(nextRemaining % 60).padStart(2, "0")}}`;
+    const nextProgress = Math.max(0, Math.min(100, 100 - (nextRemaining / 300) * 100));
+    liveCountdownState.progressPct = nextProgress;
+    if (nextRemaining <= 0) {{
+      liveCountdownState.isUnconfirmed = false;
+      liveCountdownState.statusText = "최근 봉 확정";
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }} else {{
+      liveCountdownState.statusText = `현재 봉 미확정 · 마감까지 ${{liveCountdownState.remainingText}}`;
+    }}
+    renderCurrentCandleStatusFromState(liveCountdownState);
+  }}, 1000);
 }}
 
 function mainMarkerTrace(markers, color, symbol) {{
@@ -481,6 +565,7 @@ async function refreshCharts() {{
   const response = await fetch(endpoint, {{ cache: "no-store" }});
   if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
   const nextPayload = await response.json();
+  startCurrentCandleCountdown(nextPayload);
   const config = {{
     responsive: true,
     displaylogo: false,

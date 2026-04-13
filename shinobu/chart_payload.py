@@ -1,18 +1,27 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from shinobu import data as market_data
-from shinobu.live_trading import get_live_orders, get_live_started_at
+from shinobu.live_trading import (
+    SIGNAL_TO_TRADE_SYMBOL,
+    TRADE_TO_SIGNAL_SYMBOL,
+    get_live_orders,
+    get_live_runtime_state,
+    get_live_started_at,
+)
 from shinobu.strategy import StrategyAdjustments, calculate_strategy
 from shinobu.strategy_cache import calculate_strategy_cached
 
 
 LIVE_TIMEFRAME = "5분봉"
 MAX_LIVE_CHART_CANDLES = 1200
-MAX_LIVE_CHART_BUSINESS_DAYS = 2
+MAX_LIVE_CHART_BUSINESS_DAYS = 5
+CHART_KST = market_data.KST
+PAYLOAD_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "payload_cache"
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
@@ -28,13 +37,145 @@ def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
     return limit_frame_to_recent_business_days(combined)
 
 
-def limit_frame_to_recent_business_days(frame: pd.DataFrame, max_days: int = MAX_LIVE_CHART_BUSINESS_DAYS) -> pd.DataFrame:
+def limit_frame_to_recent_business_days(frame: pd.DataFrame, max_days: int | None = None) -> pd.DataFrame:
     if frame.empty:
         return frame
+    current_max_days = int(max_days or MAX_LIVE_CHART_BUSINESS_DAYS)
     trade_days = pd.Index(pd.to_datetime(frame.index).normalize().unique()).sort_values()
-    recent_days = trade_days[-max_days:]
+    recent_days = trade_days[-current_max_days:]
     limited = frame.loc[frame.index.normalize().isin(recent_days)].copy()
     return limited.tail(MAX_LIVE_CHART_CANDLES).copy()
+
+
+def _frame_position_map(frame: pd.DataFrame) -> pd.Series:
+    return pd.Series(range(len(frame)), index=frame.index)
+
+
+def _visible_index_set(frame: pd.DataFrame) -> set[pd.Timestamp]:
+    return set(pd.DatetimeIndex(frame.index).tolist())
+
+
+def _filter_markers_to_visible_range(
+    markers: list[dict[str, Any]],
+    visible_positions: pd.Series,
+) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    for marker in markers:
+        try:
+            timestamp = pd.Timestamp(marker.get("time"))
+        except Exception:
+            continue
+        x_value = visible_positions.get(timestamp)
+        if pd.isna(x_value):
+            continue
+        item = dict(marker)
+        item["x"] = int(x_value)
+        filtered.append(item)
+    return filtered
+
+
+def _filter_signal_bucket_map(
+    signal_map: dict[str, list[dict[str, Any]]],
+    visible_frame: pd.DataFrame,
+) -> dict[str, list[dict[str, Any]]]:
+    visible_positions = _frame_position_map(visible_frame)
+    return {
+        key: _filter_markers_to_visible_range(value, visible_positions)
+        for key, value in signal_map.items()
+    }
+
+
+def _current_candle_status_from_timestamp(candle_start: pd.Timestamp | None) -> dict[str, Any]:
+    if candle_start is None or pd.isna(candle_start):
+        return {
+            "isUnconfirmed": False,
+            "candleTime": "",
+            "remainingSeconds": 0,
+            "remainingText": "",
+            "progressPct": 100.0,
+            "statusText": "봉 정보 없음",
+        }
+
+    now = pd.Timestamp.now(tz=CHART_KST).tz_localize(None)
+    candle_start = pd.Timestamp(candle_start)
+    candle_end = candle_start + pd.Timedelta(minutes=5)
+    total_seconds = 300
+    elapsed_seconds = max(0, min(int((now - candle_start).total_seconds()), total_seconds))
+    remaining_seconds = max(0, int((candle_end - now).total_seconds()))
+    is_unconfirmed = candle_start <= now < candle_end
+    progress_pct = max(0.0, min((elapsed_seconds / total_seconds) * 100.0, 100.0))
+    remaining_text = f"{remaining_seconds // 60:02d}:{remaining_seconds % 60:02d}"
+    status_text = f"현재 봉 업데이트 남은 시간 {remaining_text}" if is_unconfirmed else "현재 봉 확정"
+    return {
+        "isUnconfirmed": is_unconfirmed,
+        "candleTime": candle_start.strftime("%Y-%m-%d %H:%M"),
+        "remainingSeconds": remaining_seconds,
+        "remainingText": remaining_text,
+        "progressPct": progress_pct,
+        "statusText": status_text,
+    }
+
+
+def _current_candle_status(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty:
+        return _current_candle_status_from_timestamp(None)
+    return _current_candle_status_from_timestamp(pd.Timestamp(frame.index.max()))
+
+
+def _payload_cache_path(cache_key: str) -> Path:
+    PAYLOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    safe_key = "".join(char if char.isalnum() or char in "._-" else "_" for char in cache_key)
+    return PAYLOAD_CACHE_DIR / f"{safe_key}.pkl"
+
+
+def _build_payload_cache_key(
+    *,
+    kind: str,
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments,
+    strategy_name: str,
+    visible_business_days: int,
+) -> str:
+    runtime = get_live_runtime_state()
+    started_at = get_live_started_at()
+    started_at_text = started_at.isoformat() if started_at is not None else ""
+    return "|".join(
+        [
+            kind,
+            symbol,
+            pair_symbol or "",
+            strategy_name,
+            str(int(visible_business_days)),
+            f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}",
+            str(runtime.get("last_checked_candle", "") or ""),
+            str(runtime.get("last_order_at", "") or ""),
+            started_at_text,
+        ]
+    )
+
+
+def _read_cached_payload(cache_key: str) -> dict[str, Any] | None:
+    cache_path = _payload_cache_path(cache_key)
+    if not cache_path.exists():
+        return None
+    try:
+        payload = pd.read_pickle(cache_path)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    candles = payload.get("candles") or []
+    if candles:
+        try:
+            payload["currentCandle"] = _current_candle_status_from_timestamp(pd.Timestamp(candles[-1]["t"]))
+        except Exception:
+            pass
+    return payload
+
+
+def _write_cached_payload(cache_key: str, payload: dict[str, Any]) -> None:
+    pd.to_pickle(payload, _payload_cache_path(cache_key))
 
 
 def _load_raw_frame(symbol: str, started_at: pd.Timestamp | None) -> pd.DataFrame:
@@ -114,7 +255,14 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
 
     order_frame = pd.DataFrame(orders)
     order_frame["candle_time"] = pd.to_datetime(order_frame["candle_time"])
-    order_frame = order_frame[order_frame["symbol"].isin(symbols)]
+    candidate_symbols: set[str] = set()
+    for symbol in symbols:
+        if not symbol:
+            continue
+        candidate_symbols.add(symbol)
+        candidate_symbols.add(SIGNAL_TO_TRADE_SYMBOL.get(symbol, symbol))
+        candidate_symbols.add(TRADE_TO_SIGNAL_SYMBOL.get(symbol, symbol))
+    order_frame = order_frame[order_frame["symbol"].isin(candidate_symbols)]
     if order_frame.empty:
         return []
 
@@ -284,18 +432,43 @@ def build_chart_payload(
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
     strategy_name: str = "src_v2_adx",
+    visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
 ) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
+    cache_key = _build_payload_cache_key(
+        kind=kind,
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        adjustments=current_adjustments,
+        strategy_name=strategy_name,
+        visible_business_days=visible_business_days,
+    )
+    cached_payload = _read_cached_payload(cache_key)
+    if cached_payload is not None:
+        return cached_payload
+
     started_at = get_live_started_at()
     pair_name = market_data.display_name(pair_symbol) if pair_symbol else None
 
     if kind == "overlay":
-        frame = _load_strategy_frame(symbol, started_at, current_adjustments, strategy_name)
-        pair_frame = _load_strategy_frame(pair_symbol, started_at, current_adjustments, strategy_name) if pair_symbol else None
+        full_frame = _load_strategy_frame(symbol, None, current_adjustments, strategy_name)
+        full_pair_frame = _load_strategy_frame(pair_symbol, None, current_adjustments, strategy_name) if pair_symbol else None
+        frame = limit_frame_to_recent_business_days(filter_frame_from_live_start(full_frame) if started_at is not None else full_frame, visible_business_days)
+        pair_frame = (
+            limit_frame_to_recent_business_days(filter_frame_from_live_start(full_pair_frame), visible_business_days)
+            if started_at is not None and full_pair_frame is not None
+            else limit_frame_to_recent_business_days(full_pair_frame, visible_business_days) if full_pair_frame is not None else None
+        )
         include_scr = True
     else:
-        frame = _load_raw_frame(symbol, started_at)
-        pair_frame = _load_raw_frame(pair_symbol, started_at) if pair_symbol else None
+        full_frame = _load_raw_frame(symbol, None)
+        full_pair_frame = _load_raw_frame(pair_symbol, None) if pair_symbol else None
+        frame = limit_frame_to_recent_business_days(filter_frame_from_live_start(full_frame) if started_at is not None else full_frame, visible_business_days)
+        pair_frame = (
+            limit_frame_to_recent_business_days(filter_frame_from_live_start(full_pair_frame), visible_business_days)
+            if started_at is not None and full_pair_frame is not None
+            else limit_frame_to_recent_business_days(full_pair_frame, visible_business_days) if full_pair_frame is not None else None
+        )
         include_scr = False
 
     candles = [
@@ -319,10 +492,13 @@ def build_chart_payload(
         "includeScr": include_scr,
         "candles": candles,
         "tickText": tick_text,
-        "orders": _build_order_markers(frame, [value for value in [symbol, pair_symbol] if value is not None]),
+        "orders": _filter_markers_to_visible_range(
+            _build_order_markers(full_frame, [value for value in [symbol, pair_symbol] if value is not None]),
+            _frame_position_map(frame),
+        ),
         "debug": {
             "max_candles": MAX_LIVE_CHART_CANDLES,
-            "business_days": MAX_LIVE_CHART_BUSINESS_DAYS,
+            "business_days": visible_business_days,
             "frame_rows": len(frame),
             "first_time": frame.index.min().isoformat() if not frame.empty else "",
             "last_time": frame.index.max().isoformat() if not frame.empty else "",
@@ -330,11 +506,17 @@ def build_chart_payload(
         },
     }
 
+    payload["currentCandle"] = _current_candle_status(full_frame)
+
     if include_scr:
         payload["scr"] = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()]
         payload["pairScr"] = _pair_scr(frame, pair_frame)
-        payload["signals"] = _build_position_signal_markers(frame, symbol, pair_symbol, pair_frame)
+        payload["signals"] = _filter_signal_bucket_map(
+            _build_position_signal_markers(full_frame, symbol, pair_symbol, full_pair_frame),
+            frame,
+        )
     else:
         payload["signals"] = {}
 
+    _write_cached_payload(cache_key, payload)
     return payload

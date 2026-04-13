@@ -17,16 +17,24 @@ from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
+    EXECUTION_MODE_SIGNAL,
+    EXECUTION_MODE_X1,
     get_asset_history,
+    get_live_chart_business_days,
+    get_live_execution_mode,
     get_live_logs,
     get_live_orders,
     get_live_runtime_state,
+    get_live_strategy_name,
     get_live_started_at,
     init_live_state,
     is_live_enabled,
     process_live_trading_cycle,
     record_asset_snapshot,
+    set_live_chart_business_days,
     set_live_enabled,
+    set_live_execution_mode,
+    set_live_strategy_name,
 )
 from shinobu.strategy import (
     DEFAULT_STRATEGY_NAME,
@@ -44,8 +52,10 @@ LIVE_CHART_STATE_KEY = "live_chart_state"
 LIVE_FIGURE_STATE_KEY = "live_figure_state"
 LIVE_CHART_NONCE_KEY = "live_chart_nonce"
 MAX_LIVE_CHART_CANDLES = 1200
-MAX_LIVE_CHART_BUSINESS_DAYS = 2
+MAX_LIVE_CHART_BUSINESS_DAYS = 5
 STRATEGY_PROFILE_STATE_KEY = "strategy_profile"
+CHART_BUSINESS_DAYS_STATE_KEY = "chart_business_days"
+EXECUTION_MODE_STATE_KEY = "execution_mode"
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.png"
 NEGATIVE_IMAGE_PATH = ASSET_DIR / "shinobu_negative.png"
@@ -68,7 +78,32 @@ def render_header(profile_name: str) -> None:
 
 def init_strategy_profile_state() -> None:
     if STRATEGY_PROFILE_STATE_KEY not in st.session_state:
-        st.session_state[STRATEGY_PROFILE_STATE_KEY] = DEFAULT_STRATEGY_NAME
+        st.session_state[STRATEGY_PROFILE_STATE_KEY] = get_live_strategy_name()
+
+
+def init_chart_business_days_state() -> None:
+    if CHART_BUSINESS_DAYS_STATE_KEY not in st.session_state:
+        st.session_state[CHART_BUSINESS_DAYS_STATE_KEY] = get_live_chart_business_days()
+
+
+def init_execution_mode_state() -> None:
+    if EXECUTION_MODE_STATE_KEY not in st.session_state:
+        st.session_state[EXECUTION_MODE_STATE_KEY] = get_live_execution_mode()
+
+
+def get_current_chart_business_days() -> int:
+    init_chart_business_days_state()
+    return int(st.session_state.get(CHART_BUSINESS_DAYS_STATE_KEY, MAX_LIVE_CHART_BUSINESS_DAYS))
+
+
+def _set_chart_business_days(days: int) -> None:
+    init_chart_business_days_state()
+    current = int(st.session_state.get(CHART_BUSINESS_DAYS_STATE_KEY, MAX_LIVE_CHART_BUSINESS_DAYS))
+    next_value = max(1, min(int(days), 5))
+    st.session_state[CHART_BUSINESS_DAYS_STATE_KEY] = next_value
+    set_live_chart_business_days(next_value)
+    if current != next_value:
+        st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
 
 
 def get_current_strategy_profile() -> str:
@@ -76,10 +111,17 @@ def get_current_strategy_profile() -> str:
     return normalize_strategy_name(st.session_state.get(STRATEGY_PROFILE_STATE_KEY))
 
 
+def get_current_execution_mode() -> str:
+    init_execution_mode_state()
+    current = str(st.session_state.get(EXECUTION_MODE_STATE_KEY, EXECUTION_MODE_X1))
+    return current if current in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL} else EXECUTION_MODE_X1
+
+
 def _set_strategy_profile(profile_name: str) -> None:
     normalized = normalize_strategy_name(profile_name)
     current = normalize_strategy_name(st.session_state.get(STRATEGY_PROFILE_STATE_KEY))
     st.session_state[STRATEGY_PROFILE_STATE_KEY] = normalized
+    set_live_strategy_name(normalized)
     if current != normalized:
         init_live_chart_state()
         st.session_state[LIVE_CHART_STATE_KEY] = {"started_at": "", "frames": {}}
@@ -87,23 +129,62 @@ def _set_strategy_profile(profile_name: str) -> None:
         st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
 
 
-def render_strategy_profile_selector() -> str:
+def _set_execution_mode(mode: str) -> None:
+    normalized = mode if mode in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL} else EXECUTION_MODE_X1
+    current = get_current_execution_mode()
+    st.session_state[EXECUTION_MODE_STATE_KEY] = normalized
+    set_live_execution_mode(normalized)
+    if current != normalized:
+        st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
+
+
+def render_live_selector_bar() -> str:
     current_profile = get_current_strategy_profile()
-    st.markdown("#### 전략 선택")
+    current_days = get_current_chart_business_days()
+    current_execution_mode = get_current_execution_mode()
     options = list_strategy_options()
-    columns = st.columns(len(options))
-    for column, option in zip(columns, options, strict=False):
-        with column:
-            st.button(
-                get_strategy_title(option.key),
-                key=f"strategy_{option.key}_button",
-                use_container_width=True,
-                type="primary" if current_profile == option.key else "secondary",
-                on_click=_set_strategy_profile,
-                args=(option.key,),
-                help=get_strategy_help_text(option.key),
-            )
-    st.caption(get_strategy_help_text(current_profile).replace("\n", " | "))
+    option_keys = [option.key for option in options]
+    option_map = {option.key: option for option in options}
+
+    strategy_col, days_col, execution_col, _ = st.columns([1.5, 0.8, 1.2, 2.5])
+    with strategy_col:
+        selected_profile = st.selectbox(
+            "전략 선택",
+            options=option_keys,
+            index=option_keys.index(current_profile),
+            format_func=lambda value: get_strategy_title(value),
+            help=get_strategy_help_text(current_profile),
+        )
+    with days_col:
+        selected_days = st.selectbox(
+            "차트 표시 기간",
+            options=[1, 2, 3, 4, 5],
+            index=max(0, min(current_days - 1, 4)),
+            format_func=lambda value: f"{value}일",
+            help="차트에 표시할 최근 영업일 수입니다. 내부 전략 계산은 필요한 전체 데이터로 유지됩니다.",
+        )
+    with execution_col:
+        selected_execution_mode = st.selectbox(
+            "실제 주문 대상",
+            options=[EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL],
+            index=0 if current_execution_mode == EXECUTION_MODE_X1 else 1,
+            format_func=lambda value: "x1 ETF" if value == EXECUTION_MODE_X1 else "레버리지/곱버스",
+            help="실제 시그널 주문을 x1 ETF로 집행할지, 레버리지/곱버스로 집행할지 선택합니다.",
+        )
+
+    if selected_profile != current_profile:
+        _set_strategy_profile(selected_profile)
+    if int(selected_days) != current_days:
+        _set_chart_business_days(int(selected_days))
+    if selected_execution_mode != current_execution_mode:
+        _set_execution_mode(selected_execution_mode)
+
+    active_option = option_map[get_current_strategy_profile()]
+    mode_label = "x1 ETF" if get_current_execution_mode() == EXECUTION_MODE_X1 else "레버리지/곱버스"
+    st.caption(
+        f"현재 전략: {active_option.label} | 차트 표시: 최근 {get_current_chart_business_days()}영업일 | 실제 주문: {mode_label}"
+    )
+    st.caption(get_strategy_help_text(active_option.key).replace("\n", " | "))
     return get_current_strategy_profile()
 
 def init_live_chart_state() -> None:
@@ -155,11 +236,12 @@ def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
     return limit_frame_to_recent_business_days(combined)
 
 
-def limit_frame_to_recent_business_days(frame: pd.DataFrame, max_days: int = MAX_LIVE_CHART_BUSINESS_DAYS) -> pd.DataFrame:
+def limit_frame_to_recent_business_days(frame: pd.DataFrame, max_days: int | None = None) -> pd.DataFrame:
     if frame.empty:
         return frame
+    current_max_days = int(max_days or MAX_LIVE_CHART_BUSINESS_DAYS)
     trade_days = pd.Index(pd.to_datetime(frame.index).normalize().unique()).sort_values()
-    recent_days = trade_days[-max_days:]
+    recent_days = trade_days[-current_max_days:]
     limited = frame.loc[frame.index.normalize().isin(recent_days)].copy()
     return limited.tail(MAX_LIVE_CHART_CANDLES).copy()
 
@@ -731,13 +813,14 @@ def get_recent_execution_ledger(lookback_days: int = 7) -> pd.DataFrame:
 
 def _render_open_live_positions() -> None:
     try:
-        current_positions, _ = fetch_domestic_balance()
+        current_positions, current_summary = fetch_domestic_balance()
     except Exception:
         current_positions = pd.DataFrame()
 
     trade_codes = {"069500", "114800"}
     if not current_positions.empty and "code" in current_positions.columns:
         open_view = current_positions[current_positions["code"].astype(str).isin(trade_codes)].copy()
+        open_view = _dedupe_positions_frame(open_view)
     else:
         open_view = pd.DataFrame()
 
@@ -752,7 +835,6 @@ def _render_closed_live_trades() -> None:
     st.markdown("##### 청산 완료 거래")
     try:
         history = get_live_trade_history(7)
-        executions = get_recent_execution_ledger(7)
     except KisApiError as exc:
         st.caption(f"거래내역 조회 오류: {exc}")
         return
@@ -804,35 +886,6 @@ def _render_closed_live_trades() -> None:
             hide_index=True,
         )
 
-    if executions.empty:
-        st.caption("최근 7일 체결 원장도 비어 있습니다.")
-        return
-
-    st.markdown("###### 최근 7일 체결 원장")
-    ledger = _group_execution_ledger_by_5m(executions)
-    ledger = ledger.loc[:, [column for column in ["time_range", "name", "side", "quantity", "price", "amount", "order_count"] if column in ledger.columns]].copy()
-    if "side" in ledger.columns:
-        ledger["side"] = ledger["side"].map({"buy": "매수", "sell": "매도"}).fillna(ledger["side"])
-    for column in ["quantity", "price", "amount", "order_count"]:
-        if column in ledger.columns:
-            ledger[column] = ledger[column].map(lambda value: f"{float(value):,.0f}")
-    ledger = ledger.rename(
-        columns={
-            "time_range": "구간",
-            "name": "종목",
-            "side": "구분",
-            "quantity": "수량",
-            "price": "가격",
-            "amount": "금액",
-            "order_count": "주문건수",
-        }
-    )
-    st.dataframe(
-        ledger.head(20),
-        use_container_width=True,
-        hide_index=True,
-    )
-
 
 def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
     total_assets = _extract_total_assets(summary)
@@ -862,7 +915,6 @@ def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
             negative,
             "negative",
         )
-@st.fragment(run_every="10s")
 def render_live_account_panel() -> None:
     st.markdown("#### 실계좌")
     if not has_kis_account():
@@ -922,7 +974,11 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     init_live_chart_state()
     chart_nonce = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0))
     strategy_label = get_strategy_label(profile_name)
-    st.caption(f"차트 반영 전략: {strategy_label}")
+    visible_business_days = get_current_chart_business_days()
+    runtime = get_live_runtime_state()
+    if runtime["last_status"] in {"checking", "waiting_data"} or not runtime["last_checked_candle"]:
+        st.info("엔진이 계산하고 있습니다. 차트와 시그널을 준비하는 중입니다.")
+    st.caption(f"차트 반영 전략: {strategy_label} · 표시 기간: 최근 {visible_business_days}영업일")
     components.html(
         build_live_chart_html(
             server_url=ensure_chart_server(),
@@ -933,6 +989,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             rsi_pct=adjustments.rsi_pct,
             strategy_name=profile_name,
             strategy_label=strategy_label,
+            visible_business_days=visible_business_days,
             render_nonce=chart_nonce,
         ),
         height=640,
@@ -1078,6 +1135,8 @@ def _handle_live_stop() -> None:
 
 def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 실전 투자")
+    execution_mode = get_current_execution_mode()
+    execution_label = "x1 ETF" if execution_mode == EXECUTION_MODE_X1 else "레버리지/곱버스"
     left_button, right_button = st.columns(2)
     with left_button:
         st.button(
@@ -1113,7 +1172,7 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
     )
     st.caption(
         f"실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. "
-        f"현재 전략은 {get_strategy_label(get_current_strategy_profile())}이며, 매수 시 주문가능현금을 최대한 사용합니다."
+        f"현재 전략은 {get_strategy_label(get_current_strategy_profile())}, 실제 주문 대상은 {execution_label}이며, 매수 시 주문가능현금을 최대한 사용합니다."
     )
 
     runtime = get_live_runtime_state()
@@ -1161,13 +1220,15 @@ def main() -> None:
     init_live_state()
     init_live_chart_state()
     init_strategy_profile_state()
+    init_chart_business_days_state()
+    init_execution_mode_state()
     loaded_symbol = PRIMARY_SYMBOL
     adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
     pair_symbol = get_pair_symbol(loaded_symbol)
     profile_name = get_current_strategy_profile()
 
     render_header(profile_name)
-    profile_name = render_strategy_profile_selector()
+    profile_name = render_live_selector_bar()
 
     left, right = st.columns([2.2, 1], vertical_alignment="top")
     with right:

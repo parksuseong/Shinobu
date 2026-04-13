@@ -13,7 +13,7 @@ import pandas as pd
 
 from shinobu.data import display_name, load_live_chart_data
 from shinobu.kis import KisApiError, cancel_domestic_order, fetch_domestic_balance, place_domestic_order
-from shinobu.strategy import StrategyAdjustments, calculate_strategy
+from shinobu.strategy import DEFAULT_STRATEGY_NAME, StrategyAdjustments, calculate_strategy, normalize_strategy_name
 from shinobu.strategy_cache import calculate_strategy_cached
 
 
@@ -22,6 +22,9 @@ SIGNAL_TO_TRADE_SYMBOL = {
     "252670.KS": "114800.KS",
 }
 TRADE_TO_SIGNAL_SYMBOL = {value: key for key, value in SIGNAL_TO_TRADE_SYMBOL.items()}
+EXECUTION_MODE_X1 = "x1"
+EXECUTION_MODE_SIGNAL = "signal"
+DEFAULT_EXECUTION_MODE = EXECUTION_MODE_X1
 MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
 LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 4.0
@@ -58,6 +61,9 @@ def _default_state() -> dict[str, Any]:
     return {
         "enabled": False,
         "started_at": "",
+        "strategy_name": DEFAULT_STRATEGY_NAME,
+        "chart_business_days": 5,
+        "execution_mode": DEFAULT_EXECUTION_MODE,
         "last_checked_candle": "",
         "last_cycle_at": "",
         "last_order_at": "",
@@ -110,6 +116,7 @@ def _write_state(state: dict[str, Any]) -> None:
 def init_live_state() -> None:
     with _LIVE_STATE_LOCK:
         _ensure_state_file()
+        _write_state(_read_state())
 
 
 def _append_log(level: str, message: str) -> None:
@@ -231,6 +238,58 @@ def get_live_runtime_state() -> dict[str, str]:
     }
 
 
+def get_live_strategy_name() -> str:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+    return normalize_strategy_name(str(state.get("strategy_name", DEFAULT_STRATEGY_NAME)))
+
+
+def set_live_strategy_name(strategy_name: str) -> None:
+    normalized = normalize_strategy_name(strategy_name)
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        state["strategy_name"] = normalized
+        _write_state(state)
+
+
+def get_live_chart_business_days() -> int:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+    try:
+        return max(1, min(int(state.get("chart_business_days", 5)), 5))
+    except (TypeError, ValueError):
+        return 5
+
+
+def set_live_chart_business_days(days: int) -> None:
+    next_value = max(1, min(int(days), 5))
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        state["chart_business_days"] = next_value
+        _write_state(state)
+
+
+def normalize_execution_mode(mode: str | None) -> str:
+    candidate = str(mode or DEFAULT_EXECUTION_MODE).strip().lower()
+    if candidate in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL}:
+        return candidate
+    return DEFAULT_EXECUTION_MODE
+
+
+def get_live_execution_mode() -> str:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+    return normalize_execution_mode(str(state.get("execution_mode", DEFAULT_EXECUTION_MODE)))
+
+
+def set_live_execution_mode(mode: str) -> None:
+    normalized = normalize_execution_mode(mode)
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        state["execution_mode"] = normalized
+        _write_state(state)
+
+
 def record_asset_snapshot(total_assets: float) -> None:
     with _LIVE_STATE_LOCK:
         state = _read_state()
@@ -330,9 +389,22 @@ def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> 
     if positions.empty or "code" not in positions.columns:
         return None
 
-    target_symbols = [SIGNAL_TO_TRADE_SYMBOL.get(symbol, symbol) for symbol in symbols]
+    filtered = positions.copy()
+    if "quantity" in filtered.columns:
+        quantities = pd.to_numeric(filtered["quantity"], errors="coerce").fillna(0)
+        filtered = filtered.loc[quantities > 0].copy()
+    if filtered.empty:
+        return None
+
+    target_symbols: list[str] = []
+    for symbol in symbols:
+        if symbol not in target_symbols:
+            target_symbols.append(symbol)
+        mapped = SIGNAL_TO_TRADE_SYMBOL.get(symbol, symbol)
+        if mapped not in target_symbols:
+            target_symbols.append(mapped)
     target_codes = [symbol.replace(".KS", "") for symbol in target_symbols]
-    matches = positions[positions["code"].isin(target_codes)]
+    matches = filtered[filtered["code"].isin(target_codes)]
     if matches.empty:
         return None
 
@@ -520,8 +592,12 @@ def _submit_live_order(
     round_count = 0
 
     while True:
-        fetch_domestic_balance.clear()
-        positions, latest_summary = fetch_domestic_balance()
+        try:
+            fetch_domestic_balance.clear()
+            positions, latest_summary = fetch_domestic_balance()
+        except Exception as exc:
+            _append_log("오류", f"{display_name(symbol)} 주문 전 잔고 조회 실패: {exc}")
+            raise
         current_quantity = _position_quantity_for_symbol(positions, symbol)
 
         if side == "buy":
@@ -556,8 +632,12 @@ def _submit_live_order(
             baseline_quantity=baseline_for_fill,
         )
 
-        fetch_domestic_balance.clear()
-        positions, latest_summary = fetch_domestic_balance()
+        try:
+            fetch_domestic_balance.clear()
+            positions, latest_summary = fetch_domestic_balance()
+        except Exception as exc:
+            _append_log("오류", f"{display_name(symbol)} 주문 후 잔고 조회 실패: {exc}")
+            raise
         updated_quantity = _position_quantity_for_symbol(positions, symbol)
 
         if side == "buy":
@@ -626,6 +706,8 @@ def _submit_live_order_once(
                 f"{display_name(symbol)} {side.upper()} {working_quantity}주 시장가 주문 접수 ({_format_order_response(broker_output)})",
             )
             filled, fill_message = _confirm_fill_after_order(symbol, side, baseline_quantity, working_quantity)
+            order_entry["filled"] = bool(filled)
+            order_entry["fill_message"] = fill_message
             _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {working_quantity}주 {fill_message}")
             return
         except Exception as exc:
@@ -659,7 +741,10 @@ def _submit_live_order_once(
     raise KisApiError(message)
 
 
-def _trade_symbol(signal_symbol: str) -> str:
+def _trade_symbol(signal_symbol: str, execution_mode: str) -> str:
+    normalized_mode = normalize_execution_mode(execution_mode)
+    if normalized_mode == EXECUTION_MODE_SIGNAL:
+        return signal_symbol
     return SIGNAL_TO_TRADE_SYMBOL.get(signal_symbol, signal_symbol)
 
 
@@ -673,6 +758,7 @@ def process_live_trading_cycle(
         state = _read_state()
         if not state["enabled"]:
             return
+        execution_mode = normalize_execution_mode(state.get("execution_mode", DEFAULT_EXECUTION_MODE))
 
         phase = _market_phase()
         if phase != "regular":
@@ -705,7 +791,13 @@ def process_live_trading_cycle(
 
         target_time, primary_row, secondary_row = target_rows
         candle_key = target_time.strftime("%Y-%m-%d %H:%M")
-        positions, summary = fetch_domestic_balance()
+        try:
+            positions, summary = fetch_domestic_balance()
+        except Exception as exc:
+            _set_status(state, "error", str(exc))
+            _append_log("오류", f"실계좌 조회 실패: {exc}")
+            _write_state(state)
+            raise
         current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
         chosen_open = _choose_open_candidate(primary_symbol, secondary_symbol, primary_row, secondary_row)
         pending_mode = str(state.get("pending_target_mode", "none") or "none")
@@ -720,7 +812,7 @@ def process_live_trading_cycle(
                 _set_pending_target(
                     state,
                     "symbol",
-                    _trade_symbol(chosen_open[0]),
+                    _trade_symbol(chosen_open[0], execution_mode),
                     "반대 ETF 스위치",
                     target_time,
                 )
@@ -730,7 +822,7 @@ def process_live_trading_cycle(
             _set_pending_target(
                 state,
                 "symbol",
-                _trade_symbol(chosen_open[0]),
+                _trade_symbol(chosen_open[0], execution_mode),
                 "buy open 진입",
                 target_time,
             )
@@ -782,7 +874,7 @@ def process_live_trading_cycle(
         if pending_mode == "symbol" and pending_symbol:
             if current_position is not None and current_position["symbol"] == pending_symbol:
                 _clear_pending_target(state)
-                if chosen_open is not None and _trade_symbol(chosen_open[0]) == pending_symbol:
+                if chosen_open is not None and _trade_symbol(chosen_open[0], execution_mode) == pending_symbol:
                     active_row = primary_row if chosen_open[0] == primary_symbol else secondary_row
                     current_quantity = int(current_position["quantity"])
                     add_price = float(active_row["Close"])
@@ -828,27 +920,34 @@ def process_live_trading_cycle(
                 fetch_domestic_balance.clear()
                 positions, summary = fetch_domestic_balance()
                 current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
-                if current_position is not None:
-                    _set_status(state, "error", "기존 포지션 청산 후에도 잔고가 남아 있어 스위칭을 보류합니다.")
-                    _append_log("경고", "청산 후에도 기존 포지션이 남아 있어 다음 주기에 다시 확인합니다.")
+                if current_position is not None and current_position["symbol"] != pending_symbol:
+                    _set_status(state, "holding")
+                    _append_log("경고", "기존 포지션 청산이 아직 완전히 끝나지 않아 다음 주기에 스위칭을 이어서 시도합니다.")
+                    _write_state(state)
+                    return
+                if current_position is not None and current_position["symbol"] == pending_symbol:
+                    _clear_pending_target(state)
+                    _set_status(state, "ordered")
+                    _append_log("정보", f"{pending_candle or candle_key} 기준 반대 포지션 스위칭이 이미 반영되어 보유 상태를 유지합니다.")
                     _write_state(state)
                     return
 
-            target_signal_symbol = TRADE_TO_SIGNAL_SYMBOL.get(pending_symbol, pending_symbol)
-            target_row = primary_row if target_signal_symbol == primary_symbol else secondary_row
-            buy_price = float(target_row["Close"])
-            buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
-            if buy_quantity <= 0:
-                _set_status(state, "waiting_cash")
-                _append_log("경고", f"{display_name(pending_symbol)} 매수 가능 수량이 없습니다. 다음 주기에 다시 확인합니다.")
-                _write_state(state)
-                return
+                target_signal_symbol = TRADE_TO_SIGNAL_SYMBOL.get(pending_symbol, pending_symbol)
+                target_row = primary_row if target_signal_symbol == primary_symbol else secondary_row
+                buy_price = float(target_row["Close"])
+                buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
+                if buy_quantity <= 0:
+                    _set_status(state, "waiting_cash")
+                    _append_log("경고", f"{display_name(pending_symbol)} 스위칭 진입 가능 수량이 없어 다음 주기에 다시 확인합니다.")
+                    _write_state(state)
+                    return
 
-            _append_log("정보", f"{pending_candle or candle_key} 기준 목표 포지션 미달성 감지, 진입 주문을 재시도합니다.")
-            _submit_live_order(
-                state,
-                pending_symbol,
-                "buy",
+                _append_log("정보", f"{pending_candle or candle_key} 기준 반대 포지션 청산 완료, {display_name(pending_symbol)} 진입을 이어서 시도합니다.")
+                _append_log("정보", f"{pending_candle or candle_key} 기준 목표 포지션 미달성 감지, 진입 주문을 재시도합니다.")
+                _submit_live_order(
+                    state,
+                    pending_symbol,
+                    "buy",
                 buy_quantity,
                 buy_price,
                 pending_reason or "buy open 진입",
