@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
+import time
 from typing import Any
 
 import pandas as pd
@@ -21,6 +23,9 @@ MAX_LIVE_CHART_CANDLES = 1200
 MAX_LIVE_CHART_BUSINESS_DAYS = 5
 CHART_KST = market_data.KST
 PAYLOAD_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "payload_cache"
+_PREWARM_LOCK = threading.Lock()
+_PREWARM_STARTED_KEYS: set[str] = set()
+_PREWARM_BUNDLE_KEYS: set[str] = set()
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
@@ -628,3 +633,99 @@ def build_chart_payload(
 
     _write_cached_payload(cache_key, payload)
     return payload
+
+
+def ensure_live_chart_prewarm(
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments | None = None,
+    *,
+    strategy_name: str = "src_v2_adx",
+    visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
+) -> None:
+    current_adjustments = adjustments or StrategyAdjustments()
+    prewarm_key = _build_payload_cache_key(
+        kind="overlay",
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        adjustments=current_adjustments,
+        strategy_name=strategy_name,
+        visible_business_days=visible_business_days,
+    )
+
+    with _PREWARM_LOCK:
+        if prewarm_key in _PREWARM_STARTED_KEYS:
+            return
+        _PREWARM_STARTED_KEYS.add(prewarm_key)
+
+    def _runner() -> None:
+        try:
+            build_chart_payload(
+                "overlay",
+                symbol,
+                pair_symbol,
+                current_adjustments,
+                strategy_name=strategy_name,
+                visible_business_days=visible_business_days,
+            )
+        except Exception:
+            with _PREWARM_LOCK:
+                _PREWARM_STARTED_KEYS.discard(prewarm_key)
+
+    thread = threading.Thread(target=_runner, daemon=True, name=f"shinobu-prewarm-{strategy_name}")
+    thread.start()
+
+
+def ensure_live_chart_prewarm_bundle(
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments | None = None,
+    *,
+    current_strategy_name: str,
+    visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
+    all_strategy_names: list[str] | None = None,
+) -> None:
+    current_adjustments = adjustments or StrategyAdjustments()
+    strategy_names = list(dict.fromkeys([current_strategy_name] + list(all_strategy_names or [])))
+    bundle_key = "|".join(
+        [
+            symbol,
+            pair_symbol or "",
+            current_strategy_name,
+            str(int(visible_business_days)),
+            ",".join(strategy_names),
+            f"s{current_adjustments.stoch_pct}_c{current_adjustments.cci_pct}_r{current_adjustments.rsi_pct}",
+        ]
+    )
+
+    with _PREWARM_LOCK:
+        if bundle_key in _PREWARM_BUNDLE_KEYS:
+            return
+        _PREWARM_BUNDLE_KEYS.add(bundle_key)
+
+    ensure_live_chart_prewarm(
+        symbol,
+        pair_symbol,
+        current_adjustments,
+        strategy_name=current_strategy_name,
+        visible_business_days=visible_business_days,
+    )
+
+    def _runner() -> None:
+        try:
+            for strategy_name in strategy_names:
+                if strategy_name == current_strategy_name:
+                    continue
+                time.sleep(0.6)
+                ensure_live_chart_prewarm(
+                    symbol,
+                    pair_symbol,
+                    current_adjustments,
+                    strategy_name=strategy_name,
+                    visible_business_days=visible_business_days,
+                )
+        except Exception:
+            pass
+
+    thread = threading.Thread(target=_runner, daemon=True, name=f"shinobu-prewarm-bundle-{current_strategy_name}")
+    thread.start()

@@ -12,6 +12,7 @@ from PIL import Image
 from config import has_kis_account
 from shinobu import data as market_data
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
+from shinobu.chart_payload import ensure_live_chart_prewarm_bundle
 from shinobu.chart_server import ensure_chart_server
 from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
@@ -1226,9 +1227,28 @@ def main() -> None:
     adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
     pair_symbol = get_pair_symbol(loaded_symbol)
     profile_name = get_current_strategy_profile()
+    visible_business_days = get_current_chart_business_days()
+    ensure_chart_server()
+    strategy_keys = [option.key for option in list_strategy_options()]
+    ensure_live_chart_prewarm_bundle(
+        loaded_symbol,
+        pair_symbol,
+        adjustments,
+        current_strategy_name=profile_name,
+        visible_business_days=visible_business_days,
+        all_strategy_names=strategy_keys,
+    )
 
     render_header(profile_name)
     profile_name = render_live_selector_bar()
+    ensure_live_chart_prewarm_bundle(
+        loaded_symbol,
+        pair_symbol,
+        adjustments,
+        current_strategy_name=profile_name,
+        visible_business_days=get_current_chart_business_days(),
+        all_strategy_names=strategy_keys,
+    )
 
     left, right = st.columns([2.2, 1], vertical_alignment="top")
     with right:
