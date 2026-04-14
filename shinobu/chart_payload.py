@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from shinobu import data as market_data
+from shinobu.kis import fetch_domestic_daily_ccld
 from shinobu.live_trading import (
     SIGNAL_TO_TRADE_SYMBOL,
     TRADE_TO_SIGNAL_SYMBOL,
@@ -23,6 +24,7 @@ MAX_LIVE_CHART_CANDLES = 1200
 MAX_LIVE_CHART_BUSINESS_DAYS = 5
 CHART_KST = market_data.KST
 PAYLOAD_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "payload_cache"
+EXECUTION_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "execution_cache"
 _PREWARM_LOCK = threading.Lock()
 _PREWARM_STARTED_KEYS: set[str] = set()
 _PREWARM_BUNDLE_KEYS: set[str] = set()
@@ -179,6 +181,57 @@ def _write_cached_payload(cache_key: str, payload: dict[str, Any]) -> None:
     pd.to_pickle(payload, _payload_cache_path(cache_key))
 
 
+def _execution_cache_path(cache_key: str) -> Path:
+    EXECUTION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    safe_key = "".join(char if char.isalnum() or char in "._-" else "_" for char in cache_key)
+    return EXECUTION_CACHE_DIR / f"{safe_key}.pkl"
+
+
+def _load_recent_execution_markers(symbols: list[str], frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame()
+
+    unique_symbols = sorted({symbol for symbol in symbols if symbol})
+    if not unique_symbols:
+        return pd.DataFrame()
+
+    start_date = pd.Timestamp(frame.index.min()).strftime("%Y%m%d")
+    end_date = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
+    cache_key = f"{'_'.join(unique_symbols)}_{start_date}_{end_date}_{pd.Timestamp.now().strftime('%Y%m%d%H%M')}"
+    cache_path = _execution_cache_path(cache_key)
+    if cache_path.exists():
+        try:
+            cached = pd.read_pickle(cache_path)
+            if isinstance(cached, pd.DataFrame):
+                return cached
+        except Exception:
+            pass
+
+    frames: list[pd.DataFrame] = []
+    for symbol in unique_symbols:
+        try:
+            execution_frame = fetch_domestic_daily_ccld(start_date, end_date, symbol=symbol, max_pages=2)
+        except Exception:
+            continue
+        if not execution_frame.empty:
+            frames.append(execution_frame)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if merged.empty:
+        pd.to_pickle(merged, cache_path)
+        return merged
+
+    merged = merged.copy()
+    merged["timestamp"] = pd.to_datetime(merged["timestamp"], errors="coerce")
+    merged = merged.dropna(subset=["timestamp"])
+    merged = merged.loc[merged["symbol"].isin(unique_symbols)]
+    dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in merged.columns]
+    if dedupe_keys:
+        merged = merged.drop_duplicates(subset=dedupe_keys, keep="last")
+    pd.to_pickle(merged, cache_path)
+    return merged
+
+
 def _merge_series_payload(
     cached_values: list[Any] | None,
     current_values: list[Any],
@@ -289,12 +342,38 @@ def _build_signal_markers(
 
 
 def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[str, Any]]:
-    orders = get_live_orders()
-    if not orders or frame.empty:
+    runtime_orders = get_live_orders()
+    execution_symbols: set[str] = set()
+    for symbol in symbols:
+        if not symbol:
+            continue
+        execution_symbols.add(symbol)
+        execution_symbols.add(SIGNAL_TO_TRADE_SYMBOL.get(symbol, symbol))
+        execution_symbols.add(TRADE_TO_SIGNAL_SYMBOL.get(symbol, symbol))
+    execution_frame = _load_recent_execution_markers(sorted(execution_symbols), frame)
+
+    runtime_frame = pd.DataFrame(runtime_orders) if runtime_orders else pd.DataFrame()
+    if not runtime_frame.empty:
+        runtime_frame = runtime_frame.copy()
+        runtime_frame["timestamp"] = pd.to_datetime(runtime_frame["timestamp"], errors="coerce") if "timestamp" in runtime_frame.columns else pd.NaT
+        runtime_frame["candle_time"] = pd.to_datetime(runtime_frame["candle_time"], errors="coerce") if "candle_time" in runtime_frame.columns else pd.NaT
+        runtime_frame["name"] = runtime_frame["symbol"].map(market_data.display_name) if "symbol" in runtime_frame.columns else ""
+        runtime_frame["source"] = "runtime"
+
+    execution_marker_frame = pd.DataFrame()
+    if not execution_frame.empty:
+        execution_marker_frame = execution_frame.copy()
+        execution_marker_frame["candle_time"] = pd.to_datetime(execution_marker_frame["timestamp"]).dt.floor("5min")
+        execution_marker_frame["reason"] = "실제 체결"
+        execution_marker_frame["source"] = "execution"
+
+    if runtime_frame.empty and execution_marker_frame.empty:
         return []
 
-    order_frame = pd.DataFrame(orders)
-    order_frame["candle_time"] = pd.to_datetime(order_frame["candle_time"])
+    order_frame = pd.concat([runtime_frame, execution_marker_frame], ignore_index=True) if not runtime_frame.empty or not execution_marker_frame.empty else pd.DataFrame()
+    if order_frame.empty:
+        return []
+
     candidate_symbols: set[str] = set()
     for symbol in symbols:
         if not symbol:
@@ -305,6 +384,12 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     order_frame = order_frame[order_frame["symbol"].isin(candidate_symbols)]
     if order_frame.empty:
         return []
+
+    dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "candle_time"] if column in order_frame.columns]
+    if dedupe_keys:
+        source_rank = {"runtime": 0, "execution": 1}
+        order_frame["source_rank"] = order_frame["source"].map(lambda value: source_rank.get(str(value), 9))
+        order_frame = order_frame.sort_values(["source_rank", "candle_time"]).drop_duplicates(subset=dedupe_keys, keep="first")
 
     aligned = frame.reindex(order_frame["candle_time"]).ffill()
     positions = pd.Series(range(len(frame)), index=frame.index)

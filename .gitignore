@@ -30,6 +30,7 @@ config.local.*
 .streamlit/raw_cache/
 .streamlit/strategy_cache/
 .streamlit/payload_cache/
+.streamlit/execution_cache/
 .streamlit/tmp*
 
 # Logs

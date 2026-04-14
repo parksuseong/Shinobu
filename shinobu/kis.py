@@ -59,6 +59,14 @@ def _write_cached_token(token: str, expires_in_seconds: int) -> None:
     KIS_TOKEN_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _clear_cached_token() -> None:
+    try:
+        if KIS_TOKEN_FILE.exists():
+            KIS_TOKEN_FILE.unlink()
+    except OSError:
+        return
+
+
 def _respect_rate_limit() -> None:
     global _KIS_LAST_REQUEST_AT
     with _KIS_REQUEST_LOCK:
@@ -73,9 +81,14 @@ def _is_rate_limit_error(detail: str) -> bool:
     return "EGW00201" in detail or "초당 거래건수" in detail
 
 
+def _is_expired_token_error(detail: str) -> bool:
+    return "EGW00123" in detail or "기간이 만료된 token" in detail
+
+
 def _request_json(method: str, url: str, headers: dict[str, str] | None = None, body: dict | None = None) -> dict:
     payload = None
     request_headers = headers.copy() if headers else {}
+    token_refresh_attempted = False
     if body is not None:
         payload = json.dumps(body).encode("utf-8")
         request_headers["content-type"] = "application/json"
@@ -90,6 +103,14 @@ def _request_json(method: str, url: str, headers: dict[str, str] | None = None, 
                 return json.loads(content)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")
+            if _is_expired_token_error(detail) and not token_refresh_attempted:
+                token_refresh_attempted = True
+                _clear_cached_token()
+                auth_header = request_headers.get("authorization", "")
+                if auth_header.lower().startswith("bearer "):
+                    request_headers["authorization"] = f"Bearer {issue_access_token()}"
+                time.sleep(0.1)
+                continue
             if _is_rate_limit_error(detail) and attempt < KIS_MAX_RETRIES:
                 time.sleep(KIS_RETRY_DELAY_SECONDS * (attempt + 1))
                 continue
