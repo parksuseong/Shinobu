@@ -239,3 +239,48 @@ KIS_IS_REAL = "true"
 - `실행` 상태에서는 실제 계좌에 주문이 나갈 수 있습니다.
 - 주문 전 계좌 상태와 전략 동작을 반드시 확인해야 합니다.
 - 네트워크 오류나 API 지연이 발생할 수 있으므로, 로그와 실계좌 상태를 함께 보는 것을 권장합니다.
+
+## Codex Harness
+
+Quick verification loop:
+
+```bash
+python scripts/codex_smoke.py
+python scripts/codex_report.py
+python harness.py
+```
+
+See `HARNESS.md` for details.
+
+## Signal API (Swagger)
+
+External systems can read signal rows from sqlite via REST API.
+
+Run:
+
+```bash
+python scripts/run_signal_api.py
+```
+
+Base URL:
+
+- `http://localhost:8766`
+
+Swagger / OpenAPI:
+
+- `http://localhost:8766/docs`
+- `http://localhost:8766/redoc`
+
+Main endpoints:
+
+- `GET /health`
+- `GET /v1/signals` (기간 조회 + limit 기반 조회)
+- `GET /v1/executions/recent`
+
+Example:
+
+```bash
+curl "http://localhost:8766/v1/signals?from_ts=2026-04-16T09:00:00&to_ts=2026-04-16T15:30:00&sort=desc&symbol=122630.KS&signal=open"
+
+curl "http://localhost:8766/v1/executions/recent?symbol=069500.KS&side=buy&limit=20"
+```

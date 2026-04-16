@@ -5,7 +5,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from shinobu.chart_payload import build_chart_payload
+from shinobu.chart_controller import build_chart_payload_controlled
 from shinobu.strategy import StrategyAdjustments
 
 
@@ -37,13 +37,15 @@ class _ChartHandler(BaseHTTPRequestHandler):
         )
         strategy_name = query.get("strategy_name", query.get("profile_name", ["src_v2_adx"]))[0]
         visible_business_days = int(query.get("visible_business_days", ["5"])[0])
-        payload = build_chart_payload(
-            kind,
-            symbol,
-            pair_symbol,
-            adjustments,
+        include_markers = query.get("include_markers", ["1"])[0].strip() not in {"0", "false", "False"}
+        payload = build_chart_payload_controlled(
+            kind=kind,
+            symbol=symbol,
+            pair_symbol=pair_symbol,
+            adjustments=adjustments,
             strategy_name=strategy_name,
             visible_business_days=visible_business_days,
+            include_markers=include_markers,
         )
         self._send_json(payload)
 

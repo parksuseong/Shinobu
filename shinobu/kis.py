@@ -6,6 +6,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,11 +17,12 @@ from config import get_secret
 
 
 KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
-KIS_MIN_REQUEST_INTERVAL = 0.35
+KIS_MAX_REQUESTS_PER_SECOND = 20
+KIS_RATE_WINDOW_SECONDS = 1.0
 KIS_RETRY_DELAY_SECONDS = 0.7
 KIS_MAX_RETRIES = 3
 _KIS_REQUEST_LOCK = threading.RLock()
-_KIS_LAST_REQUEST_AT = 0.0
+_KIS_REQUEST_TIMES: deque[float] = deque()
 KIS_TOKEN_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "kis_token.json"
 
 
@@ -68,13 +70,22 @@ def _clear_cached_token() -> None:
 
 
 def _respect_rate_limit() -> None:
-    global _KIS_LAST_REQUEST_AT
-    with _KIS_REQUEST_LOCK:
-        now = time.monotonic()
-        wait_seconds = KIS_MIN_REQUEST_INTERVAL - (now - _KIS_LAST_REQUEST_AT)
+    while True:
+        wait_seconds = 0.0
+        with _KIS_REQUEST_LOCK:
+            now = time.monotonic()
+            while _KIS_REQUEST_TIMES and (now - _KIS_REQUEST_TIMES[0]) >= KIS_RATE_WINDOW_SECONDS:
+                _KIS_REQUEST_TIMES.popleft()
+
+            if len(_KIS_REQUEST_TIMES) < KIS_MAX_REQUESTS_PER_SECOND:
+                _KIS_REQUEST_TIMES.append(now)
+                return
+
+            oldest = _KIS_REQUEST_TIMES[0]
+            wait_seconds = max(0.0, KIS_RATE_WINDOW_SECONDS - (now - oldest))
+
         if wait_seconds > 0:
             time.sleep(wait_seconds)
-        _KIS_LAST_REQUEST_AT = time.monotonic()
 
 
 def _is_rate_limit_error(detail: str) -> bool:
@@ -200,7 +211,7 @@ def _parse_kis_date(date_text: str, time_text: str = "") -> pd.Timestamp:
     return pd.Timestamp(datetime.strptime(date_text, "%Y%m%d"))
 
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_domestic_balance() -> tuple[pd.DataFrame, dict]:
     cano, acnt_prdt_cd = _account_params()
     tr_id = "TTTC8434R" if _is_real_account() else "VTTC8434R"

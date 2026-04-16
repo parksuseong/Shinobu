@@ -37,7 +37,7 @@ const indicatorRoot = document.getElementById("{indicator_root_id}");
 const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
 const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
-const endpoint =
+const endpointBase =
   `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
   `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&visible_business_days={visible_business_days}`;
 
@@ -562,6 +562,8 @@ async function applyIndicatorIncremental(prevPayload, nextPayload) {{
 }}
 
 async function refreshCharts() {{
+  const includeMarkers = "1";
+  const endpoint = `${{endpointBase}}&include_markers=${{includeMarkers}}`;
   const response = await fetch(endpoint, {{ cache: "no-store" }});
   if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
   const nextPayload = await response.json();

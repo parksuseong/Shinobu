@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import threading
 import time
 from typing import Any
@@ -8,6 +7,12 @@ from typing import Any
 import pandas as pd
 
 from shinobu import data as market_data
+from shinobu.cache_db import (
+    load_execution_cache_with_updated_at,
+    load_payload_cache,
+    save_execution_cache,
+    save_payload_cache,
+)
 from shinobu.kis import fetch_domestic_daily_ccld
 from shinobu.live_trading import (
     SIGNAL_TO_TRADE_SYMBOL,
@@ -17,17 +22,23 @@ from shinobu.live_trading import (
 )
 from shinobu.strategy import StrategyAdjustments, calculate_strategy
 from shinobu.strategy_cache import calculate_strategy_cached
+from shinobu.chart_worker import collect_chart_frames
 
 
 LIVE_TIMEFRAME = "5분봉"
 MAX_LIVE_CHART_CANDLES = 1200
 MAX_LIVE_CHART_BUSINESS_DAYS = 5
 CHART_KST = market_data.KST
-PAYLOAD_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "payload_cache"
-EXECUTION_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "execution_cache"
 _PREWARM_LOCK = threading.Lock()
 _PREWARM_STARTED_KEYS: set[str] = set()
 _PREWARM_BUNDLE_KEYS: set[str] = set()
+_EXECUTION_REFRESH_LOCK = threading.Lock()
+_EXECUTION_REFRESHING_KEYS: set[str] = set()
+EXECUTION_CACHE_MAX_AGE_SECONDS = 30
+_PAYLOAD_REFRESH_LOCK = threading.Lock()
+_PAYLOAD_REFRESHING_KEYS: set[str] = set()
+_PAYLOAD_LAST_REFRESH_AT: dict[str, float] = {}
+PAYLOAD_MIN_REFRESH_INTERVAL_SECONDS = 8.0
 
 
 def filter_frame_from_live_start(frame: pd.DataFrame) -> pd.DataFrame:
@@ -128,12 +139,6 @@ def _current_candle_status(frame: pd.DataFrame) -> dict[str, Any]:
     return _current_candle_status_from_timestamp(pd.Timestamp(frame.index.max()))
 
 
-def _payload_cache_path(cache_key: str) -> Path:
-    PAYLOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    safe_key = "".join(char if char.isalnum() or char in "._-" else "_" for char in cache_key)
-    return PAYLOAD_CACHE_DIR / f"{safe_key}.pkl"
-
-
 def _build_payload_cache_key(
     *,
     kind: str,
@@ -142,6 +147,7 @@ def _build_payload_cache_key(
     adjustments: StrategyAdjustments,
     strategy_name: str,
     visible_business_days: int,
+    include_markers: bool,
 ) -> str:
     started_at = get_live_started_at()
     started_at_text = started_at.isoformat() if started_at is not None else ""
@@ -152,6 +158,7 @@ def _build_payload_cache_key(
             pair_symbol or "",
             strategy_name,
             str(int(visible_business_days)),
+            "m1" if include_markers else "m0",
             f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}",
             started_at_text,
         ]
@@ -159,12 +166,8 @@ def _build_payload_cache_key(
 
 
 def _read_cached_payload(cache_key: str) -> dict[str, Any] | None:
-    cache_path = _payload_cache_path(cache_key)
-    if not cache_path.exists():
-        return None
-    try:
-        payload = pd.read_pickle(cache_path)
-    except Exception:
+    payload = load_payload_cache(cache_key)
+    if payload is None:
         return None
     if not isinstance(payload, dict):
         return None
@@ -178,13 +181,83 @@ def _read_cached_payload(cache_key: str) -> dict[str, Any] | None:
 
 
 def _write_cached_payload(cache_key: str, payload: dict[str, Any]) -> None:
-    pd.to_pickle(payload, _payload_cache_path(cache_key))
+    save_payload_cache(cache_key, payload)
 
 
-def _execution_cache_path(cache_key: str) -> Path:
-    EXECUTION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    safe_key = "".join(char if char.isalnum() or char in "._-" else "_" for char in cache_key)
-    return EXECUTION_CACHE_DIR / f"{safe_key}.pkl"
+def _empty_payload(
+    *,
+    kind: str,
+    symbol: str,
+    pair_symbol: str | None,
+    include_scr: bool,
+    visible_business_days: int,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "symbol": symbol,
+        "symbolName": market_data.display_name(symbol),
+        "pairSymbol": pair_symbol,
+        "pairName": market_data.display_name(pair_symbol) if pair_symbol else None,
+        "includeScr": include_scr,
+        "candles": [],
+        "tickText": [],
+        "orders": [],
+        "signals": {},
+        "currentCandle": _current_candle_status_from_timestamp(None),
+        "debug": {
+            "max_candles": MAX_LIVE_CHART_CANDLES,
+            "business_days": visible_business_days,
+            "frame_rows": 0,
+            "first_time": "",
+            "last_time": "",
+            "trade_days": [],
+        },
+    }
+    if include_scr:
+        payload["scr"] = []
+        payload["pairScr"] = []
+    return payload
+
+
+def _fetch_execution_frame(unique_symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for symbol in unique_symbols:
+        try:
+            execution_frame = fetch_domestic_daily_ccld(start_date, end_date, symbol=symbol, max_pages=2)
+        except Exception:
+            continue
+        if not execution_frame.empty:
+            frames.append(execution_frame)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if merged.empty:
+        return merged
+    merged = merged.copy()
+    merged["timestamp"] = pd.to_datetime(merged["timestamp"], errors="coerce")
+    merged = merged.dropna(subset=["timestamp"])
+    merged = merged.loc[merged["symbol"].isin(unique_symbols)]
+    dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in merged.columns]
+    if dedupe_keys:
+        merged = merged.drop_duplicates(subset=dedupe_keys, keep="last")
+    return merged
+
+
+def _refresh_execution_cache_async(cache_key: str, unique_symbols: list[str], start_date: str, end_date: str) -> None:
+    with _EXECUTION_REFRESH_LOCK:
+        if cache_key in _EXECUTION_REFRESHING_KEYS:
+            return
+        _EXECUTION_REFRESHING_KEYS.add(cache_key)
+
+    def _runner() -> None:
+        try:
+            merged = _fetch_execution_frame(unique_symbols, start_date, end_date)
+            save_execution_cache(cache_key, merged)
+        finally:
+            with _EXECUTION_REFRESH_LOCK:
+                _EXECUTION_REFRESHING_KEYS.discard(cache_key)
+
+    thread = threading.Thread(target=_runner, daemon=True, name="shinobu-execution-refresh")
+    thread.start()
 
 
 def _load_recent_execution_markers(symbols: list[str], frame: pd.DataFrame) -> pd.DataFrame:
@@ -197,39 +270,43 @@ def _load_recent_execution_markers(symbols: list[str], frame: pd.DataFrame) -> p
 
     start_date = pd.Timestamp(frame.index.min()).strftime("%Y%m%d")
     end_date = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
-    cache_key = f"{'_'.join(unique_symbols)}_{start_date}_{end_date}_{pd.Timestamp.now().strftime('%Y%m%d%H%M')}"
-    cache_path = _execution_cache_path(cache_key)
-    if cache_path.exists():
-        try:
-            cached = pd.read_pickle(cache_path)
-            if isinstance(cached, pd.DataFrame):
-                return cached
-        except Exception:
-            pass
+    cache_key = f"{'_'.join(unique_symbols)}_{start_date}_{end_date}"
+    cached, updated_at = load_execution_cache_with_updated_at(cache_key)
+    now = pd.Timestamp.now(tz=None)
 
-    frames: list[pd.DataFrame] = []
-    for symbol in unique_symbols:
-        try:
-            execution_frame = fetch_domestic_daily_ccld(start_date, end_date, symbol=symbol, max_pages=2)
-        except Exception:
+    if isinstance(cached, pd.DataFrame):
+        if updated_at is None:
+            _refresh_execution_cache_async(cache_key, unique_symbols, start_date, end_date)
+            return cached
+        age_seconds = max(0.0, float((now - pd.Timestamp(updated_at)).total_seconds()))
+        if age_seconds > EXECUTION_CACHE_MAX_AGE_SECONDS:
+            _refresh_execution_cache_async(cache_key, unique_symbols, start_date, end_date)
+        return cached
+
+    # Cold start: return fast and let worker warm execution markers in background.
+    _refresh_execution_cache_async(cache_key, unique_symbols, start_date, end_date)
+    return pd.DataFrame()
+
+
+def _prime_execution_cache(symbols: list[str], frame: pd.DataFrame) -> None:
+    if frame.empty:
+        return
+    unique_symbols: set[str] = set()
+    for symbol in symbols:
+        if not symbol:
             continue
-        if not execution_frame.empty:
-            frames.append(execution_frame)
+        unique_symbols.add(symbol)
+        unique_symbols.add(SIGNAL_TO_TRADE_SYMBOL.get(symbol, symbol))
+        unique_symbols.add(TRADE_TO_SIGNAL_SYMBOL.get(symbol, symbol))
+    normalized_symbols = sorted({symbol for symbol in unique_symbols if symbol})
+    if not normalized_symbols:
+        return
 
-    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    if merged.empty:
-        pd.to_pickle(merged, cache_path)
-        return merged
-
-    merged = merged.copy()
-    merged["timestamp"] = pd.to_datetime(merged["timestamp"], errors="coerce")
-    merged = merged.dropna(subset=["timestamp"])
-    merged = merged.loc[merged["symbol"].isin(unique_symbols)]
-    dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in merged.columns]
-    if dedupe_keys:
-        merged = merged.drop_duplicates(subset=dedupe_keys, keep="last")
-    pd.to_pickle(merged, cache_path)
-    return merged
+    start_date = pd.Timestamp(frame.index.min()).strftime("%Y%m%d")
+    end_date = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
+    cache_key = f"{'_'.join(normalized_symbols)}_{start_date}_{end_date}"
+    merged = _fetch_execution_frame(normalized_symbols, start_date, end_date)
+    save_execution_cache(cache_key, merged)
 
 
 def _merge_series_payload(
@@ -400,7 +477,7 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
             continue
 
         side = str(order.get("side", ""))
-        y_value = float(candle["Low"]) * 0.985 if side == "buy" else float(candle["High"]) * 1.015
+        y_value = float(candle["Low"]) * 0.99625 if side == "buy" else float(candle["High"]) * 1.00375
         label = f"실매수 - {market_data.display_name(order['symbol'])}" if side == "buy" else f"실매도 - {market_data.display_name(order['symbol'])}"
         markers.append(
             {
@@ -427,7 +504,7 @@ def _append_main_marker(
     x_value = positions.get(timestamp)
     if pd.isna(x_value):
         return
-    y_value = float(price_row["Low"]) * 0.985 if marker_side == "open" else float(price_row["High"]) * 1.015
+    y_value = float(price_row["Low"]) * 0.99625 if marker_side == "open" else float(price_row["High"]) * 1.00375
     bucket.append(
         {
             "x": int(x_value),
@@ -505,15 +582,27 @@ def _apply_main_marker_vertical_offsets(
         low_price = float(candle_row.get("Low", candle_row.get("Close", 0)) or 0)
         close_price = float(candle_row.get("Close", 0) or 0)
         candle_range = max(high_price - low_price, close_price * 0.0025, 1.0)
-        step = candle_range * 0.42
+        step = candle_range * 0.105
 
-        sorted_markers = sorted(markers, key=lambda item: (0 if item[0] == "orders" else 1, int(item[2].get("x", 0))))
+        # Keep execution markers visually separated from strategy markers on the same candle.
+        signal_refs = sorted(
+            [item for item in markers if item[0] != "orders"],
+            key=lambda item: int(item[2].get("x", 0)),
+        )
+        order_refs = sorted(
+            [item for item in markers if item[0] == "orders"],
+            key=lambda item: int(item[2].get("x", 0)),
+        )
+        sorted_markers = [*signal_refs, *order_refs]
+
         for offset_index, (bucket_name, marker_index, marker) in enumerate(sorted_markers):
             updated = dict(marker)
+            # Put real execution markers one extra step away to avoid overlap.
+            visual_index = offset_index + (1 if bucket_name == "orders" else 0)
             if region == "upper":
-                updated["y"] = high_price + candle_range * 0.15 + step * offset_index
+                updated["y"] = high_price + candle_range * 0.0375 + step * visual_index
             else:
-                updated["y"] = low_price - candle_range * 0.15 - step * offset_index
+                updated["y"] = low_price - candle_range * 0.0375 - step * visual_index
             if bucket_name == "orders":
                 order_markers[marker_index] = updated
             else:
@@ -609,13 +698,14 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
     return empty
 
 
-def build_chart_payload(
+def _build_chart_payload_sync(
     kind: str,
     symbol: str,
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
     strategy_name: str = "src_v2_adx",
     visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
+    include_markers: bool = True,
 ) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
     cache_key = _build_payload_cache_key(
@@ -625,32 +715,26 @@ def build_chart_payload(
         adjustments=current_adjustments,
         strategy_name=strategy_name,
         visible_business_days=visible_business_days,
+        include_markers=include_markers,
     )
     cached_payload = _read_cached_payload(cache_key)
 
-    started_at = get_live_started_at()
     pair_name = market_data.display_name(pair_symbol) if pair_symbol else None
 
-    if kind == "overlay":
-        full_frame = _load_strategy_frame(symbol, None, current_adjustments, strategy_name)
-        full_pair_frame = _load_strategy_frame(pair_symbol, None, current_adjustments, strategy_name) if pair_symbol else None
-        frame = limit_frame_to_recent_business_days(filter_frame_from_live_start(full_frame) if started_at is not None else full_frame, visible_business_days)
-        pair_frame = (
-            limit_frame_to_recent_business_days(filter_frame_from_live_start(full_pair_frame), visible_business_days)
-            if started_at is not None and full_pair_frame is not None
-            else limit_frame_to_recent_business_days(full_pair_frame, visible_business_days) if full_pair_frame is not None else None
-        )
-        include_scr = True
-    else:
-        full_frame = _load_raw_frame(symbol, None)
-        full_pair_frame = _load_raw_frame(pair_symbol, None) if pair_symbol else None
-        frame = limit_frame_to_recent_business_days(filter_frame_from_live_start(full_frame) if started_at is not None else full_frame, visible_business_days)
-        pair_frame = (
-            limit_frame_to_recent_business_days(filter_frame_from_live_start(full_pair_frame), visible_business_days)
-            if started_at is not None and full_pair_frame is not None
-            else limit_frame_to_recent_business_days(full_pair_frame, visible_business_days) if full_pair_frame is not None else None
-        )
-        include_scr = False
+    bundle = collect_chart_frames(
+        kind=kind,
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        adjustments=current_adjustments,
+        strategy_name=strategy_name,
+        visible_business_days=visible_business_days,
+        max_candles=MAX_LIVE_CHART_CANDLES,
+    )
+    include_scr = bundle.include_scr
+    full_frame = bundle.full_frame
+    full_pair_frame = bundle.full_pair_frame
+    frame = bundle.visible_frame
+    pair_frame = bundle.visible_pair_frame
 
     candles = [
         {
@@ -663,20 +747,24 @@ def build_chart_payload(
         for index, row in frame.iterrows()
     ]
     tick_text = [index.strftime("%m-%d %H:%M") for index in frame.index]
-    visible_orders = _filter_markers_to_visible_range(
-        _build_order_markers(full_frame, [value for value in [symbol, pair_symbol] if value is not None]),
-        _frame_position_map(frame),
-    )
-    visible_signals = (
-        _filter_signal_bucket_map(
-            _build_position_signal_markers(full_frame, symbol, pair_symbol, full_pair_frame),
-            frame,
+    if include_markers:
+        visible_orders = _filter_markers_to_visible_range(
+            _build_order_markers(full_frame, [value for value in [symbol, pair_symbol] if value is not None]),
+            _frame_position_map(frame),
         )
-        if include_scr
-        else {}
-    )
-    if include_scr:
-        visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
+        visible_signals = (
+            _filter_signal_bucket_map(
+                _build_position_signal_markers(full_frame, symbol, pair_symbol, full_pair_frame),
+                frame,
+            )
+            if include_scr
+            else {}
+        )
+        if include_scr:
+            visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
+    else:
+        visible_orders = []
+        visible_signals = {}
     scr_values = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()] if include_scr else None
     pair_scr_values = _pair_scr(frame, pair_frame) if include_scr else None
     candles, tick_text, scr_values, pair_scr_values = _merge_payload_arrays(
@@ -720,6 +808,89 @@ def build_chart_payload(
     return payload
 
 
+def _refresh_payload_async(
+    *,
+    cache_key: str,
+    kind: str,
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments,
+    strategy_name: str,
+    visible_business_days: int,
+    include_markers: bool,
+) -> None:
+    now = time.monotonic()
+    with _PAYLOAD_REFRESH_LOCK:
+        if cache_key in _PAYLOAD_REFRESHING_KEYS:
+            return
+        last_refresh_at = _PAYLOAD_LAST_REFRESH_AT.get(cache_key, 0.0)
+        if (now - last_refresh_at) < PAYLOAD_MIN_REFRESH_INTERVAL_SECONDS:
+            return
+        _PAYLOAD_REFRESHING_KEYS.add(cache_key)
+        _PAYLOAD_LAST_REFRESH_AT[cache_key] = now
+
+    def _runner() -> None:
+        try:
+            _build_chart_payload_sync(
+                kind=kind,
+                symbol=symbol,
+                pair_symbol=pair_symbol,
+                adjustments=adjustments,
+                strategy_name=strategy_name,
+                visible_business_days=visible_business_days,
+                include_markers=include_markers,
+            )
+        finally:
+            with _PAYLOAD_REFRESH_LOCK:
+                _PAYLOAD_REFRESHING_KEYS.discard(cache_key)
+
+    thread = threading.Thread(target=_runner, daemon=True, name="shinobu-payload-refresh")
+    thread.start()
+
+
+def build_chart_payload(
+    kind: str,
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments | None = None,
+    strategy_name: str = "src_v2_adx",
+    visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
+    include_markers: bool = True,
+) -> dict[str, Any]:
+    current_adjustments = adjustments or StrategyAdjustments()
+    cache_key = _build_payload_cache_key(
+        kind=kind,
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        adjustments=current_adjustments,
+        strategy_name=strategy_name,
+        visible_business_days=visible_business_days,
+        include_markers=include_markers,
+    )
+
+    cached_payload = _read_cached_payload(cache_key)
+    _refresh_payload_async(
+        cache_key=cache_key,
+        kind=kind,
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        adjustments=current_adjustments,
+        strategy_name=strategy_name,
+        visible_business_days=visible_business_days,
+        include_markers=include_markers,
+    )
+    if cached_payload is not None:
+        return cached_payload
+
+    return _empty_payload(
+        kind=kind,
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        include_scr=(kind == "overlay"),
+        visible_business_days=visible_business_days,
+    )
+
+
 def ensure_live_chart_prewarm(
     symbol: str,
     pair_symbol: str | None,
@@ -736,6 +907,7 @@ def ensure_live_chart_prewarm(
         adjustments=current_adjustments,
         strategy_name=strategy_name,
         visible_business_days=visible_business_days,
+        include_markers=True,
     )
 
     with _PREWARM_LOCK:
@@ -745,7 +917,17 @@ def ensure_live_chart_prewarm(
 
     def _runner() -> None:
         try:
-            build_chart_payload(
+            bundle = collect_chart_frames(
+                kind="overlay",
+                symbol=symbol,
+                pair_symbol=pair_symbol,
+                adjustments=current_adjustments,
+                strategy_name=strategy_name,
+                visible_business_days=visible_business_days,
+                max_candles=MAX_LIVE_CHART_CANDLES,
+            )
+            _prime_execution_cache([value for value in [symbol, pair_symbol] if value is not None], bundle.full_frame)
+            _build_chart_payload_sync(
                 "overlay",
                 symbol,
                 pair_symbol,
@@ -814,3 +996,36 @@ def ensure_live_chart_prewarm_bundle(
 
     thread = threading.Thread(target=_runner, daemon=True, name=f"shinobu-prewarm-bundle-{current_strategy_name}")
     thread.start()
+
+
+def run_live_chart_prewarm_sync(
+    symbol: str,
+    pair_symbol: str | None,
+    adjustments: StrategyAdjustments | None = None,
+    *,
+    strategy_name: str = "src_v2_adx",
+    visible_business_days_list: list[int] | None = None,
+) -> None:
+    current_adjustments = adjustments or StrategyAdjustments()
+    target_days = visible_business_days_list or [MAX_LIVE_CHART_BUSINESS_DAYS]
+
+    for visible_business_days in target_days:
+        bundle = collect_chart_frames(
+            kind="overlay",
+            symbol=symbol,
+            pair_symbol=pair_symbol,
+            adjustments=current_adjustments,
+            strategy_name=strategy_name,
+            visible_business_days=max(1, int(visible_business_days)),
+            max_candles=MAX_LIVE_CHART_CANDLES,
+        )
+        _prime_execution_cache([value for value in [symbol, pair_symbol] if value is not None], bundle.full_frame)
+        _build_chart_payload_sync(
+            "overlay",
+            symbol,
+            pair_symbol,
+            current_adjustments,
+            strategy_name=strategy_name,
+            visible_business_days=max(1, int(visible_business_days)),
+            include_markers=True,
+        )

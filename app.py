@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import base64
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from pathlib import Path
 
 import pandas as pd
@@ -11,8 +14,9 @@ from PIL import Image
 
 from config import has_kis_account
 from shinobu import data as market_data
+from shinobu.cache_db import clear_all_cache_data
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
-from shinobu.chart_payload import ensure_live_chart_prewarm_bundle
+from shinobu.chart_payload import ensure_live_chart_prewarm_bundle, run_live_chart_prewarm_sync
 from shinobu.chart_server import ensure_chart_server
 from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
@@ -57,6 +61,24 @@ MAX_LIVE_CHART_BUSINESS_DAYS = 5
 STRATEGY_PROFILE_STATE_KEY = "strategy_profile"
 CHART_BUSINESS_DAYS_STATE_KEY = "chart_business_days"
 EXECUTION_MODE_STATE_KEY = "execution_mode"
+ACCOUNT_PANEL_CACHE_KEY = "account_panel_cache"
+ACCOUNT_PANEL_LAST_ORDER_KEY = "account_panel_last_order_at"
+CLOSED_TRADES_CACHE_KEY = "closed_trades_cache"
+CLOSED_TRADES_LAST_ORDER_KEY = "closed_trades_last_order_at"
+ACCOUNT_FETCH_TIMEOUT_SECONDS = 1.2
+_STARTUP_PREWARM_LOCK = threading.Lock()
+_STARTUP_PREWARM_KEYS: set[str] = set()
+_RESET_LOCK = threading.Lock()
+_RESET_STATE: dict[str, object] = {
+    "running": False,
+    "done": False,
+    "error": "",
+    "message": "",
+    "started_monotonic": 0.0,
+    "eta_seconds": 120,
+}
+RESET_AUTH_PROMPT_KEY = "reset_auth_prompt"
+RESET_AUTH_ERROR_KEY = "reset_auth_error"
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.png"
 NEGATIVE_IMAGE_PATH = ASSET_DIR / "shinobu_negative.png"
@@ -99,12 +121,9 @@ def get_current_chart_business_days() -> int:
 
 def _set_chart_business_days(days: int) -> None:
     init_chart_business_days_state()
-    current = int(st.session_state.get(CHART_BUSINESS_DAYS_STATE_KEY, MAX_LIVE_CHART_BUSINESS_DAYS))
     next_value = max(1, min(int(days), 5))
     st.session_state[CHART_BUSINESS_DAYS_STATE_KEY] = next_value
     set_live_chart_business_days(next_value)
-    if current != next_value:
-        st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
 
 
 def get_current_strategy_profile() -> str:
@@ -127,35 +146,22 @@ def _set_strategy_profile(profile_name: str) -> None:
         init_live_chart_state()
         st.session_state[LIVE_CHART_STATE_KEY] = {"started_at": "", "frames": {}}
         st.session_state[LIVE_FIGURE_STATE_KEY] = {}
-        st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
 
 
 def _set_execution_mode(mode: str) -> None:
     normalized = mode if mode in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL} else EXECUTION_MODE_X1
-    current = get_current_execution_mode()
     st.session_state[EXECUTION_MODE_STATE_KEY] = normalized
     set_live_execution_mode(normalized)
-    if current != normalized:
-        st.session_state[LIVE_CHART_NONCE_KEY] = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0)) + 1
 
 
 def render_live_selector_bar() -> str:
-    current_profile = get_current_strategy_profile()
+    current_profile = normalize_strategy_name(DEFAULT_STRATEGY_NAME)
+    _set_strategy_profile(current_profile)
     current_days = get_current_chart_business_days()
     current_execution_mode = get_current_execution_mode()
-    options = list_strategy_options()
-    option_keys = [option.key for option in options]
-    option_map = {option.key: option for option in options}
+    option_map = {option.key: option for option in list_strategy_options()}
 
-    strategy_col, days_col, execution_col, _ = st.columns([1.5, 0.8, 1.2, 2.5])
-    with strategy_col:
-        selected_profile = st.selectbox(
-            "전략 선택",
-            options=option_keys,
-            index=option_keys.index(current_profile),
-            format_func=lambda value: get_strategy_title(value),
-            help=get_strategy_help_text(current_profile),
-        )
+    days_col, execution_col, _ = st.columns([0.8, 1.2, 3.2])
     with days_col:
         selected_days = st.selectbox(
             "차트 표시 기간",
@@ -173,8 +179,6 @@ def render_live_selector_bar() -> str:
             help="실제 시그널 주문을 x1 ETF로 집행할지, 레버리지/곱버스로 집행할지 선택합니다.",
         )
 
-    if selected_profile != current_profile:
-        _set_strategy_profile(selected_profile)
     if int(selected_days) != current_days:
         _set_chart_business_days(int(selected_days))
     if selected_execution_mode != current_execution_mode:
@@ -187,6 +191,134 @@ def render_live_selector_bar() -> str:
     )
     st.caption(get_strategy_help_text(active_option.key).replace("\n", " | "))
     return get_current_strategy_profile()
+
+
+def _ensure_startup_backfill_and_prewarm(
+    primary_symbol: str,
+    pair_symbol: str | None,
+    profile_name: str,
+) -> None:
+    symbols = [value for value in [primary_symbol, pair_symbol] if value]
+    prewarm_key = "|".join(
+        [
+            ",".join(symbols),
+            normalize_strategy_name(profile_name),
+            LIVE_TIMEFRAME,
+        ]
+    )
+
+    with _STARTUP_PREWARM_LOCK:
+        if prewarm_key in _STARTUP_PREWARM_KEYS:
+            return
+        _STARTUP_PREWARM_KEYS.add(prewarm_key)
+
+    def _runner() -> None:
+        try:
+            # Fill raw candle gaps for the recent 5-day window, then persist strategy rows.
+            for symbol in symbols:
+                source_frame = market_data.load_live_chart_data(symbol, LIVE_TIMEFRAME)
+                calculate_strategy_cached(
+                    source_frame,
+                    StrategyAdjustments(),
+                    LIVE_TIMEFRAME,
+                    strategy_name=DEFAULT_STRATEGY_NAME,
+                    symbol=symbol,
+                )
+
+            # Prebuild chart payload and marker cache for 5-day startup responsiveness.
+            ensure_live_chart_prewarm_bundle(
+                primary_symbol,
+                pair_symbol,
+                StrategyAdjustments(),
+                current_strategy_name=DEFAULT_STRATEGY_NAME,
+                visible_business_days=5,
+                all_strategy_names=[DEFAULT_STRATEGY_NAME],
+            )
+        except Exception:
+            with _STARTUP_PREWARM_LOCK:
+                _STARTUP_PREWARM_KEYS.discard(prewarm_key)
+
+    thread = threading.Thread(target=_runner, daemon=True, name="shinobu-startup-prewarm")
+    thread.start()
+
+
+def _get_reset_state() -> dict[str, object]:
+    with _RESET_LOCK:
+        return dict(_RESET_STATE)
+
+
+def _set_reset_state(**kwargs: object) -> None:
+    with _RESET_LOCK:
+        _RESET_STATE.update(kwargs)
+
+
+def _run_full_reset_and_rebuild(primary_symbol: str, pair_symbol: str | None) -> None:
+    symbols = [value for value in [primary_symbol, pair_symbol] if value]
+    _set_reset_state(
+        running=True,
+        done=False,
+        error="",
+        message="데이터 초기화를 시작합니다.",
+        started_monotonic=time.monotonic(),
+        eta_seconds=120,
+    )
+    try:
+        _set_reset_state(message="기존 SQLite 캐시를 삭제 중입니다.")
+        clear_all_cache_data()
+        st.cache_data.clear()
+
+        _set_reset_state(message="최근 5일 캔들 데이터를 다시 수집합니다.")
+        for symbol in symbols:
+            source_frame = market_data.load_live_chart_data(symbol, LIVE_TIMEFRAME)
+            calculate_strategy_cached(
+                source_frame,
+                StrategyAdjustments(),
+                LIVE_TIMEFRAME,
+                strategy_name=DEFAULT_STRATEGY_NAME,
+                symbol=symbol,
+            )
+
+        _set_reset_state(message="차트/마커 캐시를 백엔드에서 프리웜합니다.")
+        run_live_chart_prewarm_sync(
+            primary_symbol,
+            pair_symbol,
+            StrategyAdjustments(),
+            strategy_name=DEFAULT_STRATEGY_NAME,
+            visible_business_days_list=[1, 2, 3, 4, 5],
+        )
+
+        _set_reset_state(
+            running=False,
+            done=True,
+            error="",
+            message="초기화 및 재계산이 완료되었습니다.",
+        )
+    except Exception as exc:
+        _set_reset_state(
+            running=False,
+            done=False,
+            error=str(exc),
+            message="초기화에 실패했습니다.",
+        )
+
+
+def _trigger_full_reset(primary_symbol: str, pair_symbol: str | None, username: str, password: str) -> bool:
+    normalized_username = str(username or "").strip().lower()
+    normalized_password = str(password or "").strip()
+    if normalized_username != "admin" or normalized_password != "admin":
+        _set_reset_state(done=False, error="")
+        return False
+    state = _get_reset_state()
+    if bool(state.get("running", False)):
+        return True
+    worker = threading.Thread(
+        target=_run_full_reset_and_rebuild,
+        args=(primary_symbol, pair_symbol),
+        daemon=True,
+        name="shinobu-full-reset-worker",
+    )
+    worker.start()
+    return True
 
 def init_live_chart_state() -> None:
     if LIVE_CHART_STATE_KEY not in st.session_state:
@@ -416,6 +548,39 @@ def mask_account_number(account_number: str) -> str:
     if not account_number:
         return ""
     return f"{account_number[:2]}{'*' * max(len(account_number) - 2, 0)}"
+
+
+def _load_balance_quick(refresh: bool = True) -> tuple[pd.DataFrame, dict, bool]:
+    cached = st.session_state.get(ACCOUNT_PANEL_CACHE_KEY)
+    fallback_positions = pd.DataFrame()
+    fallback_summary: dict = {}
+    has_fallback = False
+
+    if isinstance(cached, dict):
+        maybe_positions = cached.get("positions")
+        maybe_summary = cached.get("summary")
+        if isinstance(maybe_positions, pd.DataFrame) and isinstance(maybe_summary, dict):
+            fallback_positions = maybe_positions
+            fallback_summary = maybe_summary
+            has_fallback = True
+    if not refresh:
+        if has_fallback:
+            return fallback_positions, fallback_summary, False
+        return pd.DataFrame(), {}, True
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(fetch_domestic_balance)
+    try:
+        positions, summary = future.result(timeout=ACCOUNT_FETCH_TIMEOUT_SECONDS)
+        positions = _dedupe_positions_frame(positions)
+        st.session_state[ACCOUNT_PANEL_CACHE_KEY] = {"positions": positions, "summary": summary}
+        return positions, summary, False
+    except (FuturesTimeoutError, Exception):
+        if has_fallback:
+            return fallback_positions, fallback_summary, True
+        return pd.DataFrame(), {}, True
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _dedupe_positions_frame(positions: pd.DataFrame) -> pd.DataFrame:
@@ -689,7 +854,7 @@ def _build_asset_history_figure() -> go.Figure | None:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_live_trade_history(lookback_days: int = 7) -> pd.DataFrame:
+def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
     history_window_start = pd.Timestamp.now(tz=None).normalize() - pd.Timedelta(days=max(int(lookback_days), 1) - 1)
     fetch_start = history_window_start
     start_date = fetch_start.strftime("%Y%m%d")
@@ -813,10 +978,7 @@ def get_recent_execution_ledger(lookback_days: int = 7) -> pd.DataFrame:
 
 
 def _render_open_live_positions() -> None:
-    try:
-        current_positions, current_summary = fetch_domestic_balance()
-    except Exception:
-        current_positions = pd.DataFrame()
+    current_positions, _, _ = _load_balance_quick(refresh=False)
 
     trade_codes = {"069500", "114800"}
     if not current_positions.empty and "code" in current_positions.columns:
@@ -834,8 +996,17 @@ def _render_open_live_positions() -> None:
 
 def _render_closed_live_trades() -> None:
     st.markdown("##### 청산 완료 거래")
+    runtime = get_live_runtime_state()
+    last_order_at = str(runtime.get("last_order_at", "") or "")
+    cached_history = st.session_state.get(CLOSED_TRADES_CACHE_KEY)
+    cached_order_at = str(st.session_state.get(CLOSED_TRADES_LAST_ORDER_KEY, "") or "")
     try:
-        history = get_live_trade_history(7)
+        if isinstance(cached_history, pd.DataFrame) and cached_order_at == last_order_at:
+            history = cached_history
+        else:
+            history = get_live_trade_history(5)
+            st.session_state[CLOSED_TRADES_CACHE_KEY] = history
+            st.session_state[CLOSED_TRADES_LAST_ORDER_KEY] = last_order_at
     except KisApiError as exc:
         st.caption(f"거래내역 조회 오류: {exc}")
         return
@@ -843,7 +1014,7 @@ def _render_closed_live_trades() -> None:
         st.caption(f"거래내역 집계 오류: {exc}")
         return
     if history.empty:
-        st.caption("최근 7일 기준으로 집계된 청산 완료 거래가 없습니다.")
+        st.caption("최근 5일 기준으로 집계된 청산 완료 거래가 없습니다.")
     else:
         wins = int((history["pnl_amount"] > 0).sum())
         draws = int((history["pnl_amount"] == 0).sum())
@@ -922,16 +1093,18 @@ def render_live_account_panel() -> None:
         st.info("한투 계좌 정보가 없어 계좌 화면을 표시할 수 없습니다.")
         return
 
-    try:
-        with st.spinner("계좌 정보를 불러오는 중..."):
-            positions, summary = fetch_domestic_balance()
-            positions = _dedupe_positions_frame(positions)
-    except KisApiError as exc:
-        st.warning(f"계좌 조회 오류: {exc}")
+    runtime = get_live_runtime_state()
+    last_order_at = str(runtime.get("last_order_at", "") or "")
+    cached_order_at = str(st.session_state.get(ACCOUNT_PANEL_LAST_ORDER_KEY, "") or "")
+    should_refresh = last_order_at != cached_order_at or ACCOUNT_PANEL_CACHE_KEY not in st.session_state
+    positions, summary, is_stale = _load_balance_quick(refresh=should_refresh)
+    if should_refresh and not is_stale:
+        st.session_state[ACCOUNT_PANEL_LAST_ORDER_KEY] = last_order_at
+    if not summary and positions.empty:
+        st.caption("계좌 정보 로딩 중입니다. 차트는 먼저 표시됩니다.")
         return
-    except Exception as exc:
-        st.warning(f"계좌 조회 중 알 수 없는 오류가 발생했습니다: {exc}")
-        return
+    if is_stale:
+        st.caption("계좌 패널은 최근 캐시 기준으로 먼저 표시 중입니다.")
 
     purchase_amount = float(summary.get("purchase_amount", 0) or 0)
     profit_amount = float(summary.get("profit_amount", 0) or 0)
@@ -952,7 +1125,7 @@ def render_live_account_panel() -> None:
         st.dataframe(_format_positions_frame(positions), use_container_width=True, hide_index=True)
 
 
-@st.fragment(run_every="10s")
+@st.fragment(run_every="60s")
 def render_live_trade_history_panel() -> None:
     st.markdown("#### 실전 거래 내역")
     _render_open_live_positions()
@@ -963,17 +1136,14 @@ def render_closed_live_trade_history_panel() -> None:
     _render_closed_live_trades()
 
 
-@st.fragment(run_every="10s")
+@st.fragment(run_every="60s")
 def render_emotion_section() -> None:
-    try:
-        positions, summary = fetch_domestic_balance()
-    except Exception:
+    positions, summary, _ = _load_balance_quick()
+    if positions.empty and not summary:
         return
     render_emotion_panel(positions, summary)
-@st.fragment(run_every="15s")
 def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
     init_live_chart_state()
-    chart_nonce = int(st.session_state.get(LIVE_CHART_NONCE_KEY, 0))
     strategy_label = get_strategy_label(profile_name)
     visible_business_days = get_current_chart_business_days()
     runtime = get_live_runtime_state()
@@ -991,7 +1161,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             strategy_name=profile_name,
             strategy_label=strategy_label,
             visible_business_days=visible_business_days,
-            render_nonce=chart_nonce,
+            render_nonce=0,
         ),
         height=640,
     )
@@ -1217,8 +1387,97 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
         """,
         unsafe_allow_html=True,
     )
+
+
+@st.fragment(run_every="1s")
+def render_data_reset_panel(primary_symbol: str, pair_symbol: str | None) -> None:
+    st.markdown("#### 데이터 초기화")
+    state = _get_reset_state()
+    running = bool(state.get("running", False))
+    done = bool(state.get("done", False))
+    error_text = str(state.get("error", "") or "")
+    message = str(state.get("message", "") or "")
+    if RESET_AUTH_PROMPT_KEY not in st.session_state:
+        st.session_state[RESET_AUTH_PROMPT_KEY] = False
+    if RESET_AUTH_ERROR_KEY not in st.session_state:
+        st.session_state[RESET_AUTH_ERROR_KEY] = ""
+    auth_prompt = bool(st.session_state.get(RESET_AUTH_PROMPT_KEY, False))
+    auth_error = str(st.session_state.get(RESET_AUTH_ERROR_KEY, "") or "")
+
+    if not running and not auth_prompt:
+        if st.button("데이터 초기화", use_container_width=True):
+            st.session_state[RESET_AUTH_PROMPT_KEY] = True
+            st.session_state[RESET_AUTH_ERROR_KEY] = ""
+            _set_reset_state(error="", done=False, message="")
+            st.rerun()
+
+    if auth_prompt and not running:
+        with st.form("data_reset_form"):
+            username = st.text_input("관리자 아이디", value="")
+            password = st.text_input("관리자 비밀번호", value="", type="password")
+            submit_col, cancel_col = st.columns(2)
+            submitted = submit_col.form_submit_button("인증 후 초기화 실행", use_container_width=True)
+            canceled = cancel_col.form_submit_button("취소", use_container_width=True)
+        if auth_error:
+            st.warning(auth_error)
+        if canceled:
+            st.session_state[RESET_AUTH_PROMPT_KEY] = False
+            st.session_state[RESET_AUTH_ERROR_KEY] = ""
+            st.rerun()
+        if submitted:
+            ok = _trigger_full_reset(primary_symbol, pair_symbol, username, password)
+            state = _get_reset_state()
+            running = bool(state.get("running", False))
+            done = bool(state.get("done", False))
+            error_text = str(state.get("error", "") or "")
+            message = str(state.get("message", "") or "")
+            if not ok:
+                st.session_state[RESET_AUTH_ERROR_KEY] = "인증 정보가 올바르지 않습니다."
+            elif running:
+                st.session_state[RESET_AUTH_PROMPT_KEY] = False
+                st.session_state[RESET_AUTH_ERROR_KEY] = ""
+                st.rerun()
+            else:
+                st.session_state[RESET_AUTH_ERROR_KEY] = ""
+
+    if running:
+        started = float(state.get("started_monotonic", 0.0) or 0.0)
+        eta_seconds = int(state.get("eta_seconds", 120) or 120)
+        elapsed = int(max(0.0, time.monotonic() - started))
+        remaining = max(0, eta_seconds - elapsed)
+        st.warning(f"초기화가 진행중입니다. 약 {remaining}초 남았습니다.")
+        if message:
+            st.caption(message)
+    elif error_text and not auth_prompt:
+        st.error(error_text)
+    elif done:
+        st.success(message or "초기화가 완료되었습니다.")
+    else:
+        st.caption("admin/admin 인증 후 전체 데이터 삭제 및 5일 백필/재계산을 실행합니다.")
+
+
+@st.fragment(run_every="1s")
+def render_reset_running_page() -> None:
+    state = _get_reset_state()
+    started = float(state.get("started_monotonic", 0.0) or 0.0)
+    eta_seconds = int(state.get("eta_seconds", 120) or 120)
+    elapsed = int(max(0.0, time.monotonic() - started))
+    remaining = max(0, eta_seconds - elapsed)
+    message = str(state.get("message", "") or "초기화 중입니다.")
+
+    st.title("초기화 중입니다")
+    st.warning(f"데이터를 초기화하고 다시 쌓는 중입니다. 약 {remaining}초 남았습니다.")
+    st.caption(message)
+    progress = 1.0 - (remaining / max(eta_seconds, 1))
+    st.progress(max(0.0, min(1.0, progress)))
+
+
 def main() -> None:
     init_live_state()
+    reset_state = _get_reset_state()
+    if bool(reset_state.get("running", False)):
+        render_reset_running_page()
+        return
     init_live_chart_state()
     init_strategy_profile_state()
     init_chart_business_days_state()
@@ -1229,32 +1488,18 @@ def main() -> None:
     profile_name = get_current_strategy_profile()
     visible_business_days = get_current_chart_business_days()
     ensure_chart_server()
+    _ensure_startup_backfill_and_prewarm(loaded_symbol, pair_symbol, profile_name)
     strategy_keys = [option.key for option in list_strategy_options()]
-    ensure_live_chart_prewarm_bundle(
-        loaded_symbol,
-        pair_symbol,
-        adjustments,
-        current_strategy_name=profile_name,
-        visible_business_days=visible_business_days,
-        all_strategy_names=strategy_keys,
-    )
 
     render_header(profile_name)
     profile_name = render_live_selector_bar()
-    ensure_live_chart_prewarm_bundle(
-        loaded_symbol,
-        pair_symbol,
-        adjustments,
-        current_strategy_name=profile_name,
-        visible_business_days=get_current_chart_business_days(),
-        all_strategy_names=strategy_keys,
-    )
 
     left, right = st.columns([2.2, 1], vertical_alignment="top")
     with right:
         render_live_account_panel()
         run_live_engine(loaded_symbol, pair_symbol, adjustments, profile_name)
         render_live_trading_panel(loaded_symbol, pair_symbol, adjustments)
+        render_data_reset_panel(loaded_symbol, pair_symbol)
     with left:
         render_live_trade_header(loaded_symbol, pair_symbol)
         chart_slot = st.empty()

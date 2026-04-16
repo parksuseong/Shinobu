@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 import threading
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from shinobu.cache_db import load_strategy_cache_payload, save_strategy_cache_payload
 from shinobu.strategy import (
     StrategyAdjustments,
     calculate_strategy,
@@ -17,7 +17,6 @@ from shinobu.strategy import (
 
 CACHE_VERSION = 2
 _CACHE_LOCK = threading.RLock()
-_CACHE_DIR = Path(__file__).resolve().parent.parent / ".streamlit" / "strategy_cache"
 
 _ROWS_PER_BUSINESS_DAY = {
     "1분봉": 400,
@@ -43,24 +42,20 @@ def _normalize_source_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
-def _cache_path(
+def _cache_identity(
     *,
     symbol: str,
     timeframe_label: str,
     strategy_name: str,
     adjustments: StrategyAdjustments,
-) -> Path:
+) -> dict[str, str]:
     adjustment_key = f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}"
-    filename = "_".join(
-        [
-            _sanitize(symbol),
-            _sanitize(timeframe_label),
-            _sanitize(normalize_strategy_name(strategy_name)),
-            adjustment_key,
-        ]
-    )
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return _CACHE_DIR / f"{filename}.pkl"
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe_label,
+        "strategy_name": normalize_strategy_name(strategy_name),
+        "adjustment_key": adjustment_key,
+    }
 
 
 def _source_signature(frame: pd.DataFrame) -> dict[str, Any]:
@@ -170,15 +165,20 @@ def _calculate_incremental(
     return merged.sort_index()
 
 
-def _write_payload(cache_path: Path, source_frame: pd.DataFrame, strategy_frame: pd.DataFrame) -> None:
-    pd.to_pickle(
-        {
-            "version": CACHE_VERSION,
-            "signature": _source_signature(source_frame),
-            "source_frame": _normalize_source_frame(source_frame),
-            "frame": strategy_frame,
-        },
-        cache_path,
+def _write_payload(
+    identity: dict[str, str],
+    source_frame: pd.DataFrame,
+    strategy_frame: pd.DataFrame,
+) -> None:
+    save_strategy_cache_payload(
+        symbol=identity["symbol"],
+        timeframe=identity["timeframe"],
+        strategy_name=identity["strategy_name"],
+        adjustment_key=identity["adjustment_key"],
+        version=CACHE_VERSION,
+        signature=_source_signature(source_frame),
+        source_frame=_normalize_source_frame(source_frame),
+        frame=strategy_frame,
     )
 
 
@@ -191,7 +191,7 @@ def calculate_strategy_cached(
 ) -> pd.DataFrame:
     current_adjustments = adjustments or StrategyAdjustments()
     normalized_strategy = normalize_strategy_name(strategy_name)
-    cache_path = _cache_path(
+    identity = _cache_identity(
         symbol=symbol or "unknown",
         timeframe_label=timeframe_label or "unknown",
         strategy_name=normalized_strategy,
@@ -201,10 +201,12 @@ def calculate_strategy_cached(
     signature = _source_signature(normalized_source)
 
     with _CACHE_LOCK:
-        try:
-            payload = pd.read_pickle(cache_path)
-        except Exception:
-            payload = None
+        payload = load_strategy_cache_payload(
+            symbol=identity["symbol"],
+            timeframe=identity["timeframe"],
+            strategy_name=identity["strategy_name"],
+            adjustment_key=identity["adjustment_key"],
+        )
 
         if isinstance(payload, dict) and payload.get("version") == CACHE_VERSION:
             cached_frame = payload.get("frame")
@@ -221,7 +223,7 @@ def calculate_strategy_cached(
                         timeframe_label=timeframe_label,
                         strategy_name=normalized_strategy,
                     )
-                    _write_payload(cache_path, normalized_source, merged_result)
+                    _write_payload(identity, normalized_source, merged_result)
                     return merged_result
 
         result = calculate_strategy(
@@ -230,5 +232,5 @@ def calculate_strategy_cached(
             timeframe_label=timeframe_label,
             strategy_name=normalized_strategy,
         )
-        _write_payload(cache_path, normalized_source, result)
+        _write_payload(identity, normalized_source, result)
         return result

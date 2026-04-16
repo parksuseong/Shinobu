@@ -4,16 +4,22 @@ import json
 import tempfile
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from shinobu.data import display_name, load_live_chart_data
+from shinobu.data import display_name, load_live_chart_data, load_live_chart_data_cached_only
 from shinobu.kis import KisApiError, cancel_domestic_order, fetch_domestic_balance, place_domestic_order
-from shinobu.strategy import DEFAULT_STRATEGY_NAME, StrategyAdjustments, calculate_strategy, normalize_strategy_name
+from shinobu.strategy import (
+    DEFAULT_STRATEGY_NAME,
+    StrategyAdjustments,
+    calculate_strategy,
+    get_strategy_history_business_days,
+    normalize_strategy_name,
+)
 from shinobu.strategy_cache import calculate_strategy_cached
 
 
@@ -201,15 +207,30 @@ def is_live_enabled() -> bool:
         return bool(_read_state()["enabled"])
 
 
-def get_live_logs(limit: int = 20) -> list[str]:
+def get_live_logs(limit: int | None = None, lookback_days: int = 5) -> list[str]:
     with _LIVE_STATE_LOCK:
         _ensure_state_file()
         try:
             lines = LIVE_LOG_FILE.read_text(encoding="utf-8").splitlines()
         except OSError:
             lines = []
-    lines = [line for line in lines if line.strip()]
-    return list(reversed(lines[-limit:]))
+
+    cutoff = datetime.now() - timedelta(days=max(int(lookback_days), 1))
+    filtered: list[str] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            timestamp = datetime.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+            if timestamp < cutoff:
+                continue
+        except Exception:
+            pass
+        filtered.append(line)
+
+    if isinstance(limit, int) and limit > 0:
+        filtered = filtered[-limit:]
+    return list(reversed(filtered))
 
 
 def get_live_orders() -> list[dict[str, Any]]:
@@ -321,9 +342,12 @@ def get_asset_history() -> list[dict[str, Any]]:
 
 def _load_strategy(symbol: str, adjustments: StrategyAdjustments, strategy_name: str) -> pd.DataFrame:
     try:
-        from shinobu.data import load_live_chart_data_for_strategy
+        from shinobu.data import load_live_chart_data_for_strategy, _business_days_to_lookback_days
 
-        frame = load_live_chart_data_for_strategy(symbol, "5분봉", strategy_name)
+        lookback_days = _business_days_to_lookback_days(get_strategy_history_business_days(strategy_name))
+        frame = load_live_chart_data_cached_only(symbol, "5분봉", lookback_days=lookback_days)
+        if frame.empty:
+            frame = load_live_chart_data_for_strategy(symbol, "5분봉", strategy_name)
     except Exception:
         frame = load_live_chart_data(symbol, "5분봉")
     return calculate_strategy_cached(
@@ -590,6 +614,7 @@ def _submit_live_order(
 ) -> None:
     current_baseline = int(baseline_quantity)
     round_count = 0
+    buy_half_ladder_mode = False
 
     while True:
         try:
@@ -602,7 +627,11 @@ def _submit_live_order(
 
         if side == "buy":
             latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
-            working_quantity = _allocation_quantity(latest_cash, expected_price)
+            affordable_quantity = _allocation_quantity(latest_cash, expected_price)
+            if buy_half_ladder_mode:
+                working_quantity = max(affordable_quantity // 2, 1) if affordable_quantity > 0 else 0
+            else:
+                working_quantity = affordable_quantity
             if working_quantity <= 0:
                 if round_count == 0:
                     _set_status(state, "waiting_cash", "?? ?? ??? ?????.")
@@ -621,7 +650,7 @@ def _submit_live_order(
             action_text = "?? ??" if side == "buy" else "?? ??"
             _append_log("??", f"{display_name(symbol)} {action_text} {working_quantity}?? ?? ??????.")
 
-        _submit_live_order_once(
+        used_cash_fallback = _submit_live_order_once(
             state=state,
             symbol=symbol,
             side=side,
@@ -631,6 +660,8 @@ def _submit_live_order(
             candle_time=candle_time,
             baseline_quantity=baseline_for_fill,
         )
+        if side == "buy" and used_cash_fallback:
+            buy_half_ladder_mode = True
 
         try:
             fetch_domestic_balance.clear()
@@ -670,10 +701,11 @@ def _submit_live_order_once(
     reason: str,
     candle_time: pd.Timestamp,
     baseline_quantity: int,
-) -> None:
+) -> bool:
     last_error: Exception | None = None
     working_quantity = max(int(quantity), 0)
     attempt = 0
+    used_cash_fallback = False
     while attempt < LIVE_ORDER_MAX_RETRIES:
         attempt += 1
         try:
@@ -709,7 +741,7 @@ def _submit_live_order_once(
             order_entry["filled"] = bool(filled)
             order_entry["fill_message"] = fill_message
             _append_log("체결" if filled else "경고", f"{display_name(symbol)} {side.upper()} {working_quantity}주 {fill_message}")
-            return
+            return used_cash_fallback
         except Exception as exc:
             last_error = exc
             if side == "buy" and _is_cash_exceeded_error(exc) and working_quantity > 1:
@@ -717,11 +749,14 @@ def _submit_live_order_once(
                 _, latest_summary = fetch_domestic_balance()
                 latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
                 recalculated_quantity = int(latest_cash // max(float(expected_price) * 1.001, 1.0))
-                reduced_quantity = recalculated_quantity if 0 < recalculated_quantity < working_quantity else working_quantity - 1
+                reduced_quantity = max(working_quantity // 2, 1)
+                if 0 < recalculated_quantity < reduced_quantity:
+                    reduced_quantity = recalculated_quantity
                 _append_log(
                     "경고",
-                    f"{display_name(symbol)} BUY 주문가능금액 초과로 수량을 {working_quantity}주 -> {reduced_quantity}주로 낮춰 즉시 재시도합니다.",
+                    f"{display_name(symbol)} BUY 주문가능금액 초과로 수량을 {working_quantity}주 -> {reduced_quantity}주(50%)로 낮춰 즉시 재시도합니다.",
                 )
+                used_cash_fallback = True
                 working_quantity = reduced_quantity
                 time.sleep(0.2)
                 continue

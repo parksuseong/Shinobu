@@ -31,6 +31,9 @@ config.local.*
 .streamlit/strategy_cache/
 .streamlit/payload_cache/
 .streamlit/execution_cache/
+.streamlit/shinobu_cache.db
+.streamlit/shinobu_cache.db-shm
+.streamlit/shinobu_cache.db-wal
 .streamlit/tmp*
 
 # Logs
