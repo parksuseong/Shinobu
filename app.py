@@ -14,7 +14,14 @@ from PIL import Image
 
 from config import has_kis_account
 from shinobu import data as market_data
-from shinobu.cache_db import clear_all_cache_data, is_startup_initialized, mark_startup_initialized
+from shinobu.cache_db import (
+    acquire_startup_init_lock,
+    clear_all_cache_data,
+    is_startup_init_locked,
+    is_startup_initialized,
+    mark_startup_initialized,
+    release_startup_init_lock,
+)
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
 from shinobu.chart_payload import ensure_live_chart_prewarm_bundle, run_live_chart_prewarm_sync
 from shinobu.chart_server import ensure_chart_server
@@ -280,6 +287,8 @@ def _run_startup_initialization(primary_symbol: str, pair_symbol: str | None) ->
             current_step=completed_steps,
             total_steps=total_steps,
         )
+    finally:
+        release_startup_init_lock()
 
 
 def _ensure_startup_initialization(primary_symbol: str, pair_symbol: str | None) -> None:
@@ -296,6 +305,48 @@ def _ensure_startup_initialization(primary_symbol: str, pair_symbol: str | None)
         running = bool(_RESET_STATE.get("running", False))
         done = bool(_RESET_STATE.get("done", False))
         if running or done:
+            return
+
+    if not acquire_startup_init_lock():
+        if is_startup_init_locked():
+            _set_reset_state(
+                running=True,
+                done=False,
+                error="",
+                message="\uB2E4\uB978 \uC138\uC158\uC5D0\uC11C \uCD08\uAE30\uD654\uAC00 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.",
+                started_monotonic=time.monotonic(),
+                current_step=0,
+                total_steps=0,
+            )
+            return
+        # Stale lock was likely recovered by another process. Retry once.
+        if not acquire_startup_init_lock():
+            _set_reset_state(
+                running=True,
+                done=False,
+                error="",
+                message="\uCD08\uAE30\uD654 \uB77D \uD655\uBCF4\uB97C \uB300\uAE30 \uC911\uC785\uB2C8\uB2E4.",
+                started_monotonic=time.monotonic(),
+                current_step=0,
+                total_steps=0,
+            )
+            return
+
+    if is_startup_initialized():
+        release_startup_init_lock()
+        _set_reset_state(
+            running=False,
+            done=True,
+            error="",
+            message="\uCD08\uAE30\uD654\uAC00 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.",
+        )
+        return
+
+    with _RESET_LOCK:
+        running = bool(_RESET_STATE.get("running", False))
+        done = bool(_RESET_STATE.get("done", False))
+        if running or done:
+            release_startup_init_lock()
             return
         _RESET_STATE.update(
             running=True,
