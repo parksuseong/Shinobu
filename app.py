@@ -1199,7 +1199,7 @@ def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
     with emotion_right:
         _render_emotion_card(
             "\uC20F\uD3EC\uC9C0\uC158",
-            "\uBC8C\uB808\uC758 \uD638\uD761: \uB098\uBE44\uC758 \uCD24 \u300C\uC7A5\uB09C\u300D",
+            "\uBC8C\uB808\uC758 \uD638\uD761: \uB098\uBE44\uC758 \uCDA4 \u300C\uC7A5\uB09C\u300D",
             NEGATIVE_IMAGE_PATH,
             NEGATIVE_FALLBACK_PATH,
             negative,
