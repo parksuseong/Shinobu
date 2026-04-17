@@ -423,6 +423,63 @@ def mark_startup_initialized(done: bool) -> None:
     set_meta_value("startup_initialized", "1" if done else "0")
 
 
+def _meta_updated_within(updated_at: Any, seconds: int) -> bool:
+    try:
+        updated = pd.to_datetime(updated_at, errors="coerce")
+        if pd.isna(updated):
+            return False
+        age = (pd.Timestamp.now(tz=None) - pd.Timestamp(updated)).total_seconds()
+        return age <= max(int(seconds), 1)
+    except Exception:
+        return False
+
+
+def acquire_startup_init_lock(stale_after_seconds: int = 1800) -> bool:
+    _initialize()
+    key = "startup_init_lock"
+    with _DB_LOCK:
+        with _connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT value, updated_at FROM app_meta WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if row is not None:
+                value_text = str(row[0] or "")
+                if value_text == "1" and _meta_updated_within(row[1], stale_after_seconds):
+                    connection.commit()
+                    return False
+            connection.execute(
+                """
+                INSERT INTO app_meta(key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = datetime('now')
+                """,
+                (key, "1"),
+            )
+            connection.commit()
+            return True
+
+
+def release_startup_init_lock() -> None:
+    set_meta_value("startup_init_lock", "0")
+
+
+def is_startup_init_locked(stale_after_seconds: int = 1800) -> bool:
+    _initialize()
+    with _DB_LOCK:
+        with _connect() as connection:
+            row = connection.execute(
+                "SELECT value, updated_at FROM app_meta WHERE key = ?",
+                ("startup_init_lock",),
+            ).fetchone()
+    if row is None:
+        return False
+    return str(row[0] or "") == "1" and _meta_updated_within(row[1], stale_after_seconds)
+
+
 def clear_all_cache_data() -> None:
     _initialize()
     with _DB_LOCK:
@@ -434,6 +491,5 @@ def clear_all_cache_data() -> None:
                 DELETE FROM strategy_state;
                 DELETE FROM payload_cache;
                 DELETE FROM execution_cache;
-                DELETE FROM app_meta;
                 """
             )
