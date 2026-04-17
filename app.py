@@ -88,10 +88,12 @@ _RESET_STATE: dict[str, object] = {
     "total_steps": 0,
 }
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
-POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.png"
-NEGATIVE_IMAGE_PATH = ASSET_DIR / "shinobu_negative.png"
+POSITIVE_IMAGE_PATH = ASSET_DIR / "shinobu_positive.mp4"
+NEGATIVE_IMAGE_PATH = ASSET_DIR / "shinobu_negative.mp4"
+NEUTRAL_IMAGE_PATH = ASSET_DIR / "shinobu_neutral.mp4"
 POSITIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 NEGATIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_negative.svg"
+NEUTRAL_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 
 
 st.set_page_config(page_title="Shinobu Project", page_icon="S", layout="wide")
@@ -766,21 +768,21 @@ def _get_thumbnail_base64(image_path: str, max_width: int = 280, max_height: int
         return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_video_base64(video_path: str) -> str:
+    return base64.b64encode(Path(video_path).read_bytes()).decode("ascii")
+
+
 def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_path: Path, highlighted: bool, tone: str) -> None:
-    active_border = "#3b82f6" if tone == "positive" else "#ef4444"
-    active_glow = "rgba(59, 130, 246, 0.34)" if tone == "positive" else "rgba(239, 68, 68, 0.34)"
-    active_background = "rgba(25, 55, 110, 0.92)" if tone == "positive" else "rgba(110, 30, 30, 0.92)"
+    active_border = "#94a3b8"
+    active_background = "rgba(19, 23, 34, 0.92)"
     inactive_background = "rgba(19, 23, 34, 0.82)"
     border = active_border if highlighted else "#2a2e39"
     background = active_background if highlighted else inactive_background
-    accent = active_border if highlighted else "#94a3b8"
-    text_shadow = f"0 0 18px {active_glow}" if highlighted else "none"
-    header_shadow = f"0 0 20px {active_glow}" if highlighted else "none"
-    image_overlay = (
-        "linear-gradient(180deg, rgba(59,130,246,0.28) 0%, rgba(59,130,246,0.08) 100%)"
-        if tone == "positive"
-        else "linear-gradient(180deg, rgba(239,68,68,0.28) 0%, rgba(239,68,68,0.08) 100%)"
-    )
+    accent = "#d1d4dc"
+    text_shadow = "none"
+    header_shadow = "none"
+    image_overlay = "rgba(15,20,32,0.16)"
     image_opacity = "1" if highlighted else "0.42"
     image_filter = "saturate(1.08) contrast(1.04)" if highlighted else "grayscale(0.22) saturate(0.72) brightness(0.78)"
 
@@ -830,6 +832,15 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
             opacity: {image_opacity};
             filter: {image_filter};
         }}
+        #{card_id} video {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            opacity: {image_opacity};
+            filter: {image_filter};
+            background: transparent;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -837,9 +848,22 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
 
     resolved = _emotion_image_path(image_path, fallback_path)
     if resolved:
-        if resolved.suffix.lower() == ".svg":
+        resolved_suffix = resolved.suffix.lower()
+        if resolved_suffix == ".svg":
             svg_text = resolved.read_text(encoding="utf-8")
             st.markdown(f'<div id="{card_id}">{svg_text}</div>', unsafe_allow_html=True)
+        elif resolved_suffix in {".mp4", ".webm", ".mov"}:
+            video_base64 = _get_video_base64(str(resolved))
+            video_mime = "video/mp4" if resolved_suffix in {".mp4", ".mov"} else "video/webm"
+            video_attrs = "autoplay loop muted playsinline preload=\"auto\"" if highlighted else "muted playsinline preload=\"metadata\""
+            st.markdown(
+                (
+                    f'<div id="{card_id}"><video {video_attrs}>'
+                    f'<source src="data:{video_mime};base64,{video_base64}" type="{video_mime}">'
+                    "</video></div>"
+                ),
+                unsafe_allow_html=True,
+            )
         else:
             image_base64 = _get_thumbnail_base64(str(resolved))
             st.markdown(
@@ -848,7 +872,8 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
             )
         return
 
-    fallback_symbol = ":-)" if tone == "positive" else ">:("
+    fallback_symbol_map = {"positive": ":-)", "negative": ">:(", "neutral": "~_~"}
+    fallback_symbol = fallback_symbol_map.get(tone, ":-)")
     st.markdown(
         f"""
         <div id="{card_id}" style="border:1px dashed {border};color:#d1d4dc;font-size:42px;">
@@ -1149,28 +1174,41 @@ def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
 
     emotion_state = _emotion_by_position(positions)
     positive = emotion_state == "positive"
+    neutral = emotion_state == "neutral"
     negative = emotion_state == "negative"
 
-    emotion_left, emotion_right = st.columns(2)
+    emotion_left, emotion_center, emotion_right = st.columns(3)
     with emotion_left:
         _render_emotion_card(
-            "",
-            "롱이다!!!!!!!!!!",
+            "\uB871\uD3EC\uC9C0\uC158",
+            "\uD654\uC5FC\uC758 \uD638\uD761: \uC81C 9\uD615 \u300C\uC624\uC758\u300D",
             POSITIVE_IMAGE_PATH,
             POSITIVE_FALLBACK_PATH,
             positive,
             "positive",
         )
+    with emotion_center:
+        _render_emotion_card(
+            "\uBB34\uD3EC\uC9C0\uC158",
+            "\uBB3C\uC758 \uD638\uD761: \uC81C11\uD615\u300C\uC794\uC794\uD55C \uBB3C\uACB0\u300D",
+            NEUTRAL_IMAGE_PATH,
+            NEUTRAL_FALLBACK_PATH,
+            neutral,
+            "neutral",
+        )
     with emotion_right:
         _render_emotion_card(
-            "",
-            "숏이다!!!!!!!!!!",
+            "\uC20F\uD3EC\uC9C0\uC158",
+            "\uBC8C\uB808\uC758 \uD638\uD761: \uB098\uBE44\uC758 \uCD24 \u300C\uC7A5\uB09C\u300D",
             NEGATIVE_IMAGE_PATH,
             NEGATIVE_FALLBACK_PATH,
             negative,
             "negative",
         )
+
+
 @st.fragment(run_every="30s")
+
 def render_live_account_panel() -> None:
     st.markdown("#### 실계좌")
     if not has_kis_account():
