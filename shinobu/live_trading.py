@@ -68,7 +68,7 @@ def _default_state() -> dict[str, Any]:
         "enabled": False,
         "started_at": "",
         "strategy_name": DEFAULT_STRATEGY_NAME,
-        "chart_business_days": 5,
+        "chart_business_days": 2,
         "execution_mode": DEFAULT_EXECUTION_MODE,
         "last_checked_candle": "",
         "last_cycle_at": "",
@@ -277,9 +277,9 @@ def get_live_chart_business_days() -> int:
     with _LIVE_STATE_LOCK:
         state = _read_state()
     try:
-        return max(1, min(int(state.get("chart_business_days", 5)), 5))
+        return max(1, min(int(state.get("chart_business_days", 2)), 5))
     except (TypeError, ValueError):
-        return 5
+        return 2
 
 
 def set_live_chart_business_days(days: int) -> None:

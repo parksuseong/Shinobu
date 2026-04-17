@@ -15,6 +15,8 @@ APP_VERSION = "1.0.0"
 DEFAULT_TIMEFRAME = "5분봉"
 DEFAULT_STRATEGY_NAME = "src_v2_adx"
 DEFAULT_ADJUSTMENT_KEY = "s0_c0_r0"
+PRIMARY_SIGNAL_SYMBOL = "122630.KS"
+PAIR_SIGNAL_SYMBOL = "252670.KS"
 
 
 class SignalItem(BaseModel):
@@ -165,6 +167,110 @@ def _expand_signal_events(item: SignalItem) -> list[SignalEventItem]:
     return events
 
 
+def _build_position_signal_events(items: list[SignalItem]) -> list[SignalEventItem]:
+    scoped = [item for item in items if item.symbol in {PRIMARY_SIGNAL_SYMBOL, PAIR_SIGNAL_SYMBOL}]
+    if not scoped:
+        return []
+
+    grouped: dict[str, dict[str, SignalItem]] = {}
+    for item in scoped:
+        grouped.setdefault(item.ts, {})[item.symbol] = item
+
+    current_position: str | None = None
+    events: list[SignalEventItem] = []
+    for ts in sorted(grouped.keys()):
+        bucket = grouped[ts]
+        primary = bucket.get(PRIMARY_SIGNAL_SYMBOL)
+        pair = bucket.get(PAIR_SIGNAL_SYMBOL)
+        primary_open = bool(primary.buy_open) if primary is not None else False
+        primary_close = bool(primary.buy_close) if primary is not None else False
+        pair_open = bool(pair.buy_open) if pair is not None else False
+        pair_close = bool(pair.buy_close) if pair is not None else False
+
+        if current_position is None:
+            if primary_open and pair_open:
+                primary_scr = float(primary.scr_line or 0.0) if primary is not None else 0.0
+                pair_scr = float(pair.scr_line or 0.0) if pair is not None else 0.0
+                current_position = PRIMARY_SIGNAL_SYMBOL if primary_scr >= pair_scr else PAIR_SIGNAL_SYMBOL
+            elif primary_open:
+                current_position = PRIMARY_SIGNAL_SYMBOL
+            elif pair_open:
+                current_position = PAIR_SIGNAL_SYMBOL
+
+            if current_position is not None:
+                events.append(
+                    SignalEventItem(
+                        symbol=current_position,
+                        instrument=_instrument_name(current_position),
+                        ts=ts,
+                        signal="open",
+                    )
+                )
+            continue
+
+        if current_position == PRIMARY_SIGNAL_SYMBOL:
+            if pair_open:
+                events.append(
+                    SignalEventItem(
+                        symbol=PRIMARY_SIGNAL_SYMBOL,
+                        instrument=_instrument_name(PRIMARY_SIGNAL_SYMBOL),
+                        ts=ts,
+                        signal="close",
+                    )
+                )
+                events.append(
+                    SignalEventItem(
+                        symbol=PAIR_SIGNAL_SYMBOL,
+                        instrument=_instrument_name(PAIR_SIGNAL_SYMBOL),
+                        ts=ts,
+                        signal="open",
+                    )
+                )
+                current_position = PAIR_SIGNAL_SYMBOL
+            elif primary_close:
+                events.append(
+                    SignalEventItem(
+                        symbol=PRIMARY_SIGNAL_SYMBOL,
+                        instrument=_instrument_name(PRIMARY_SIGNAL_SYMBOL),
+                        ts=ts,
+                        signal="close",
+                    )
+                )
+                current_position = None
+            continue
+
+        if current_position == PAIR_SIGNAL_SYMBOL:
+            if primary_open:
+                events.append(
+                    SignalEventItem(
+                        symbol=PAIR_SIGNAL_SYMBOL,
+                        instrument=_instrument_name(PAIR_SIGNAL_SYMBOL),
+                        ts=ts,
+                        signal="close",
+                    )
+                )
+                events.append(
+                    SignalEventItem(
+                        symbol=PRIMARY_SIGNAL_SYMBOL,
+                        instrument=_instrument_name(PRIMARY_SIGNAL_SYMBOL),
+                        ts=ts,
+                        signal="open",
+                    )
+                )
+                current_position = PRIMARY_SIGNAL_SYMBOL
+            elif pair_close:
+                events.append(
+                    SignalEventItem(
+                        symbol=PAIR_SIGNAL_SYMBOL,
+                        instrument=_instrument_name(PAIR_SIGNAL_SYMBOL),
+                        ts=ts,
+                        signal="close",
+                    )
+                )
+                current_position = None
+    return events
+
+
 def _load_triggered_signals(
     *,
     timeframe: str,
@@ -279,19 +385,20 @@ def query_signals(
     items = _load_triggered_signals(
         timeframe=timeframe,
         strategy_name=DEFAULT_STRATEGY_NAME,
-        symbol=symbol,
+        symbol=None,
         from_ts=from_ts,
         to_ts=to_ts,
-        sort=sort,
+        sort="asc",
     )
 
     filter_signal = _normalize_signal_filter(signal)
-    events: list[SignalEventItem] = []
-    for item in items:
-        for event in _expand_signal_events(item):
-            if filter_signal and event.signal != filter_signal:
-                continue
-            events.append(event)
+    events = _build_position_signal_events(items)
+    if symbol:
+        events = [event for event in events if event.symbol == symbol]
+    if filter_signal:
+        events = [event for event in events if event.signal == filter_signal]
+    if _normalize_sort(sort) == "desc":
+        events = list(reversed(events))
 
     events = events[: int(limit)]
     return SignalEventListResponse(count=len(events), items=events)

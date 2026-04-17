@@ -80,6 +80,12 @@ def _initialize() -> None:
                     frame_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
                 );
+
+                CREATE TABLE IF NOT EXISTS app_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
                 """
             )
         _INITIALIZED = True
@@ -383,6 +389,40 @@ def load_execution_cache_with_updated_at(cache_key: str) -> tuple[pd.DataFrame |
     return frame, updated
 
 
+def get_meta_value(key: str) -> str | None:
+    _initialize()
+    with _DB_LOCK:
+        with _connect() as connection:
+            row = connection.execute("SELECT value FROM app_meta WHERE key = ?", (key,)).fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+def set_meta_value(key: str, value: str) -> None:
+    _initialize()
+    with _DB_LOCK:
+        with _connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO app_meta(key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = datetime('now')
+                """,
+                (key, value),
+            )
+
+
+def is_startup_initialized() -> bool:
+    return get_meta_value("startup_initialized") == "1"
+
+
+def mark_startup_initialized(done: bool) -> None:
+    set_meta_value("startup_initialized", "1" if done else "0")
+
+
 def clear_all_cache_data() -> None:
     _initialize()
     with _DB_LOCK:
@@ -394,5 +434,6 @@ def clear_all_cache_data() -> None:
                 DELETE FROM strategy_state;
                 DELETE FROM payload_cache;
                 DELETE FROM execution_cache;
+                DELETE FROM app_meta;
                 """
             )
