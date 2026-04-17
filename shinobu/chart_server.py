@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import errno
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 
 from shinobu.chart_controller import build_chart_payload_controlled
 from shinobu.strategy import StrategyAdjustments
@@ -72,8 +75,23 @@ def ensure_chart_server() -> str:
         if _SERVER_STARTED:
             return f"http://{CHART_SERVER_HOST}:{CHART_SERVER_PORT}"
 
-        server = ThreadingHTTPServer((CHART_SERVER_HOST, CHART_SERVER_PORT), _ChartHandler)
+        try:
+            server = ThreadingHTTPServer((CHART_SERVER_HOST, CHART_SERVER_PORT), _ChartHandler)
+        except OSError as exc:
+            # Another process/session may already own the chart port.
+            if exc.errno == errno.EADDRINUSE and _is_chart_server_alive():
+                _SERVER_STARTED = True
+                return f"http://{CHART_SERVER_HOST}:{CHART_SERVER_PORT}"
+            raise
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         _SERVER_STARTED = True
     return f"http://{CHART_SERVER_HOST}:{CHART_SERVER_PORT}"
+
+
+def _is_chart_server_alive(timeout_seconds: float = 0.5) -> bool:
+    try:
+        with urlopen(f"http://127.0.0.1:{CHART_SERVER_PORT}/health", timeout=timeout_seconds) as response:
+            return response.status == 200
+    except (URLError, OSError):
+        return False
