@@ -78,7 +78,7 @@ start_streamlit() {
   nohup "$VENV_DIR/bin/python" -m streamlit run "$ROOT_DIR/app.py" \
     --server.address "$STREAMLIT_HOST" \
     --server.port "$STREAMLIT_PORT" \
-    >"$LOG_DIR/streamlit.out.log" 2>"$LOG_DIR/streamlit.err.log" &
+    >/dev/null 2>"$LOG_DIR/streamlit.err.log" &
   echo $! >"$STREAMLIT_PID_FILE"
   echo "Streamlit started (pid=$(cat "$STREAMLIT_PID_FILE"))"
 }
@@ -96,7 +96,7 @@ start_signal_api() {
   fi
 
   nohup "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/run_signal_api.py" \
-    >"$LOG_DIR/signal_api.out.log" 2>"$LOG_DIR/signal_api.err.log" &
+    >/dev/null 2>"$LOG_DIR/signal_api.err.log" &
   echo $! >"$SIGNAL_PID_FILE"
   echo "Signal API started (pid=$(cat "$SIGNAL_PID_FILE"))"
 }
@@ -155,9 +155,7 @@ status_all() {
   status_one "Streamlit" "$STREAMLIT_PID_FILE"
   status_one "Signal API" "$SIGNAL_PID_FILE"
   echo "Logs:"
-  echo "  $LOG_DIR/streamlit.out.log"
   echo "  $LOG_DIR/streamlit.err.log"
-  echo "  $LOG_DIR/signal_api.out.log"
   echo "  $LOG_DIR/signal_api.err.log"
 }
 
