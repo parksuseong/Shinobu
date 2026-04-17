@@ -394,19 +394,44 @@ def _is_closed_5m_candle(candle_start: pd.Timestamp, now: pd.Timestamp | None = 
     return current >= candle_end
 
 
-def _get_target_rows(primary: pd.DataFrame, secondary: pd.DataFrame) -> tuple[pd.Timestamp, pd.Series, pd.Series] | None:
+def _parse_candle_key(candle_key: str) -> pd.Timestamp | None:
+    text = str(candle_key or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = pd.Timestamp(text)
+    except Exception:
+        return None
+    return parsed if not pd.isna(parsed) else None
+
+
+def _get_target_rows(
+    primary: pd.DataFrame,
+    secondary: pd.DataFrame,
+    last_checked_candle: str = "",
+) -> tuple[pd.Timestamp, pd.Series, pd.Series, bool] | None:
     combined_index = primary.index.union(secondary.index).sort_values()
     if len(combined_index) < 2:
         return None
 
     latest_time = pd.Timestamp(combined_index[-1])
-    if _is_closed_5m_candle(latest_time):
-        target_time = latest_time
-    else:
-        target_time = pd.Timestamp(combined_index[-2])
+    max_closed_index = len(combined_index) - 1 if _is_closed_5m_candle(latest_time) else len(combined_index) - 2
+    if max_closed_index < 0:
+        return None
+
+    closed_times = [pd.Timestamp(value) for value in combined_index[: max_closed_index + 1]]
+    target_time = closed_times[-1]
+    last_checked_time = _parse_candle_key(last_checked_candle)
+    if last_checked_time is not None:
+        for candidate in closed_times:
+            if candidate > last_checked_time:
+                target_time = candidate
+                break
+    has_backlog = bool(target_time < closed_times[-1])
+
     aligned_primary = primary.reindex(combined_index).ffill()
     aligned_secondary = secondary.reindex(combined_index).ffill()
-    return target_time, aligned_primary.loc[target_time], aligned_secondary.loc[target_time]
+    return target_time, aligned_primary.loc[target_time], aligned_secondary.loc[target_time], has_backlog
 
 
 def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> dict[str, Any] | None:
@@ -817,15 +842,17 @@ def process_live_trading_cycle(
             _write_state(state)
             raise
 
-        target_rows = _get_target_rows(primary, secondary)
+        target_rows = _get_target_rows(primary, secondary, str(state.get("last_checked_candle", "") or ""))
         if target_rows is None:
             _set_status(state, "waiting_data")
             _append_log("대기", "완료된 5분봉이 아직 충분하지 않아 다음 주기를 기다립니다.")
             _write_state(state)
             return
 
-        target_time, primary_row, secondary_row = target_rows
+        target_time, primary_row, secondary_row, has_backlog = target_rows
         candle_key = target_time.strftime("%Y-%m-%d %H:%M")
+        if has_backlog:
+            _append_log("정보", f"엔진 재개로 누락된 봉을 순차 처리 중입니다. 현재 처리 봉: {candle_key}")
         try:
             positions, summary = fetch_domestic_balance()
         except Exception as exc:
