@@ -218,10 +218,13 @@ reset_data() {
 
   echo "Clearing sqlite cache tables and startup flags..."
   "$VENV_DIR/bin/python" - <<'PY'
+import sqlite3
 from shinobu.cache_db import (
+    DB_PATH,
     clear_all_cache_data,
     mark_startup_initialized,
     release_startup_init_lock,
+    get_meta_value,
     set_meta_value,
 )
 
@@ -229,7 +232,18 @@ clear_all_cache_data()
 mark_startup_initialized(False)
 release_startup_init_lock()
 set_meta_value("startup_init_lock", "0")
+with sqlite3.connect(DB_PATH) as connection:
+    cursor = connection.cursor()
+    table_counts = {}
+    for table_name in ("raw_market_data", "indicator_data", "strategy_state", "payload_cache", "execution_cache"):
+        table_counts[table_name] = int(cursor.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0])
+
 print("reset complete: cache cleared, startup initialization forced")
+print(f"db_path={DB_PATH}")
+for table_name, count in table_counts.items():
+    print(f"{table_name}: {count}")
+print(f"startup_initialized={get_meta_value('startup_initialized')}")
+print(f"startup_init_lock={get_meta_value('startup_init_lock')}")
 PY
 
   echo "Starting services..."
