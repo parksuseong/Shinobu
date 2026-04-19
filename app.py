@@ -1185,7 +1185,7 @@ def _render_open_live_positions() -> None:
     if open_view.empty:
         st.caption("현재 보유 중인 실전 포지션이 없습니다.")
     else:
-        st.dataframe(_format_positions_frame(open_view), use_container_width=True, hide_index=True)
+        st.dataframe(_format_positions_frame(open_view), width="stretch", hide_index=True)
 
 
 def _render_closed_live_trades() -> None:
@@ -1249,7 +1249,7 @@ def _render_closed_live_trades() -> None:
         )
         st.dataframe(
             view[["종목", "진입구간", "청산구간", "수량", "진입가", "청산가", "손익", "수익률", "결과"]].head(20),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1332,7 +1332,7 @@ def render_live_account_panel() -> None:
     if positions.empty:
         st.info("현재 보유 포지션이 없습니다.")
     else:
-        st.dataframe(_format_positions_frame(positions), use_container_width=True, hide_index=True)
+        st.dataframe(_format_positions_frame(positions), width="stretch", hide_index=True)
 
 
 @st.fragment(run_every="5s")
