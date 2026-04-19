@@ -1,248 +1,87 @@
 # Shinobu Project
 
-`Shinobu Project`는 스트림릿 기반의 국내 ETF 실전 자동매매 대시보드입니다.
+Shinobu는 KIS(Open API) 기반 5분봉 자동매매 운영 프로젝트입니다.  
+Codex로 개발을 이어가기 쉽도록 하네스/운영 명령을 표준화했습니다.
 
-현재 전략은 `KODEX 레버리지(122630)`와 `KODEX 200선물인버스2X(252670)` 신호를 동시에 계산하지만, 실제 주문은 예탁금 부담을 줄이기 위해 1배 ETF로 실행합니다.
+## 핵심 구성
 
-- 레버리지 신호 계산용 종목: `122630`
-- 인버스 신호 계산용 종목: `252670`
-- 실제 롱 주문 종목: `069500`
-- 실제 숏 대응 주문 종목: `114800`
+- UI: `app.py` (Streamlit)
+- 트레이딩 엔진: `shinobu/live_trading.py`
+- 차트/마커: `shinobu/chart_payload.py`, `shinobu/chart_worker.py`, `shinobu/chart_controller.py`
+- Signal API: `scripts/run_signal_api.py`, `shinobu/signal_api.py`
+- SQLite 캐시 DB: `.streamlit/shinobu_cache.db`
 
-즉, 신호는 2배 ETF 기준으로 판단하고 실제 체결은 1배 ETF 기준으로 나갑니다.
+## 빠른 시작 (로컬)
 
-## 핵심 기능
-
-- 한투 Open API 기반 실계좌 조회
-- 실전 5분봉 자동매매 실행 / 중지
-- 레버리지 / 인버스 페어 전략
-- 실전 로그 파일 기록
-- 실전 차트, 보조지표, 시그널 표시
-- 현재 보유종목 / 미청산 포지션 표시
-- 최근 7일 청산 완료 거래 및 체결 원장 표시
-- 자산 이력 추적
-
-## 전략 개요
-
-전략은 `SCR` 기반입니다.
-
-- 메인 차트: 레버리지 캔들 기준
-- 보조지표: 레버리지 SCR + 인버스 SCR 동시 표시
-- 시그널 계산: 레버리지 / 인버스 각각 별도로 계산
-- 실제 주문: 계산 결과를 1배 ETF로 매핑해서 실행
-
-현재 5분봉 기준 개념은 아래처럼 동작합니다.
-
-- `buy open`
-  - 과매도 + 상향 돌파 조건 충족 시 진입
-- `buy close`
-  - 과열 조건 충족 시 청산
-- 반대 ETF `buy open`
-  - 현재 보유분을 먼저 청산하고 반대편으로 스위칭
-- 같은 방향 `buy open`
-  - 현재 포지션이 있어도 추가매수 가능
-
-## 실제 주문 매핑
-
-신호와 실제 주문 종목은 아래처럼 매핑됩니다.
-
-- `122630.KS` 신호 -> `069500.KS` 주문
-- `252670.KS` 신호 -> `114800.KS` 주문
-
-따라서 현재 보유 포지션 판별, 감정표 강조, 청산 처리도 모두 `069500`, `114800` 기준으로 이뤄집니다.
-
-## 주문 동작 원칙
-
-- 주문 기준 봉: `5분봉`
-- 최신 완료 5분봉만 사용
-- 주문은 시장가
-- 매수 수량은 `주문가능현금` 기준 최대 수량
-- 앱이 켜져 있는 동안 자동 주기 실행
-
-## 실패 대응 로직
-
-실전 운영에서 가장 중요한 부분이라 별도로 정리합니다.
-
-### 1. 주문 자체 재시도
-
-주문 요청 시 아래 같은 시스템성 오류는 자동 재시도합니다.
-
-- DNS 실패
-- `getaddrinfo failed`
-- timeout
-- 네트워크 일시 오류
-
-재시도 과정은 실전 로그에 기록됩니다.
-
-### 2. 청산 재확인
-
-`buy close` 신호가 떴는데 청산이 실패해서 포지션이 남아 있으면, 같은 5분봉이라도 다음 주기에서 다시 청산을 시도합니다.
-
-즉:
-
-- close 신호 발생
-- 주문 실패
-- 포지션 유지 중
-
-이면 같은 캔들을 다시 보며 청산 재시도합니다.
-
-### 3. 진입 재확인
-
-`buy open` 신호가 떴는데 진입 주문이 실패하고 아직 포지션이 없으면, 같은 5분봉에서도 다시 진입을 시도합니다.
-
-즉:
-
-- open 신호 발생
-- 주문 실패
-- 포지션 없음
-
-이면 같은 캔들을 다시 보며 진입 재시도합니다.
-
-## 실계좌 패널
-
-실계좌 패널에는 아래 항목이 표시됩니다.
-
-- 총자산
-- 잔고
-  - `주문가능현금` 기준
-- 평가손익
-- 수익률
-- 보유종목
-
-계좌번호는 앞 2자리만 표시하고 나머지는 `*` 처리합니다.
-
-## 거래 내역 표시
-
-### 미청산 주문 / 보유중
-
-현재 실계좌에서 보유 중인 `069500`, `114800` 포지션을 보여줍니다.
-
-### 청산 완료 거래
-
-최근 7일 체결내역을 한투 API에서 불러와, 매수/매도를 짝지어 청산 완료 거래를 집계합니다.
-
-표시 항목:
-
-- 진입구간
-- 청산구간
-- 수량
-- 진입가
-- 청산가
-- 손익
-- 수익률
-- 결과
-  - 승 / 패 / 무
-
-### 최근 7일 체결 원장
-
-청산 완료 거래 아래에는 최근 7일 체결 원장을 5분 단위 구간으로 묶어서 보여줍니다.
-
-예:
-
-- `09:55~10:00`
-- `11:30~11:35`
-- `11:35~11:40`
-- `12:20~12:25`
-
-표시 항목:
-
-- 구간
-- 종목
-- 구분
-- 수량
-- 가격
-- 금액
-- 주문건수
-
-## 차트 구성
-
-- 메인 차트: 레버리지 캔들
-- 메인 차트 시그널: 레버리지 / 인버스 둘 다 표시
-- 보조지표: 레버리지 SCR, 인버스 SCR 동시 표시
-- 체결 마커: 실제 체결 내역 표시
-
-## 로그와 상태 파일
-
-실전 상태와 로그는 메모리에만 두지 않고 파일에도 남깁니다.
-
-- 상태 파일: `.streamlit/live_state.json`
-- 실전 로그: `.streamlit/live_trading.log`
-- 토큰 캐시: `.streamlit` 내부 토큰 파일
-
-로그에는 아래 같은 정보가 남습니다.
-
-- 실행 / 중지
-- 주문 접수
-- 체결 확인
-- 주문 재시도
-- 데이터 조회 실패
-- 같은 캔들 재진입 / 재청산
-
-## 한투 API 관련 메모
-
-현재 사용 중인 주요 API:
-
-- 잔고 조회
-- 주문 요청
-- 주식일별주문체결조회
-- 국내 분봉 조회
-
-`주식일별주문체결조회`는 장중에 응답이 느릴 수 있어서:
-
-- 최근 7일만 조회
-- 실제 주문 종목 `069500`, `114800`만 조회
-- 체결만 조회
-- 짧은 캐시 사용
-
-으로 최적화해두었습니다.
-
-## 실행 방법
+### 1) 가상환경 + 설치
 
 ```bash
+python -m venv .venv
+
+# Linux/macOS
+source .venv/bin/activate
+
+# Windows PowerShell
+# .venv\Scripts\Activate.ps1
+
+pip install -U pip
 pip install -r requirements.txt
-streamlit run app.py
 ```
 
-EC2 등 외부 접속 서버에서는 아래처럼 실행하면 됩니다.
+### 2) 앱 실행
 
 ```bash
-streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
-## 필수 시크릿
+- UI: `http://127.0.0.1:8501`
 
-`.streamlit/secrets.toml` 예시:
+### 3) Signal API 실행
 
-```toml
-KIS_APP_KEY = "앱키"
-KIS_APP_SECRET = "시크릿키"
-KIS_CANO = "12345678"
-KIS_ACNT_PRDT_CD = "01"
-KIS_IS_REAL = "true"
+```bash
+python scripts/run_signal_api.py
 ```
 
-## 보안
+- Base: `http://127.0.0.1:8766`
+- Swagger: `http://127.0.0.1:8766/docs`
+- Redoc: `http://127.0.0.1:8766/redoc`
 
-아래 파일은 Git에 올라가지 않도록 처리되어 있습니다.
+## EC2 운영 명령어
 
-- `.streamlit/secrets.toml`
-- `.streamlit/live_state.json`
-- `.streamlit/live_trading.log`
-- `.env`
+서비스 운영은 `scripts/ec2_service.sh` 기준으로 통일합니다.
 
-실계좌 자동매매 프로젝트이므로, 시크릿과 계좌 정보는 반드시 로컬 또는 서버 시크릿 파일로만 관리해야 합니다.
+### 1) 최초 1회
 
-## 주의
+```bash
+bash scripts/ec2_service.sh bootstrap
+```
 
-이 프로젝트는 실전 주문 기능이 연결되어 있습니다.
+### 2) 일반 운영
 
-- `실행` 상태에서는 실제 계좌에 주문이 나갈 수 있습니다.
-- 주문 전 계좌 상태와 전략 동작을 반드시 확인해야 합니다.
-- 네트워크 오류나 API 지연이 발생할 수 있으므로, 로그와 실계좌 상태를 함께 보는 것을 권장합니다.
+```bash
+bash scripts/ec2_service.sh start
+bash scripts/ec2_service.sh stop
+bash scripts/ec2_service.sh restart
+bash scripts/ec2_service.sh status
+```
 
-## Codex Harness
+### 3) 데이터 리셋 + 재수집/재계산 + 자동 기동
 
-Quick verification loop:
+```bash
+bash scripts/ec2_service.sh reset
+```
+
+`reset` 동작:
+
+1. Streamlit/Signal API 중지  
+2. sqlite 캐시 데이터 초기화  
+3. startup 초기화 플래그 리셋  
+4. Streamlit/Signal API 재기동  
+5. 앱 시작 후 초기화 스레드에서 캔들 재수집/전략 재계산
+
+## 하네스 (팀 인수인계용)
+
+Codex 표준 검증 루프:
 
 ```bash
 python scripts/codex_smoke.py
@@ -250,37 +89,40 @@ python scripts/codex_report.py
 python harness.py
 ```
 
-See `HARNESS.md` for details.
+상세 가이드:
 
-## Signal API (Swagger)
+- `HARNESS.md`
+- `AGENTS.md`
+- `docs/harness/MEMORY.md`
+- `docs/harness/RULES.md`
+- `docs/harness/PLAN.md`
 
-External systems can read signal rows from sqlite via REST API.
-
-Run:
-
-```bash
-python scripts/run_signal_api.py
-```
-
-Base URL:
-
-- `http://localhost:8766`
-
-Swagger / OpenAPI:
-
-- `http://localhost:8766/docs`
-- `http://localhost:8766/redoc`
-
-Main endpoints:
+## Swagger 주요 엔드포인트
 
 - `GET /health`
-- `GET /v1/signals` (기간 조회 + limit 기반 조회)
+- `GET /v1/signals`
 - `GET /v1/executions/recent`
 
-Example:
+예시:
 
 ```bash
-curl "http://localhost:8766/v1/signals?from_ts=2026-04-16T09:00:00&to_ts=2026-04-16T15:30:00&sort=desc&symbol=122630.KS&signal=open"
-
-curl "http://localhost:8766/v1/executions/recent?symbol=069500.KS&side=buy&limit=20"
+curl "http://127.0.0.1:8766/v1/signals?from_ts=2026-04-16T09:00:00&to_ts=2026-04-16T15:30:00&sort=desc"
 ```
+
+## 필수 시크릿
+
+`.streamlit/secrets.toml` 예시:
+
+```toml
+KIS_APP_KEY = "..."
+KIS_APP_SECRET = "..."
+KIS_CANO = "12345678"
+KIS_ACNT_PRDT_CD = "01"
+KIS_IS_REAL = "true"
+```
+
+## 주의사항
+
+- 실매매 계좌에 주문이 나가는 프로젝트입니다.
+- 운영 전 반드시 `status`/로그/계좌 상태를 확인하세요.
+- EC2 외부에서 Swagger를 보려면 보안그룹에 `8766/tcp` 인바운드 허용이 필요합니다.
