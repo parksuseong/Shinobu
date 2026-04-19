@@ -8,12 +8,12 @@ from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 
 from shinobu.cache_db import DB_PATH
+from shinobu.strategy import DEFAULT_STRATEGY_NAME
 
 
 APP_TITLE = "Shinobu Signal API"
 APP_VERSION = "1.0.0"
 DEFAULT_TIMEFRAME = "5분봉"
-DEFAULT_STRATEGY_NAME = "src_v2_adx"
 DEFAULT_ADJUSTMENT_KEY = "s0_c0_r0"
 PRIMARY_SIGNAL_SYMBOL = "122630.KS"
 PAIR_SIGNAL_SYMBOL = "252670.KS"

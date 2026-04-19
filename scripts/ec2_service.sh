@@ -20,6 +20,7 @@ Usage:
   bash scripts/ec2_service.sh start       # start streamlit + signal api
   bash scripts/ec2_service.sh stop        # stop both processes
   bash scripts/ec2_service.sh restart     # stop then start
+  bash scripts/ec2_service.sh reset       # stop -> clear sqlite caches -> force startup re-init -> start
   bash scripts/ec2_service.sh status      # show process status
 EOF
 }
@@ -159,6 +160,36 @@ status_all() {
   echo "  $LOG_DIR/signal_api.err.log"
 }
 
+reset_data() {
+  if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+    echo "Virtualenv not found at $VENV_DIR. Run bootstrap first."
+    exit 1
+  fi
+
+  echo "Stopping services before reset..."
+  stop_all
+
+  echo "Clearing sqlite cache tables and startup flags..."
+  "$VENV_DIR/bin/python" - <<'PY'
+from shinobu.cache_db import (
+    clear_all_cache_data,
+    mark_startup_initialized,
+    release_startup_init_lock,
+    set_meta_value,
+)
+
+clear_all_cache_data()
+mark_startup_initialized(False)
+release_startup_init_lock()
+set_meta_value("startup_init_lock", "0")
+print("reset complete: cache cleared, startup initialization forced")
+PY
+
+  echo "Starting services..."
+  start_all
+  echo "Reset flow complete. Streamlit will recollect and recalculate on startup."
+}
+
 main() {
   local cmd="${1:-}"
   case "$cmd" in
@@ -166,6 +197,7 @@ main() {
     start) start_all ;;
     stop) stop_all ;;
     restart) stop_all; start_all ;;
+    reset) reset_data ;;
     status) status_all ;;
     *) usage; exit 1 ;;
   esac

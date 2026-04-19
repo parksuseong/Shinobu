@@ -57,6 +57,8 @@ REGULAR_MARKET_OPEN_HOUR = 9
 REGULAR_MARKET_CLOSE_HOUR = 15
 REGULAR_MARKET_CLOSE_MINUTE = 30
 AFTER_HOURS_CLOSE_HOUR = 18
+LIVE_SWITCH_CONFIRM_BARS = 2
+LIVE_MAX_HOLD_BARS = 180
 
 
 def _now_text() -> str:
@@ -80,6 +82,11 @@ def _default_state() -> dict[str, Any]:
         "pending_target_symbol": "",
         "pending_target_reason": "",
         "pending_target_candle": "",
+        "switch_confirm_symbol": "",
+        "switch_confirm_count": 0,
+        "switch_confirm_last_candle": "",
+        "position_entry_symbol": "",
+        "position_entry_candle": "",
         "last_regular_close_cleanup_date": "",
         "orders": [],
         "asset_history": [],
@@ -129,6 +136,12 @@ def _append_log(level: str, message: str) -> None:
     with LIVE_LOG_FILE.open("a", encoding="utf-8") as log_file:
         log_file.write(f"{_now_text()}  [{level}]  {message}\n")
         log_file.flush()
+
+
+def append_live_log(level: str, message: str) -> None:
+    with _LIVE_STATE_LOCK:
+        _ensure_state_file()
+        _append_log(level, message)
 
 
 def _set_status(state: dict[str, Any], status: str, error: str = "") -> None:
@@ -183,6 +196,60 @@ def _set_pending_target(
 
 def _clear_pending_target(state: dict[str, Any]) -> None:
     _set_pending_target(state, "none")
+
+
+def _clear_switch_confirm_state(state: dict[str, Any]) -> None:
+    state["switch_confirm_symbol"] = ""
+    state["switch_confirm_count"] = 0
+    state["switch_confirm_last_candle"] = ""
+
+
+def _register_switch_confirm(
+    state: dict[str, Any],
+    target_signal_symbol: str,
+    candle_key: str,
+    required_bars: int,
+) -> bool:
+    required = max(int(required_bars), 1)
+    last_symbol = str(state.get("switch_confirm_symbol", "") or "")
+    last_candle = str(state.get("switch_confirm_last_candle", "") or "")
+    try:
+        last_count = int(state.get("switch_confirm_count", 0) or 0)
+    except (TypeError, ValueError):
+        last_count = 0
+
+    if last_symbol != target_signal_symbol:
+        last_count = 0
+    if last_candle != candle_key:
+        last_count += 1
+
+    state["switch_confirm_symbol"] = target_signal_symbol
+    state["switch_confirm_count"] = last_count
+    state["switch_confirm_last_candle"] = candle_key
+    return last_count >= required
+
+
+def _parse_candle_text(value: str) -> pd.Timestamp | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        ts = pd.Timestamp(text)
+    except Exception:
+        return None
+    if pd.isna(ts):
+        return None
+    return ts
+
+
+def _bars_since_entry(entry_candle_text: str, current_candle: pd.Timestamp) -> int:
+    entry_ts = _parse_candle_text(entry_candle_text)
+    if entry_ts is None:
+        return 0
+    delta_minutes = int((pd.Timestamp(current_candle) - entry_ts).total_seconds() // 60)
+    if delta_minutes <= 0:
+        return 0
+    return delta_minutes // 5
 
 
 def set_live_enabled(enabled: bool) -> None:
@@ -474,11 +541,18 @@ def _choose_open_candidate(
     secondary_symbol: str,
     primary_row: pd.Series,
     secondary_row: pd.Series,
+    allow_raw_open: bool = False,
 ) -> tuple[str, pd.Series] | None:
     candidates = []
-    if bool(primary_row.get("buy_open", False)):
+    primary_open = bool(primary_row.get("buy_open", False)) or (
+        allow_raw_open and bool(primary_row.get("raw_buy_open", False))
+    )
+    secondary_open = bool(secondary_row.get("buy_open", False)) or (
+        allow_raw_open and bool(secondary_row.get("raw_buy_open", False))
+    )
+    if primary_open:
         candidates.append((primary_symbol, primary_row))
-    if bool(secondary_row.get("buy_open", False)):
+    if secondary_open:
         candidates.append((secondary_symbol, secondary_row))
     if not candidates:
         return None
@@ -812,7 +886,7 @@ def process_live_trading_cycle(
     primary_symbol: str,
     secondary_symbol: str,
     adjustments: StrategyAdjustments,
-    strategy_name: str = "src_v2_adx",
+    strategy_name: str = DEFAULT_STRATEGY_NAME,
 ) -> None:
     with _LIVE_STATE_LOCK:
         state = _read_state()
@@ -861,7 +935,30 @@ def process_live_trading_cycle(
             _write_state(state)
             raise
         current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
-        chosen_open = _choose_open_candidate(primary_symbol, secondary_symbol, primary_row, secondary_row)
+        if current_position is not None:
+            current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
+            opposite_symbol = secondary_symbol if current_signal_symbol == primary_symbol else primary_symbol
+            opposite_row = secondary_row if opposite_symbol == secondary_symbol else primary_row
+            opposite_open = bool(opposite_row.get("buy_open", False)) or bool(opposite_row.get("raw_buy_open", False))
+            if opposite_open:
+                # Force switching when opposite-side open signal exists.
+                chosen_open = (opposite_symbol, opposite_row)
+            else:
+                chosen_open = _choose_open_candidate(
+                    primary_symbol,
+                    secondary_symbol,
+                    primary_row,
+                    secondary_row,
+                    allow_raw_open=True,
+                )
+        else:
+            chosen_open = _choose_open_candidate(
+                primary_symbol,
+                secondary_symbol,
+                primary_row,
+                secondary_row,
+                allow_raw_open=False,
+            )
         pending_mode = str(state.get("pending_target_mode", "none") or "none")
         pending_symbol = str(state.get("pending_target_symbol", "") or "")
         pending_reason = str(state.get("pending_target_reason", "") or "")

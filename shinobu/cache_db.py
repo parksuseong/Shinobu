@@ -493,3 +493,270 @@ def clear_all_cache_data() -> None:
                 DELETE FROM execution_cache;
                 """
             )
+
+
+def _quote_placeholders(size: int) -> str:
+    return ",".join(["?"] * max(int(size), 1))
+
+
+def get_raw_intraday_row_count(symbol: str, timeframe: str) -> int:
+    _initialize()
+    with _DB_LOCK:
+        with _connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM raw_market_data
+                WHERE symbol = ? AND timeframe = ?
+                """,
+                (symbol, timeframe),
+            ).fetchone()
+    return int(row[0] if row is not None else 0)
+
+
+def get_raw_intraday_range(symbol: str, timeframe: str) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    _initialize()
+    with _DB_LOCK:
+        with _connect() as connection:
+            row = connection.execute(
+                """
+                SELECT MIN(ts), MAX(ts)
+                FROM raw_market_data
+                WHERE symbol = ? AND timeframe = ?
+                """,
+                (symbol, timeframe),
+            ).fetchone()
+    if row is None:
+        return None, None
+    min_ts = pd.to_datetime(row[0], errors="coerce") if row[0] else None
+    max_ts = pd.to_datetime(row[1], errors="coerce") if row[1] else None
+    if min_ts is not None and pd.isna(min_ts):
+        min_ts = None
+    if max_ts is not None and pd.isna(max_ts):
+        max_ts = None
+    return min_ts, max_ts
+
+
+def get_raw_intraday_mismatch(
+    symbol_a: str,
+    symbol_b: str,
+    timeframe: str,
+    ignore_recent_minutes: int = 0,
+) -> dict[str, Any]:
+    _initialize()
+    cutoff_iso: str | None = None
+    if int(ignore_recent_minutes) > 0:
+        cutoff = pd.Timestamp.now().floor("min") - pd.Timedelta(minutes=max(int(ignore_recent_minutes), 1))
+        cutoff_iso = pd.Timestamp(cutoff).isoformat()
+    with _DB_LOCK:
+        with _connect() as connection:
+            if cutoff_iso is None:
+                rows = connection.execute(
+                    """
+                    SELECT symbol, ts
+                    FROM raw_market_data
+                    WHERE timeframe = ? AND symbol IN (?, ?)
+                    ORDER BY ts
+                    """,
+                    (timeframe, symbol_a, symbol_b),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT symbol, ts
+                    FROM raw_market_data
+                    WHERE timeframe = ? AND symbol IN (?, ?) AND ts < ?
+                    ORDER BY ts
+                    """,
+                    (timeframe, symbol_a, symbol_b, cutoff_iso),
+                ).fetchall()
+    set_a: set[str] = set()
+    set_b: set[str] = set()
+    for row_symbol, ts in rows:
+        ts_text = str(ts or "")
+        if not ts_text:
+            continue
+        if row_symbol == symbol_a:
+            set_a.add(ts_text)
+        elif row_symbol == symbol_b:
+            set_b.add(ts_text)
+    only_a = sorted(set_a - set_b)
+    only_b = sorted(set_b - set_a)
+    return {
+        "symbol_a": symbol_a,
+        "symbol_b": symbol_b,
+        "timeframe": timeframe,
+        "count_a": len(set_a),
+        "count_b": len(set_b),
+        "only_a_count": len(only_a),
+        "only_b_count": len(only_b),
+        "only_a": only_a,
+        "only_b": only_b,
+        "equal": len(only_a) == 0 and len(only_b) == 0,
+        "cutoff_iso": cutoff_iso,
+    }
+
+
+def has_raw_intraday_mismatch(
+    symbol_a: str,
+    symbol_b: str,
+    timeframe: str,
+    ignore_recent_minutes: int = 0,
+) -> bool:
+    _initialize()
+    cutoff_iso: str | None = None
+    if int(ignore_recent_minutes) > 0:
+        cutoff = pd.Timestamp.now().floor("min") - pd.Timedelta(minutes=max(int(ignore_recent_minutes), 1))
+        cutoff_iso = pd.Timestamp(cutoff).isoformat()
+
+    base_filter = "timeframe = ? AND symbol = ?"
+    args_a: list[Any] = [timeframe, symbol_a]
+    args_b: list[Any] = [timeframe, symbol_b]
+    if cutoff_iso is not None:
+        base_filter += " AND ts < ?"
+        args_a.append(cutoff_iso)
+        args_b.append(cutoff_iso)
+
+    query = f"""
+        SELECT EXISTS(
+            SELECT ts FROM raw_market_data WHERE {base_filter}
+            EXCEPT
+            SELECT ts FROM raw_market_data WHERE {base_filter}
+        )
+    """
+
+    with _DB_LOCK:
+        with _connect() as connection:
+            left = connection.execute(query, [*args_a, *args_b]).fetchone()
+            if int(left[0] if left is not None else 0) == 1:
+                return True
+            right = connection.execute(query, [*args_b, *args_a]).fetchone()
+            return int(right[0] if right is not None else 0) == 1
+
+
+def align_raw_intraday_pair_to_intersection(
+    symbol_a: str,
+    symbol_b: str,
+    timeframe: str,
+    ignore_recent_minutes: int = 10,
+) -> dict[str, Any]:
+    mismatch = get_raw_intraday_mismatch(
+        symbol_a=symbol_a,
+        symbol_b=symbol_b,
+        timeframe=timeframe,
+        ignore_recent_minutes=ignore_recent_minutes,
+    )
+    only_a = mismatch.get("only_a", [])
+    only_b = mismatch.get("only_b", [])
+    deleted_a = 0
+    deleted_b = 0
+    if not only_a and not only_b:
+        mismatch["deleted_a"] = 0
+        mismatch["deleted_b"] = 0
+        mismatch["deleted_total"] = 0
+        return mismatch
+
+    with _DB_LOCK:
+        with _connect() as connection:
+            if only_a:
+                placeholders = _quote_placeholders(len(only_a))
+                row = connection.execute(
+                    f"""
+                    DELETE FROM raw_market_data
+                    WHERE symbol = ? AND timeframe = ? AND ts IN ({placeholders})
+                    RETURNING ts
+                    """,
+                    [symbol_a, timeframe, *only_a],
+                ).fetchall()
+                deleted_a = len(row)
+            if only_b:
+                placeholders = _quote_placeholders(len(only_b))
+                row = connection.execute(
+                    f"""
+                    DELETE FROM raw_market_data
+                    WHERE symbol = ? AND timeframe = ? AND ts IN ({placeholders})
+                    RETURNING ts
+                    """,
+                    [symbol_b, timeframe, *only_b],
+                ).fetchall()
+                deleted_b = len(row)
+
+    updated = get_raw_intraday_mismatch(
+        symbol_a=symbol_a,
+        symbol_b=symbol_b,
+        timeframe=timeframe,
+        ignore_recent_minutes=ignore_recent_minutes,
+    )
+    updated["deleted_a"] = deleted_a
+    updated["deleted_b"] = deleted_b
+    updated["deleted_total"] = deleted_a + deleted_b
+    return updated
+
+
+def invalidate_strategy_cache_for_symbols(symbols: list[str], timeframe: str) -> None:
+    _initialize()
+    normalized = [str(symbol or "").strip() for symbol in symbols if str(symbol or "").strip()]
+    if not normalized:
+        return
+    placeholders = _quote_placeholders(len(normalized))
+    with _DB_LOCK:
+        with _connect() as connection:
+            connection.execute(
+                f"""
+                DELETE FROM indicator_data
+                WHERE timeframe = ? AND symbol IN ({placeholders})
+                """,
+                [timeframe, *normalized],
+            )
+            connection.execute(
+                f"""
+                DELETE FROM strategy_state
+                WHERE timeframe = ? AND symbol IN ({placeholders})
+                """,
+                [timeframe, *normalized],
+            )
+
+
+def clear_chart_payload_caches() -> None:
+    _initialize()
+    with _DB_LOCK:
+        with _connect() as connection:
+            connection.executescript(
+                """
+                DELETE FROM payload_cache;
+                DELETE FROM execution_cache;
+                """
+            )
+
+
+def acquire_named_lock(lock_name: str, stale_after_seconds: int = 180) -> bool:
+    _initialize()
+    key = f"lock:{lock_name}"
+    with _DB_LOCK:
+        with _connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT value, updated_at FROM app_meta WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if row is not None:
+                locked = str(row[0] or "") == "1"
+                if locked and _meta_updated_within(row[1], stale_after_seconds):
+                    connection.commit()
+                    return False
+            connection.execute(
+                """
+                INSERT INTO app_meta(key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = datetime('now')
+                """,
+                (key, "1"),
+            )
+            connection.commit()
+    return True
+
+
+def release_named_lock(lock_name: str) -> None:
+    set_meta_value(f"lock:{lock_name}", "0")

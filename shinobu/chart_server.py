@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
 
 from shinobu.chart_controller import build_chart_payload_controlled
+from shinobu.strategy import DEFAULT_STRATEGY_NAME
 from shinobu.strategy import StrategyAdjustments
 
 
@@ -38,8 +39,10 @@ class _ChartHandler(BaseHTTPRequestHandler):
             cci_pct=int(query.get("cci_pct", ["0"])[0]),
             rsi_pct=int(query.get("rsi_pct", ["0"])[0]),
         )
-        strategy_name = query.get("strategy_name", query.get("profile_name", ["src_v2_adx"]))[0]
+        strategy_name = query.get("strategy_name", query.get("profile_name", [DEFAULT_STRATEGY_NAME]))[0]
         visible_business_days = int(query.get("visible_business_days", ["5"])[0])
+        start_date = query.get("start_date", [""])[0].strip()
+        end_date = query.get("end_date", [""])[0].strip()
         include_markers = query.get("include_markers", ["1"])[0].strip() not in {"0", "false", "False"}
         payload = build_chart_payload_controlled(
             kind=kind,
@@ -48,6 +51,8 @@ class _ChartHandler(BaseHTTPRequestHandler):
             adjustments=adjustments,
             strategy_name=strategy_name,
             visible_business_days=visible_business_days,
+            start_date=start_date,
+            end_date=end_date,
             include_markers=include_markers,
         )
         self._send_json(payload)

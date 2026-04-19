@@ -15,7 +15,7 @@ from shinobu.strategy import (
 )
 
 
-CACHE_VERSION = 2
+CACHE_VERSION = 5
 _CACHE_LOCK = threading.RLock()
 
 _ROWS_PER_BUSINESS_DAY = {
@@ -82,9 +82,7 @@ def _rows_per_business_day(timeframe_label: str | None) -> int:
 def _recalc_warmup_rows(strategy_name: str, timeframe_label: str | None) -> int:
     rows_per_day = _rows_per_business_day(timeframe_label)
     history_days = get_strategy_history_business_days(strategy_name)
-    if normalize_strategy_name(strategy_name) == "src_v2_adx":
-        return max(rows_per_day * history_days, rows_per_day * 5)
-    return max(rows_per_day * 4, 200)
+    return max(rows_per_day * history_days, rows_per_day * 5, 200)
 
 
 def _is_prefix_match(current_frame: pd.DataFrame, cached_source: pd.DataFrame) -> bool:

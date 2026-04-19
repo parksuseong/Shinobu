@@ -14,7 +14,8 @@ def build_live_chart_html(
     rsi_pct: int,
     strategy_name: str,
     strategy_label: str,
-    visible_business_days: int,
+    start_date: str,
+    end_date: str,
     render_nonce: int,
 ) -> str:
     pair_query = pair_symbol or ""
@@ -27,24 +28,46 @@ def build_live_chart_html(
 <div style="display:flex;flex-direction:column;gap:10px;">
   <div style="display:none" data-strategy-name="{strategy_name}" data-strategy-label="{strategy_label}" data-render-nonce="{render_nonce}"></div>
   <div id="chart-status-{root_suffix}" style="font-size:12px;color:#9aa4b2;margin:0 0 2px 6px;"></div>
+  <div id="chart-marker-filter-{root_suffix}" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px 6px;"></div>
   <div id="{main_root_id}" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
-  <div id="{indicator_root_id}" style="width:100%;height:220px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+  <div id="{indicator_root_id}" style="width:100%;height:300px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
 </div>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>
 const mainRoot = document.getElementById("{main_root_id}");
 const indicatorRoot = document.getElementById("{indicator_root_id}");
 const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
+const markerFilterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
 const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
 const endpointBase =
   `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
-  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&visible_business_days={visible_business_days}`;
+  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}`;
+const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
+const markerFilterOptions = [
+  {{ key: "primary_open", label: "레버리지 Open" }},
+  {{ key: "primary_close", label: "레버리지 Close" }},
+  {{ key: "pair_open", label: "곱버스 Open" }},
+  {{ key: "pair_close", label: "곱버스 Close" }},
+  {{ key: "stop_loss", label: "손절" }},
+  {{ key: "order_buy", label: "실매수" }},
+  {{ key: "order_sell", label: "실매도" }}
+];
+const markerFilters = {{
+  primary_open: true,
+  primary_close: true,
+  pair_open: true,
+  pair_close: true,
+  stop_loss: true,
+  order_buy: true,
+  order_sell: true
+}};
 
 let initializedMain = false;
 let initializedIndicator = false;
 let syncingRange = false;
 let previousPayload = null;
+let latestMarkerPayload = null;
 let countdownTimer = null;
 let liveCountdownState = null;
 
@@ -83,6 +106,136 @@ function detailHover(items) {{
       item.scr !== undefined ? `SCR: ${{Number(item.scr).toFixed(2)}}` : ""
     ].filter(Boolean).join("<br>")
   );
+}}
+
+function normalizeMarkerText(value) {{
+  return String(value || "").toLowerCase();
+}}
+
+function isStopMarker(item) {{
+  const label = normalizeMarkerText(item?.label);
+  const reason = normalizeMarkerText(item?.reason);
+  return (
+    label.includes("손절") ||
+    reason.includes("손절") ||
+    label.includes("stop") ||
+    reason.includes("stop") ||
+    label.includes("trailing") ||
+    reason.includes("trailing")
+  );
+}}
+
+function filterOpenMarkers(markers, key) {{
+  if (!markerFilters[key]) return [];
+  return markers;
+}}
+
+function filterCloseMarkers(markers, closeKey) {{
+  const showClose = Boolean(markerFilters[closeKey]);
+  const showStop = Boolean(markerFilters.stop_loss);
+  return markers.filter((item) => {{
+    if (isStopMarker(item)) return showStop;
+    return showClose;
+  }});
+}}
+
+function loadMarkerFilters() {{
+  try {{
+    const raw = window.sessionStorage.getItem(markerFilterStorageKey);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return;
+    markerFilterOptions.forEach((option) => {{
+      if (typeof parsed[option.key] === "boolean") {{
+        markerFilters[option.key] = parsed[option.key];
+      }}
+    }});
+  }} catch (error) {{
+    // ignore local storage parsing errors
+  }}
+}}
+
+function saveMarkerFilters() {{
+  try {{
+    window.sessionStorage.setItem(markerFilterStorageKey, JSON.stringify(markerFilters));
+  }} catch (error) {{
+    // ignore local storage write errors
+  }}
+}}
+
+async function applyMarkerFiltersOnly() {{
+  const markerPayload = latestMarkerPayload || previousPayload;
+  if (!markerPayload) return;
+  if (initializedMain) {{
+    const markers = markerSeries(markerPayload).main;
+    for (let i = 0; i < markers.length; i += 1) {{
+      const traceIndex = MAIN_TRACE.primaryOpen + i;
+      const current = markers[i];
+      await Plotly.restyle(
+        mainRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          text: [current.map((item) => item.label)],
+          hovertext: [detailHover(current)]
+        }},
+        [traceIndex]
+      );
+    }}
+  }}
+  if (initializedIndicator) {{
+    const markers = markerSeries(markerPayload).indicator;
+    for (let i = 0; i < markers.length; i += 1) {{
+      const current = markers[i];
+      await Plotly.restyle(
+        indicatorRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          hovertext: [detailHover(current)]
+        }},
+        [i]
+      );
+    }}
+  }}
+}}
+
+function renderMarkerFilterControls() {{
+  if (!markerFilterRoot) return;
+  markerFilterRoot.innerHTML = "";
+  const title = document.createElement("span");
+  title.textContent = "마커 표시:";
+  title.style.color = "#94a3b8";
+  title.style.fontSize = "12px";
+  title.style.marginRight = "4px";
+  markerFilterRoot.appendChild(title);
+
+  markerFilterOptions.forEach((option) => {{
+    const label = document.createElement("label");
+    label.style.display = "inline-flex";
+    label.style.alignItems = "center";
+    label.style.gap = "4px";
+    label.style.fontSize = "12px";
+    label.style.color = "#d1d5db";
+    label.style.cursor = "pointer";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(markerFilters[option.key]);
+    checkbox.style.margin = "0";
+    checkbox.addEventListener("change", async () => {{
+      markerFilters[option.key] = checkbox.checked;
+      saveMarkerFilters();
+      await applyMarkerFiltersOnly();
+    }});
+
+    const text = document.createElement("span");
+    text.textContent = option.label;
+
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    markerFilterRoot.appendChild(label);
+  }});
 }}
 
 function renderCurrentCandleStatus(payload) {{
@@ -208,29 +361,47 @@ function candleArrays(payload) {{
 
 function markerSeries(payload) {{
   const orders = payload.orders || [];
-  const buyOrders = orders.filter((item) => item.side === "buy");
-  const sellOrders = orders.filter((item) => item.side === "sell");
+  const buyOrders = markerFilters.order_buy ? orders.filter((item) => item.side === "buy") : [];
+  const sellOrders = markerFilters.order_sell ? orders.filter((item) => item.side === "sell") : [];
+  const primaryOpenMain = filterOpenMarkers(payload.signals.primaryOpenMain || [], "primary_open");
+  const primaryCloseMain = filterCloseMarkers(payload.signals.primaryCloseMain || [], "primary_close");
+  const pairOpenMain = filterOpenMarkers(payload.signals.pairOpenMain || [], "pair_open");
+  const pairCloseMain = filterCloseMarkers(payload.signals.pairCloseMain || [], "pair_close");
+  const primaryOpenIndicator = filterOpenMarkers(payload.signals.primaryOpenIndicator || [], "primary_open");
+  const primaryCloseIndicator = filterCloseMarkers(payload.signals.primaryCloseIndicator || [], "primary_close");
+  const pairOpenIndicator = filterOpenMarkers(payload.signals.pairOpenIndicator || [], "pair_open");
+  const pairCloseIndicator = filterCloseMarkers(payload.signals.pairCloseIndicator || [], "pair_close");
   return {{
     main: [
-      payload.signals.primaryOpenMain || [],
-      payload.signals.primaryCloseMain || [],
-      payload.signals.pairOpenMain || [],
-      payload.signals.pairCloseMain || [],
+      primaryOpenMain,
+      primaryCloseMain,
+      pairOpenMain,
+      pairCloseMain,
       buyOrders,
       sellOrders
     ],
     indicator: [
-      payload.signals.primaryOpenMain || [],
-      payload.signals.primaryCloseMain || [],
-      payload.signals.pairOpenMain || [],
-      payload.signals.pairCloseMain || [],
+      primaryOpenMain,
+      primaryCloseMain,
+      pairOpenMain,
+      pairCloseMain,
       buyOrders,
       sellOrders,
-      payload.signals.primaryOpenIndicator || [],
-      payload.signals.primaryCloseIndicator || [],
-      payload.signals.pairOpenIndicator || [],
-      payload.signals.pairCloseIndicator || []
+      primaryOpenIndicator,
+      primaryCloseIndicator,
+      pairOpenIndicator,
+      pairCloseIndicator
     ]
+  }};
+}}
+
+function withMarkers(basePayload, markerPayload) {{
+  if (!basePayload) return markerPayload;
+  if (!markerPayload) return basePayload;
+  return {{
+    ...basePayload,
+    orders: markerPayload.orders || [],
+    signals: markerPayload.signals || {{}}
   }};
 }}
 
@@ -368,8 +539,8 @@ function buildIndicatorFigure(payload) {{
       paper_bgcolor: "#131722",
       plot_bgcolor: "#131722",
       font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
-      margin: {{ l: 8, r: 56, t: 36, b: 18 }},
-      height: 220,
+      margin: {{ l: 8, r: 56, t: 34, b: 22 }},
+      height: 300,
       dragmode: false,
       hovermode: "closest",
       hoverdistance: 20,
@@ -391,7 +562,7 @@ function buildIndicatorFigure(payload) {{
       }},
       yaxis: {{
         side: "right",
-        range: [-1.6, 1.6],
+        range: [-1.9, 1.9],
         tickmode: "array",
         tickvals: [-1, 0, 1],
         ticktext: ["하단", "0", "상단"],
@@ -435,7 +606,6 @@ async function syncIndicatorRangeFromMain() {{
 
 async function applyMainIncremental(prevPayload, nextPayload) {{
   const nextCandles = candleArrays(nextPayload);
-  const markers = markerSeries(nextPayload).main;
 
   if (canAppend(prevPayload, nextPayload)) {{
     const newIndex = nextCandles.x[nextCandles.x.length - 1];
@@ -471,21 +641,6 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
     );
   }}
 
-  for (let i = 0; i < markers.length; i += 1) {{
-    const traceIndex = MAIN_TRACE.primaryOpen + i;
-    const current = markers[i];
-    await Plotly.restyle(
-      mainRoot,
-      {{
-        x: [current.map((item) => item.x)],
-        y: [current.map((item) => item.y)],
-        text: [current.map((item) => item.label)],
-        hovertext: [detailHover(current)]
-      }},
-      [traceIndex]
-    );
-  }}
-
   const ticks = tickData(nextPayload);
   await Plotly.relayout(mainRoot, {{
     "xaxis.tickvals": ticks.tickvals,
@@ -495,21 +650,7 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
 
 async function applyIndicatorIncremental(prevPayload, nextPayload) {{
   const nextCandles = candleArrays(nextPayload);
-  const markers = markerSeries(nextPayload).indicator;
   const indicatorTimes = nextCandles.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
-
-  for (let i = 0; i < markers.length; i += 1) {{
-    const current = markers[i];
-    await Plotly.restyle(
-      indicatorRoot,
-      {{
-        x: [current.map((item) => item.x)],
-        y: [current.map((item) => item.y)],
-        hovertext: [detailHover(current)]
-      }},
-      [i]
-    );
-  }}
 
   if (canAppend(prevPayload, nextPayload)) {{
     const newIndex = nextCandles.x[nextCandles.x.length - 1];
@@ -561,12 +702,51 @@ async function applyIndicatorIncremental(prevPayload, nextPayload) {{
   }});
 }}
 
-async function refreshCharts() {{
-  const includeMarkers = "1";
-  const endpoint = `${{endpointBase}}&include_markers=${{includeMarkers}}`;
+async function applyMarkerPayload(basePayload, markerPayload) {{
+  if (!basePayload || !markerPayload) return;
+  latestMarkerPayload = withMarkers(basePayload, markerPayload);
+  const markers = markerSeries(latestMarkerPayload);
+  if (initializedMain) {{
+    for (let i = 0; i < markers.main.length; i += 1) {{
+      const traceIndex = MAIN_TRACE.primaryOpen + i;
+      const current = markers.main[i];
+      await Plotly.restyle(
+        mainRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          text: [current.map((item) => item.label)],
+          hovertext: [detailHover(current)]
+        }},
+        [traceIndex]
+      );
+    }}
+  }}
+  if (initializedIndicator) {{
+    for (let i = 0; i < markers.indicator.length; i += 1) {{
+      const current = markers.indicator[i];
+      await Plotly.restyle(
+        indicatorRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          hovertext: [detailHover(current)]
+        }},
+        [i]
+      );
+    }}
+  }}
+}}
+
+async function fetchPayload(includeMarkers) {{
+  const endpoint = `${{endpointBase}}&include_markers=${{includeMarkers ? "1" : "0"}}`;
   const response = await fetch(endpoint, {{ cache: "no-store" }});
   if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
-  const nextPayload = await response.json();
+  return response.json();
+}}
+
+async function refreshCharts() {{
+  const nextPayload = await fetchPayload(true);
   startCurrentCandleCountdown(nextPayload);
   const config = {{
     responsive: true,
@@ -603,9 +783,12 @@ async function refreshCharts() {{
   }}
 
   await syncIndicatorRangeFromMain();
+  await applyMarkerPayload(nextPayload, nextPayload);
   previousPayload = nextPayload;
 }}
 
+loadMarkerFilters();
+renderMarkerFilterControls();
 refreshCharts();
 setInterval(refreshCharts, 5000);
 </script>

@@ -4,6 +4,7 @@ import base64
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -15,11 +16,17 @@ from PIL import Image
 from config import has_kis_account
 from shinobu import data as market_data
 from shinobu.cache_db import (
+    acquire_named_lock,
+    align_raw_intraday_pair_to_intersection,
     acquire_startup_init_lock,
+    clear_chart_payload_caches,
     clear_all_cache_data,
+    get_raw_intraday_range,
+    has_raw_intraday_mismatch,
     is_startup_init_locked,
     is_startup_initialized,
     mark_startup_initialized,
+    release_named_lock,
     release_startup_init_lock,
 )
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
@@ -31,8 +38,8 @@ from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
     EXECUTION_MODE_SIGNAL,
     EXECUTION_MODE_X1,
+    append_live_log,
     get_asset_history,
-    get_live_chart_business_days,
     get_live_execution_mode,
     get_live_logs,
     get_live_orders,
@@ -43,7 +50,6 @@ from shinobu.live_trading import (
     is_live_enabled,
     process_live_trading_cycle,
     record_asset_snapshot,
-    set_live_chart_business_days,
     set_live_enabled,
     set_live_execution_mode,
     set_live_strategy_name,
@@ -66,7 +72,8 @@ LIVE_CHART_NONCE_KEY = "live_chart_nonce"
 MAX_LIVE_CHART_CANDLES = 1200
 MAX_LIVE_CHART_BUSINESS_DAYS = 5
 STRATEGY_PROFILE_STATE_KEY = "strategy_profile"
-CHART_BUSINESS_DAYS_STATE_KEY = "chart_business_days"
+CHART_START_DATE_STATE_KEY = "chart_start_date"
+CHART_END_DATE_STATE_KEY = "chart_end_date"
 EXECUTION_MODE_STATE_KEY = "execution_mode"
 ACCOUNT_PANEL_CACHE_KEY = "account_panel_cache"
 ACCOUNT_SUMMARY_CACHE_KEY = "account_summary_cache"
@@ -76,7 +83,30 @@ CLOSED_TRADES_CACHE_KEY = "closed_trades_cache"
 CLOSED_TRADES_LAST_ORDER_KEY = "closed_trades_last_order_at"
 ACCOUNT_FETCH_TIMEOUT_SECONDS = 1.2
 ACCOUNT_SUMMARY_REFRESH_SECONDS = 30.0
+PAIR_RECOVERY_INTERVAL_SECONDS = 60.0
+PAIR_RECOVERY_IGNORE_RECENT_MINUTES = 10
+PAIR_RECOVERY_LOCK_NAME = "pair_candle_recovery"
+
+
+def _get_pair_recovery_ignore_recent_minutes(now: pd.Timestamp | None = None) -> int:
+    """Use strict matching after market close so 15:30 close bars are recovered immediately."""
+    ts = pd.Timestamp.now(tz=market_data.KST) if now is None else pd.Timestamp(now)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize(market_data.KST)
+    else:
+        ts = ts.tz_convert(market_data.KST)
+
+    # Weekend or outside regular market session: no in-flight candles to ignore.
+    if ts.weekday() >= 5:
+        return 0
+    current_minutes = int(ts.hour) * 60 + int(ts.minute)
+    market_open_minutes = 9 * 60
+    market_close_minutes = 15 * 60 + 30
+    if current_minutes < market_open_minutes or current_minutes >= market_close_minutes:
+        return 0
+    return PAIR_RECOVERY_IGNORE_RECENT_MINUTES
 _RESET_LOCK = threading.Lock()
+_PAIR_RECOVERY_STATE_LOCK = threading.Lock()
 _RESET_STATE: dict[str, object] = {
     "running": False,
     "done": False,
@@ -94,6 +124,11 @@ NEUTRAL_IMAGE_PATH = ASSET_DIR / "shinobu_neutral.mp4"
 POSITIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 NEGATIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_negative.svg"
 NEUTRAL_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
+_PAIR_RECOVERY_LAST_RUN_MONOTONIC = 0.0
+_PAIR_RECOVERY_STATE: dict[str, str] = {
+    "checked_at": "-",
+    "message": "대기 중",
+}
 
 
 st.set_page_config(page_title="Shinobu Project", page_icon="S", layout="wide")
@@ -114,10 +149,20 @@ def init_strategy_profile_state() -> None:
         st.session_state[STRATEGY_PROFILE_STATE_KEY] = get_live_strategy_name()
 
 
-def init_chart_business_days_state() -> None:
-    if CHART_BUSINESS_DAYS_STATE_KEY not in st.session_state:
-        live_days = get_live_chart_business_days()
-        st.session_state[CHART_BUSINESS_DAYS_STATE_KEY] = max(1, min(int(live_days), 5))
+def init_chart_date_range_state() -> None:
+    if CHART_START_DATE_STATE_KEY in st.session_state and CHART_END_DATE_STATE_KEY in st.session_state:
+        return
+    fallback_today = pd.Timestamp.now().date()
+    default_end_date = fallback_today
+    try:
+        raw_symbol = market_data.display_symbol(PRIMARY_SYMBOL)
+        _, max_ts = get_raw_intraday_range(raw_symbol, LIVE_TIMEFRAME)
+        if max_ts is not None:
+            default_end_date = pd.Timestamp(max_ts).date()
+    except Exception:
+        default_end_date = fallback_today
+    st.session_state[CHART_END_DATE_STATE_KEY] = default_end_date
+    st.session_state[CHART_START_DATE_STATE_KEY] = default_end_date - pd.Timedelta(days=1)
 
 
 def init_execution_mode_state() -> None:
@@ -125,16 +170,24 @@ def init_execution_mode_state() -> None:
         st.session_state[EXECUTION_MODE_STATE_KEY] = get_live_execution_mode()
 
 
-def get_current_chart_business_days() -> int:
-    init_chart_business_days_state()
-    return int(st.session_state.get(CHART_BUSINESS_DAYS_STATE_KEY, MAX_LIVE_CHART_BUSINESS_DAYS))
+def get_current_chart_date_range() -> tuple[date, date]:
+    init_chart_date_range_state()
+    start_value = st.session_state.get(CHART_START_DATE_STATE_KEY)
+    end_value = st.session_state.get(CHART_END_DATE_STATE_KEY)
+    start_date = pd.Timestamp(start_value).date()
+    end_date = pd.Timestamp(end_value).date()
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    return start_date, end_date
 
 
-def _set_chart_business_days(days: int) -> None:
-    init_chart_business_days_state()
-    next_value = max(1, min(int(days), 5))
-    st.session_state[CHART_BUSINESS_DAYS_STATE_KEY] = next_value
-    set_live_chart_business_days(next_value)
+def _set_chart_date_range(start_value: date, end_value: date) -> None:
+    start_date = pd.Timestamp(start_value).date()
+    end_date = pd.Timestamp(end_value).date()
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    st.session_state[CHART_START_DATE_STATE_KEY] = start_date
+    st.session_state[CHART_END_DATE_STATE_KEY] = end_date
 
 
 def get_current_strategy_profile() -> str:
@@ -168,43 +221,55 @@ def _set_execution_mode(mode: str) -> None:
 def render_live_selector_bar() -> str:
     current_profile = normalize_strategy_name(DEFAULT_STRATEGY_NAME)
     _set_strategy_profile(current_profile)
-    current_days = get_current_chart_business_days()
+    current_start_date, current_end_date = get_current_chart_date_range()
     current_execution_mode = get_current_execution_mode()
     option_map = {option.key: option for option in list_strategy_options()}
 
-    days_col, execution_col, _ = st.columns([1.8, 1.2, 2.2])
-    with days_col:
-        selected_days = st.radio(
-            "차트 표시 기간",
-            options=[1, 2, 3, 4, 5],
-            index=max(0, min(current_days - 1, 4)),
-            format_func=lambda value: f"{value}일",
-            help="차트에 표시할 최근 영업일 수입니다. 내부 전략 계산은 필요한 전체 데이터로 유지됩니다.",
-            horizontal=True,
-        )
+    range_col, execution_col, _ = st.columns([1.3, 0.9, 2.8], vertical_alignment="top")
+    with range_col:
+        st.caption("\uCC28\uD2B8 \uAE30\uAC04")
+        start_col, end_col = st.columns([1, 1], gap="small")
+        with start_col:
+            selected_start_date = st.date_input(
+                "\uC2DC\uC791\uC77C",
+                value=current_start_date,
+                key="chart-start-date-input",
+                label_visibility="collapsed",
+            )
+        with end_col:
+            selected_end_date = st.date_input(
+                "\uC885\uB8CC\uC77C",
+                value=current_end_date,
+                key="chart-end-date-input",
+                label_visibility="collapsed",
+            )
     with execution_col:
+        st.caption("\uC2E4\uC81C \uC8FC\uBB38")
         selected_execution_mode = st.selectbox(
-            "실제 주문 대상",
+            "\uC2E4\uC81C \uC8FC\uBB38 \uD0C0\uC785",
             options=[EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL],
             index=0 if current_execution_mode == EXECUTION_MODE_X1 else 1,
-            format_func=lambda value: "x1 ETF" if value == EXECUTION_MODE_X1 else "레버리지/곱버스",
-            help="실제 시그널 주문을 x1 ETF로 집행할지, 레버리지/곱버스로 집행할지 선택합니다.",
+            format_func=lambda value: "x1 ETF" if value == EXECUTION_MODE_X1 else "\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4",
+            help="\uC2E4\uC81C \uC2DC\uADF8\uB110 \uC8FC\uBB38\uC744 x1 ETF \uB610\uB294 \uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4\uB85C \uC2E4\uD589\uD569\uB2C8\uB2E4.",
+            label_visibility="collapsed",
         )
 
-    if int(selected_days) != current_days:
-        _set_chart_business_days(int(selected_days))
+    selected_start = pd.Timestamp(selected_start_date).date()
+    selected_end = pd.Timestamp(selected_end_date).date()
+    if selected_start != current_start_date or selected_end != current_end_date:
+        _set_chart_date_range(selected_start, selected_end)
     if selected_execution_mode != current_execution_mode:
         _set_execution_mode(selected_execution_mode)
 
     active_option = option_map[get_current_strategy_profile()]
-    mode_label = "x1 ETF" if get_current_execution_mode() == EXECUTION_MODE_X1 else "레버리지/곱버스"
+    mode_label = "x1 ETF" if get_current_execution_mode() == EXECUTION_MODE_X1 else "\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4"
+    chart_start_date, chart_end_date = get_current_chart_date_range()
     st.caption(
-        f"현재 전략: {active_option.label} | 차트 표시: 최근 {get_current_chart_business_days()}영업일 | 실제 주문: {mode_label}"
+        f"\uD604\uC7AC \uC804\uB7B5: {active_option.label} | \uCC28\uD2B8 \uD45C\uC2DC: {chart_start_date.isoformat()} ~ {chart_end_date.isoformat()} | \uC2E4\uC81C \uC8FC\uBB38: {mode_label}"
     )
+    st.caption("\uB9C8\uCEE4 \uD45C\uC2DC \uD544\uD130\uB294 \uCC28\uD2B8 \uC0C1\uB2E8\uC5D0\uC11C \uBC14\uB85C \uD1A0\uAE00\uD569\uB2C8\uB2E4.")
     st.caption(get_strategy_help_text(active_option.key).replace("\n", " | "))
     return get_current_strategy_profile()
-
-
 def _get_reset_state() -> dict[str, object]:
     with _RESET_LOCK:
         return dict(_RESET_STATE)
@@ -215,9 +280,30 @@ def _set_reset_state(**kwargs: object) -> None:
         _RESET_STATE.update(kwargs)
 
 
+def _set_pair_recovery_state(message: str) -> None:
+    now_text = pd.Timestamp.now(tz="Asia/Seoul").strftime("%Y-%m-%d %H:%M:%S")
+    with _PAIR_RECOVERY_STATE_LOCK:
+        _PAIR_RECOVERY_STATE["checked_at"] = now_text
+        _PAIR_RECOVERY_STATE["message"] = str(message)
+
+
+def _get_pair_recovery_state_text() -> str:
+    with _PAIR_RECOVERY_STATE_LOCK:
+        checked_at = _PAIR_RECOVERY_STATE.get("checked_at", "-")
+        message = _PAIR_RECOVERY_STATE.get("message", "대기 중")
+    return f"마지막 점검 {checked_at} · {message}"
+
+
+def _lookback_days_from_current_year_start() -> int:
+    now = pd.Timestamp.now(tz="Asia/Seoul")
+    year_start = pd.Timestamp(year=now.year, month=1, day=1, tz="Asia/Seoul")
+    return max(5, int((now - year_start).days) + 3)
+
+
 def _run_startup_initialization(primary_symbol: str, pair_symbol: str | None) -> None:
     symbols = [value for value in [primary_symbol, pair_symbol] if value]
     prewarm_days = [1, 2, 3, 4, 5]
+    lookback_days = _lookback_days_from_current_year_start()
     total_steps = 1 + len(symbols) + len(prewarm_days) + 1
     completed_steps = 0
     try:
@@ -227,9 +313,9 @@ def _run_startup_initialization(primary_symbol: str, pair_symbol: str | None) ->
         completed_steps += 1
         _set_reset_state(current_step=completed_steps, total_steps=total_steps)
 
-        _set_reset_state(message="\uCD5C\uADFC 5\uC77C \uCE94\uB4E4\uC744 \uC218\uC9D1\uD558\uACE0 \uC804\uB7B5 \uACC4\uC0B0\uC744 \uC218\uD589\uD569\uB2C8\uB2E4.")
+        _set_reset_state(message="\uC62C\uD574 1\uC6D4 1\uC77C\uBD80\uD130 \uCE94\uB4E4\uC744 \uC218\uC9D1\uD558\uACE0 \uC804\uB7B5 \uACC4\uC0B0\uC744 \uC218\uD589\uD569\uB2C8\uB2E4.")
         for symbol in symbols:
-            source_frame = market_data.load_live_chart_data(symbol, LIVE_TIMEFRAME)
+            source_frame = market_data._load_live_chart_data_impl(symbol, LIVE_TIMEFRAME, lookback_days=lookback_days)
             calculate_strategy_cached(
                 source_frame,
                 StrategyAdjustments(),
@@ -1104,6 +1190,7 @@ def _render_open_live_positions() -> None:
 
 def _render_closed_live_trades() -> None:
     st.markdown("##### 청산 완료 거래")
+    st.caption("최근 5일 기준")
     runtime = get_live_runtime_state()
     last_order_at = str(runtime.get("last_order_at", "") or "")
     cached_history = st.session_state.get(CLOSED_TRADES_CACHE_KEY)
@@ -1271,11 +1358,11 @@ def render_emotion_section() -> None:
 def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
     init_live_chart_state()
     strategy_label = get_strategy_label(profile_name)
-    visible_business_days = get_current_chart_business_days()
+    visible_start_date, visible_end_date = get_current_chart_date_range()
     runtime = get_live_runtime_state()
     if runtime["last_status"] in {"checking", "waiting_data"} or not runtime["last_checked_candle"]:
         st.info("엔진이 계산하고 있습니다. 차트와 시그널을 준비하는 중입니다.")
-    st.caption(f"차트 반영 전략: {strategy_label} · 표시 기간: 최근 {visible_business_days}영업일")
+    st.caption(f"차트 반영 전략: {strategy_label} · 표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
     components.html(
         build_live_chart_html(
             server_url=ensure_chart_server(),
@@ -1286,10 +1373,11 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             rsi_pct=adjustments.rsi_pct,
             strategy_name=profile_name,
             strategy_label=strategy_label,
-            visible_business_days=visible_business_days,
+            start_date=visible_start_date.isoformat(),
+            end_date=visible_end_date.isoformat(),
             render_nonce=0,
         ),
-        height=640,
+        height=740,
     )
     return
 
@@ -1411,10 +1499,11 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     components.html(html, height=580)
 @st.fragment(run_every="5s")
 def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
-    if not is_live_enabled() or pair_symbol is None:
+    if pair_symbol is None:
         return
 
     try:
+        _run_pair_candle_recovery_if_due(loaded_symbol, pair_symbol, adjustments, profile_name)
         process_live_trading_cycle(loaded_symbol, pair_symbol, adjustments, strategy_name=profile_name)
     except KisApiError:
         return
@@ -1422,41 +1511,109 @@ def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: St
         return
 
 
-def _handle_live_start() -> None:
-    set_live_enabled(True)
+def ensure_live_engine_running() -> None:
+    if not is_live_enabled():
+        set_live_enabled(True)
 
 
-def _handle_live_stop() -> None:
-    set_live_enabled(False)
+def _run_pair_candle_recovery_if_due(
+    primary_symbol: str,
+    pair_symbol: str,
+    adjustments: StrategyAdjustments,
+    profile_name: str,
+) -> None:
+    global _PAIR_RECOVERY_LAST_RUN_MONOTONIC
+    now_monotonic = time.monotonic()
+    if (now_monotonic - _PAIR_RECOVERY_LAST_RUN_MONOTONIC) < PAIR_RECOVERY_INTERVAL_SECONDS:
+        return
+    _PAIR_RECOVERY_LAST_RUN_MONOTONIC = now_monotonic
+
+    if not acquire_named_lock(PAIR_RECOVERY_LOCK_NAME, stale_after_seconds=120):
+        _set_pair_recovery_state("다른 세션에서 리커버리 실행 중")
+        return
+
+    try:
+        raw_primary = market_data.display_symbol(primary_symbol)
+        raw_pair = market_data.display_symbol(pair_symbol)
+        # Refresh both symbols before alignment so latest close bar can be backfilled first.
+        for symbol in (primary_symbol, pair_symbol):
+            market_data._load_live_chart_data_impl(symbol, LIVE_TIMEFRAME, lookback_days=7)
+        ignore_recent_minutes = _get_pair_recovery_ignore_recent_minutes()
+        if not has_raw_intraday_mismatch(
+            symbol_a=raw_primary,
+            symbol_b=raw_pair,
+            timeframe=LIVE_TIMEFRAME,
+            ignore_recent_minutes=ignore_recent_minutes,
+        ):
+            _set_pair_recovery_state("정상 (불일치 없음)")
+            return
+        recovery = align_raw_intraday_pair_to_intersection(
+            symbol_a=raw_primary,
+            symbol_b=raw_pair,
+            timeframe=LIVE_TIMEFRAME,
+            ignore_recent_minutes=ignore_recent_minutes,
+        )
+        deleted_total = int(recovery.get("deleted_total", 0) or 0)
+        only_a_count = int(recovery.get("only_a_count", 0) or 0)
+        only_b_count = int(recovery.get("only_b_count", 0) or 0)
+        only_a_head = ", ".join((recovery.get("only_a", []) or [])[:3]) or "-"
+        only_b_head = ", ".join((recovery.get("only_b", []) or [])[:3]) or "-"
+        if deleted_total <= 0:
+            _set_pair_recovery_state(
+                f"불일치 감지(정리 0건) 롱단독:{only_a_count} / 숏단독:{only_b_count}"
+            )
+            append_live_log(
+                "복구",
+                (
+                    "캔들 리커버리 이슈 감지: 불일치가 있으나 정리 대상 없음 "
+                    f"(롱단독:{only_a_count}, 숏단독:{only_b_count}, "
+                    f"롱예시:{only_a_head}, 숏예시:{only_b_head})"
+                ),
+            )
+            return
+
+        lookback_days = _lookback_days_from_current_year_start()
+        for symbol in (primary_symbol, pair_symbol):
+            source_frame = market_data._load_live_chart_data_impl(symbol, LIVE_TIMEFRAME, lookback_days=lookback_days)
+            calculate_strategy_cached(
+                source_frame,
+                adjustments,
+                LIVE_TIMEFRAME,
+                strategy_name=profile_name,
+                symbol=symbol,
+            )
+        clear_chart_payload_caches()
+        st.cache_data.clear()
+        _set_pair_recovery_state(
+            f"복구 완료 (삭제 {deleted_total}개, 롱:{int(recovery.get('deleted_a', 0) or 0)} / 숏:{int(recovery.get('deleted_b', 0) or 0)})"
+        )
+        append_live_log(
+            "복구",
+            (
+                "캔들 리커버리 완료: "
+                f"총 {deleted_total}개 정리 "
+                f"(롱삭제:{int(recovery.get('deleted_a', 0) or 0)}, 숏삭제:{int(recovery.get('deleted_b', 0) or 0)}, "
+                f"롱단독:{only_a_count}, 숏단독:{only_b_count}, "
+                f"롱예시:{only_a_head}, 숏예시:{only_b_head})"
+            ),
+        )
+    except Exception as exc:
+        _set_pair_recovery_state(f"복구 실패: {exc}")
+        append_live_log("오류", f"캔들 리커버리 실패: {exc}")
+        raise
+    finally:
+        release_named_lock(PAIR_RECOVERY_LOCK_NAME)
 
 
-def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments) -> None:
+def render_live_trading_panel(pair_symbol: str | None) -> None:
     st.markdown("#### 실전 투자")
     execution_mode = get_current_execution_mode()
     execution_label = "x1 ETF" if execution_mode == EXECUTION_MODE_X1 else "레버리지/곱버스"
-    left_button, right_button = st.columns(2)
-    with left_button:
-        st.button(
-            "실행",
-            use_container_width=True,
-            key="live_start_button",
-            disabled=pair_symbol is None,
-            on_click=_handle_live_start,
-        )
-    with right_button:
-        st.button(
-            "중지",
-            use_container_width=True,
-            key="live_stop_button",
-            on_click=_handle_live_stop,
-        )
-
     if pair_symbol is None:
         st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
 
-    enabled = is_live_enabled()
-    status_text = "실행 중" if enabled else "중지됨"
-    status_color = "#3b82f6" if enabled else "#9aa4b2"
+    status_text = "항상 실행 중"
+    status_color = "#3b82f6"
     st.markdown(
         f"""
         <div style="margin-bottom:10px;">
@@ -1470,6 +1627,9 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
     st.caption(
         f"실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. "
         f"현재 전략은 {get_strategy_label(get_current_strategy_profile())}, 실제 주문 대상은 {execution_label}이며, 매수 시 주문가능현금을 최대한 사용합니다."
+    )
+    st.caption(
+        f"캔들 리커버리(최근 {_get_pair_recovery_ignore_recent_minutes()}분 제외): {_get_pair_recovery_state_text()}"
     )
 
     runtime = get_live_runtime_state()
@@ -1493,7 +1653,7 @@ def render_live_trading_panel(loaded_symbol: str, pair_symbol: str | None, adjus
     if runtime["last_error"]:
         st.warning(runtime["last_error"])
 
-    if enabled and pair_symbol is None:
+    if pair_symbol is None:
         st.warning("현재 종목은 실전 페어 전략 대상이 아닙니다.")
 
     logs = get_live_logs()
@@ -1540,6 +1700,7 @@ def render_reset_running_page() -> None:
 
 def main() -> None:
     init_live_state()
+    ensure_live_engine_running()
     loaded_symbol = PRIMARY_SYMBOL
     pair_symbol = get_pair_symbol(loaded_symbol)
     _ensure_startup_initialization(loaded_symbol, pair_symbol)
@@ -1550,13 +1711,11 @@ def main() -> None:
 
     init_live_chart_state()
     init_strategy_profile_state()
-    init_chart_business_days_state()
+    init_chart_date_range_state()
     init_execution_mode_state()
     adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
     profile_name = get_current_strategy_profile()
-    visible_business_days = get_current_chart_business_days()
     ensure_chart_server()
-    strategy_keys = [option.key for option in list_strategy_options()]
 
     render_header(profile_name)
     profile_name = render_live_selector_bar()
@@ -1565,7 +1724,7 @@ def main() -> None:
     with right:
         render_live_account_panel()
         run_live_engine(loaded_symbol, pair_symbol, adjustments, profile_name)
-        render_live_trading_panel(loaded_symbol, pair_symbol, adjustments)
+        render_live_trading_panel(pair_symbol)
     with left:
         render_live_trade_header(loaded_symbol, pair_symbol)
         chart_slot = st.empty()

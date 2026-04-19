@@ -20,8 +20,7 @@ from shinobu.live_trading import (
     get_live_orders,
     get_live_started_at,
 )
-from shinobu.strategy import StrategyAdjustments, calculate_strategy
-from shinobu.strategy_cache import calculate_strategy_cached
+from shinobu.strategy import DEFAULT_STRATEGY_NAME, StrategyAdjustments
 from shinobu.chart_worker import collect_chart_frames
 
 
@@ -147,6 +146,8 @@ def _build_payload_cache_key(
     adjustments: StrategyAdjustments,
     strategy_name: str,
     visible_business_days: int,
+    start_date: str = "",
+    end_date: str = "",
     include_markers: bool,
 ) -> str:
     started_at = get_live_started_at()
@@ -158,6 +159,8 @@ def _build_payload_cache_key(
             pair_symbol or "",
             strategy_name,
             str(int(visible_business_days)),
+            start_date or "-",
+            end_date or "-",
             "m1" if include_markers else "m0",
             f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}",
             started_at_text,
@@ -191,6 +194,8 @@ def _empty_payload(
     pair_symbol: str | None,
     include_scr: bool,
     visible_business_days: int,
+    start_date: str = "",
+    end_date: str = "",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "kind": kind,
@@ -207,6 +212,8 @@ def _empty_payload(
         "debug": {
             "max_candles": MAX_LIVE_CHART_CANDLES,
             "business_days": visible_business_days,
+            "start_date": start_date,
+            "end_date": end_date,
             "frame_rows": 0,
             "first_time": "",
             "last_time": "",
@@ -346,27 +353,6 @@ def _merge_payload_arrays(
     merged_scr = None if scr_values is None else _merge_series_payload(cached_payload.get("scr"), scr_values)
     merged_pair_scr = None if pair_scr_values is None else _merge_series_payload(cached_payload.get("pairScr"), pair_scr_values)
     return merged_candles, merged_tick_text, merged_scr, merged_pair_scr
-
-
-def _load_raw_frame(symbol: str, started_at: pd.Timestamp | None) -> pd.DataFrame:
-    frame = market_data.load_live_chart_data_for_strategy(symbol, LIVE_TIMEFRAME, "src_v2_adx")
-    if started_at is None:
-        return limit_frame_to_recent_business_days(frame)
-    return limit_frame_to_recent_business_days(filter_frame_from_live_start(frame))
-
-
-def _load_strategy_frame(symbol: str, started_at: pd.Timestamp | None, adjustments: StrategyAdjustments, strategy_name: str) -> pd.DataFrame:
-    frame = market_data.load_live_chart_data_for_strategy(symbol, LIVE_TIMEFRAME, strategy_name)
-    frame = calculate_strategy_cached(
-        frame,
-        adjustments,
-        LIVE_TIMEFRAME,
-        strategy_name=strategy_name,
-        symbol=symbol,
-    )
-    if started_at is None:
-        return limit_frame_to_recent_business_days(frame)
-    return limit_frame_to_recent_business_days(filter_frame_from_live_start(frame))
 
 
 def _pair_scr(frame: pd.DataFrame, pair_frame: pd.DataFrame | None) -> list[float | None]:
@@ -703,8 +689,10 @@ def _build_chart_payload_sync(
     symbol: str,
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
-    strategy_name: str = "src_v2_adx",
+    strategy_name: str = DEFAULT_STRATEGY_NAME,
     visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
+    start_date: str = "",
+    end_date: str = "",
     include_markers: bool = True,
 ) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
@@ -715,6 +703,8 @@ def _build_chart_payload_sync(
         adjustments=current_adjustments,
         strategy_name=strategy_name,
         visible_business_days=visible_business_days,
+        start_date=start_date,
+        end_date=end_date,
         include_markers=include_markers,
     )
     cached_payload = _read_cached_payload(cache_key)
@@ -728,6 +718,8 @@ def _build_chart_payload_sync(
         adjustments=current_adjustments,
         strategy_name=strategy_name,
         visible_business_days=visible_business_days,
+        start_date=start_date,
+        end_date=end_date,
         max_candles=MAX_LIVE_CHART_CANDLES,
     )
     include_scr = bundle.include_scr
@@ -788,6 +780,8 @@ def _build_chart_payload_sync(
         "debug": {
             "max_candles": MAX_LIVE_CHART_CANDLES,
             "business_days": visible_business_days,
+            "start_date": start_date,
+            "end_date": end_date,
             "frame_rows": len(frame),
             "first_time": frame.index.min().isoformat() if not frame.empty else "",
             "last_time": frame.index.max().isoformat() if not frame.empty else "",
@@ -817,6 +811,8 @@ def _refresh_payload_async(
     adjustments: StrategyAdjustments,
     strategy_name: str,
     visible_business_days: int,
+    start_date: str,
+    end_date: str,
     include_markers: bool,
 ) -> None:
     now = time.monotonic()
@@ -838,6 +834,8 @@ def _refresh_payload_async(
                 adjustments=adjustments,
                 strategy_name=strategy_name,
                 visible_business_days=visible_business_days,
+                start_date=start_date,
+                end_date=end_date,
                 include_markers=include_markers,
             )
         finally:
@@ -853,8 +851,10 @@ def build_chart_payload(
     symbol: str,
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
-    strategy_name: str = "src_v2_adx",
+    strategy_name: str = DEFAULT_STRATEGY_NAME,
     visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
+    start_date: str = "",
+    end_date: str = "",
     include_markers: bool = True,
 ) -> dict[str, Any]:
     current_adjustments = adjustments or StrategyAdjustments()
@@ -865,6 +865,8 @@ def build_chart_payload(
         adjustments=current_adjustments,
         strategy_name=strategy_name,
         visible_business_days=visible_business_days,
+        start_date=start_date,
+        end_date=end_date,
         include_markers=include_markers,
     )
 
@@ -877,18 +879,35 @@ def build_chart_payload(
         adjustments=current_adjustments,
         strategy_name=strategy_name,
         visible_business_days=visible_business_days,
+        start_date=start_date,
+        end_date=end_date,
         include_markers=include_markers,
     )
     if cached_payload is not None:
         return cached_payload
 
-    return _empty_payload(
-        kind=kind,
-        symbol=symbol,
-        pair_symbol=pair_symbol,
-        include_scr=(kind == "overlay"),
-        visible_business_days=visible_business_days,
-    )
+    try:
+        return _build_chart_payload_sync(
+            kind=kind,
+            symbol=symbol,
+            pair_symbol=pair_symbol,
+            adjustments=current_adjustments,
+            strategy_name=strategy_name,
+            visible_business_days=visible_business_days,
+            start_date=start_date,
+            end_date=end_date,
+            include_markers=include_markers,
+        )
+    except Exception:
+        return _empty_payload(
+            kind=kind,
+            symbol=symbol,
+            pair_symbol=pair_symbol,
+            include_scr=(kind == "overlay"),
+            visible_business_days=visible_business_days,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
 
 def ensure_live_chart_prewarm(
@@ -896,7 +915,7 @@ def ensure_live_chart_prewarm(
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
     *,
-    strategy_name: str = "src_v2_adx",
+    strategy_name: str = DEFAULT_STRATEGY_NAME,
     visible_business_days: int = MAX_LIVE_CHART_BUSINESS_DAYS,
 ) -> None:
     current_adjustments = adjustments or StrategyAdjustments()
@@ -1003,7 +1022,7 @@ def run_live_chart_prewarm_sync(
     pair_symbol: str | None,
     adjustments: StrategyAdjustments | None = None,
     *,
-    strategy_name: str = "src_v2_adx",
+    strategy_name: str = DEFAULT_STRATEGY_NAME,
     visible_business_days_list: list[int] | None = None,
 ) -> None:
     current_adjustments = adjustments or StrategyAdjustments()

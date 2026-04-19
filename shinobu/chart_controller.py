@@ -14,6 +14,8 @@ def build_chart_payload_controlled(
     adjustments: StrategyAdjustments,
     strategy_name: str,
     visible_business_days: int,
+    start_date: str = "",
+    end_date: str = "",
     include_markers: bool = True,
 ) -> dict[str, Any]:
     normalized_kind = kind if kind in {"raw", "overlay"} else "raw"
@@ -26,5 +28,7 @@ def build_chart_payload_controlled(
         adjustments,
         strategy_name=normalized_strategy,
         visible_business_days=normalized_visible_days,
+        start_date=start_date,
+        end_date=end_date,
         include_markers=bool(include_markers),
     )

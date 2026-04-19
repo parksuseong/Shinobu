@@ -62,7 +62,7 @@ def _seed_indicator_cache() -> bool:
         frame,
         adjustments=StrategyAdjustments(),
         timeframe_label="5분봉",
-        strategy_name="src_v2_adx",
+        strategy_name=DEFAULT_STRATEGY_NAME,
         symbol=test_symbol,
     )
     if result.empty:
@@ -74,7 +74,7 @@ def _seed_indicator_cache() -> bool:
             FROM indicator_data
             WHERE symbol = ? AND timeframe = ? AND strategy_name = ?
             """,
-            (test_symbol, "5분봉", "src_v2_adx"),
+            (test_symbol, "5분봉", DEFAULT_STRATEGY_NAME),
         ).fetchone()
         is_persisted = int(rows[0] if rows else 0) > 0
         connection.execute("DELETE FROM indicator_data WHERE symbol = ?", (test_symbol,))
@@ -90,15 +90,15 @@ def run_smoke() -> int:
         "default strategy normalization",
     )
     failed += _check(
-        normalize_strategy_name("v2") == "src_v2_normal",
+        normalize_strategy_name("v2") == DEFAULT_STRATEGY_NAME,
         "strategy alias normalization",
     )
     failed += _check(
-        get_strategy_label("src_v2_adx") == "SRC V2 ADX",
+        get_strategy_label(DEFAULT_STRATEGY_NAME) == "SRC",
         "strategy label lookup",
     )
     failed += _check(
-        len(list_strategy_options()) >= 4,
+        len(list_strategy_options()) == 1,
         "strategy options are populated",
     )
     failed += _check(

@@ -74,12 +74,27 @@ DEFAULT_SRC_PROFILE = NORMAL_5M_PROFILE
 SRC_PROFILE_OPTIONS = {
     "normal": NORMAL_5M_PROFILE,
     "active": ACTIVE_5M_PROFILE,
+    "blog_scr": SrcProfile(
+        stoch_oversold=20.0,
+        stoch_overbought=80.0,
+        cci_oversold=-100.0,
+        cci_overbought=100.0,
+        rsi_oversold=35.0,
+        rsi_overbought=70.0,
+        open_prev_need=3,
+        open_cross_need=3,
+        close_need=3,
+        label="SCR Blog",
+    ),
 }
 
 _LEGACY_PROFILE_ALIASES = {
     "original": "normal",
     "aggressive": "active",
     "defensive": "normal",
+    "blog": "blog_scr",
+    "scr": "blog_scr",
+    "scr_blog": "blog_scr",
 }
 
 
@@ -202,6 +217,9 @@ def calculate_src_strategy(
     profile = _get_src_profile(timeframe_label, profile_name)
     thresholds = _build_thresholds(adjustments, profile)
     raw_buy_open, raw_buy_close = _build_raw_conditions(strategy, thresholds, profile)
+    # Keep raw signals for engine-side switching decisions.
+    strategy["raw_buy_open"] = raw_buy_open.astype(bool)
+    strategy["raw_buy_close"] = raw_buy_close.astype(bool)
 
     buy_open_flags: list[bool] = []
     buy_close_flags: list[bool] = []
