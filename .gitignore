@@ -45,6 +45,7 @@ exports/
 # IDE / editor
 .idea/
 .vscode/
+.ai/
 
 # OS files
 .DS_Store
