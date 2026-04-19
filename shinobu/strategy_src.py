@@ -167,22 +167,32 @@ def _build_raw_conditions(
     thresholds: SrcThresholds,
     profile: SrcProfile,
 ) -> tuple[pd.Series, pd.Series]:
-    strategy["oversold_count"] = (
-        (strategy["stoch"] <= thresholds.stoch_oversold).astype(int)
-        + (strategy["cci"] <= thresholds.cci_oversold).astype(int)
-        + (strategy["rsi"] <= thresholds.rsi_oversold).astype(int)
+    strategy["oversold_count"] = _count_threshold_hits(
+        strategy,
+        stoch_cmp="<=",
+        stoch_value=thresholds.stoch_oversold,
+        cci_cmp="<=",
+        cci_value=thresholds.cci_oversold,
+        rsi_cmp="<=",
+        rsi_value=thresholds.rsi_oversold,
     )
-    strategy["overbought_count"] = (
-        (strategy["stoch"] >= thresholds.stoch_overbought).astype(int)
-        + (strategy["cci"] >= thresholds.cci_overbought).astype(int)
-        + (strategy["rsi"] >= thresholds.rsi_overbought).astype(int)
+    strategy["overbought_count"] = _count_threshold_hits(
+        strategy,
+        stoch_cmp=">=",
+        stoch_value=thresholds.stoch_overbought,
+        cci_cmp=">=",
+        cci_value=thresholds.cci_overbought,
+        rsi_cmp=">=",
+        rsi_value=thresholds.rsi_overbought,
     )
 
     previous = strategy.shift(1)
-    cross_up_count = (
-        ((previous["stoch"] <= thresholds.stoch_oversold) & (strategy["stoch"] > thresholds.stoch_oversold)).astype(int)
-        + ((previous["cci"] <= thresholds.cci_oversold) & (strategy["cci"] > thresholds.cci_oversold)).astype(int)
-        + ((previous["rsi"] <= thresholds.rsi_oversold) & (strategy["rsi"] > thresholds.rsi_oversold)).astype(int)
+    cross_up_count = _count_cross_up(
+        previous,
+        strategy,
+        stoch_threshold=thresholds.stoch_oversold,
+        cci_threshold=thresholds.cci_oversold,
+        rsi_threshold=thresholds.rsi_oversold,
     )
     raw_buy_open = (
         (previous["oversold_count"].fillna(0).astype(int) >= profile.open_prev_need)
@@ -193,6 +203,71 @@ def _build_raw_conditions(
         & (strategy["overbought_count"] >= profile.close_need)
     )
     return raw_buy_open.fillna(False), raw_buy_close.fillna(False)
+
+
+def _count_threshold_hits(
+    frame: pd.DataFrame,
+    *,
+    stoch_cmp: str,
+    stoch_value: float,
+    cci_cmp: str,
+    cci_value: float,
+    rsi_cmp: str,
+    rsi_value: float,
+) -> pd.Series:
+    return (
+        _compare(frame["stoch"], stoch_cmp, stoch_value).astype(int)
+        + _compare(frame["cci"], cci_cmp, cci_value).astype(int)
+        + _compare(frame["rsi"], rsi_cmp, rsi_value).astype(int)
+    )
+
+
+def _count_cross_up(
+    previous: pd.DataFrame,
+    current: pd.DataFrame,
+    *,
+    stoch_threshold: float,
+    cci_threshold: float,
+    rsi_threshold: float,
+) -> pd.Series:
+    return (
+        ((previous["stoch"] <= stoch_threshold) & (current["stoch"] > stoch_threshold)).astype(int)
+        + ((previous["cci"] <= cci_threshold) & (current["cci"] > cci_threshold)).astype(int)
+        + ((previous["rsi"] <= rsi_threshold) & (current["rsi"] > rsi_threshold)).astype(int)
+    )
+
+
+def _compare(series: pd.Series, op: str, value: float) -> pd.Series:
+    if op == "<=":
+        return series <= value
+    if op == ">=":
+        return series >= value
+    raise ValueError(f"Unsupported operator: {op}")
+
+
+def _materialize_position_signals(
+    raw_buy_open: pd.Series,
+    raw_buy_close: pd.Series,
+    *,
+    in_position: bool,
+) -> tuple[pd.Series, pd.Series]:
+    buy_open_flags: list[bool] = []
+    buy_close_flags: list[bool] = []
+    for open_signal, close_signal in zip(raw_buy_open.tolist(), raw_buy_close.tolist(), strict=False):
+        buy_open = False
+        buy_close = False
+        if not in_position and open_signal:
+            buy_open = True
+            in_position = True
+        elif in_position and close_signal:
+            buy_close = True
+            in_position = False
+        buy_open_flags.append(buy_open)
+        buy_close_flags.append(buy_close)
+    return (
+        pd.Series(buy_open_flags, index=raw_buy_open.index, dtype=bool),
+        pd.Series(buy_close_flags, index=raw_buy_close.index, dtype=bool),
+    )
 
 
 def calculate_src_strategy(
@@ -221,24 +296,12 @@ def calculate_src_strategy(
     strategy["raw_buy_open"] = raw_buy_open.astype(bool)
     strategy["raw_buy_close"] = raw_buy_close.astype(bool)
 
-    buy_open_flags: list[bool] = []
-    buy_close_flags: list[bool] = []
     in_position = bool((initial_state or {}).get("in_position", False))
-
-    for open_signal, close_signal in zip(raw_buy_open.tolist(), raw_buy_close.tolist(), strict=False):
-        buy_open = False
-        buy_close = False
-        if not in_position and open_signal:
-            buy_open = True
-            in_position = True
-        elif in_position and close_signal:
-            buy_close = True
-            in_position = False
-        buy_open_flags.append(buy_open)
-        buy_close_flags.append(buy_close)
-
-    strategy["buy_open"] = pd.Series(buy_open_flags, index=strategy.index, dtype=bool)
-    strategy["buy_close"] = pd.Series(buy_close_flags, index=strategy.index, dtype=bool)
+    strategy["buy_open"], strategy["buy_close"] = _materialize_position_signals(
+        raw_buy_open,
+        raw_buy_close,
+        in_position=in_position,
+    )
     strategy["sell_open"] = False
     strategy["sell_close"] = False
     strategy["signal"] = ""
