@@ -34,10 +34,53 @@ is_pid_running() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
+find_listen_pids_by_port() {
+  local port="$1"
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u
+    return 0
+  fi
+
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnp 2>/dev/null \
+      | awk -v p=":$port" '$4 ~ p"$" { if (match($0, /pid=[0-9]+/)) { print substr($0, RSTART+4, RLENGTH-4) } }' \
+      | sort -u
+    return 0
+  fi
+
+  return 0
+}
+
 read_pid() {
   local file="$1"
   [[ -f "$file" ]] || return 1
   tr -d '[:space:]' <"$file"
+}
+
+clear_port_conflicts() {
+  local port="$1"
+  local name="$2"
+  local pid_file="$3"
+  local tracked_pid=""
+
+  tracked_pid="$(read_pid "$pid_file" 2>/dev/null || true)"
+
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    if [[ -n "$tracked_pid" && "$pid" == "$tracked_pid" ]]; then
+      continue
+    fi
+    if ! is_pid_running "$pid"; then
+      continue
+    fi
+    echo "$name port conflict detected on :$port (pid=$pid). Stopping stale process."
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+    if is_pid_running "$pid"; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  done < <(find_listen_pids_by_port "$port")
 }
 
 install_system_deps() {
@@ -76,6 +119,8 @@ start_streamlit() {
     return
   fi
 
+  clear_port_conflicts "$STREAMLIT_PORT" "Streamlit" "$STREAMLIT_PID_FILE"
+
   nohup "$VENV_DIR/bin/python" -m streamlit run "$ROOT_DIR/app.py" \
     --server.address "$STREAMLIT_HOST" \
     --server.port "$STREAMLIT_PORT" \
@@ -91,6 +136,8 @@ start_signal_api() {
     echo "Signal API already running (pid=$current_pid)"
     return
   fi
+
+  clear_port_conflicts "$SIGNAL_API_PORT" "Signal API" "$SIGNAL_PID_FILE"
 
   if [[ "$SIGNAL_API_PORT" != "8766" ]]; then
     echo "Warning: scripts/run_signal_api.py currently binds fixed port 8766."
