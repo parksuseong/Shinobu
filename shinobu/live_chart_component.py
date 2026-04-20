@@ -49,9 +49,7 @@ const chartEndpointBases = isDirectApi
     ]
   : [
       "https://shinobu-chart.ukin.dev/chart",
-      "https://shinobu-chart.ukin.dev/v1/chart",
-      `${{hostWindow.location.origin}}/chart`,
-      `${{hostWindow.location.origin}}/v1/chart`
+      "https://shinobu-chart.ukin.dev/v1/chart"
     ];
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
