@@ -7,12 +7,16 @@ set -euo pipefail
 # - start: run Streamlit app in background and write to app.log
 
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PID_PATTERN="streamlit run app.py"
+PID_PATTERN="streamlit run .*app.py"
 LOG_FILE="$APP_ROOT/app.log"
 PYTHON_BIN="${PYTHON_BIN:-}"
 PORT="${PORT:-8501}"
 
 detect_python() {
+  if [[ -x "$APP_ROOT/.venv/bin/python" ]]; then
+    PYTHON_BIN="$APP_ROOT/.venv/bin/python"
+    return 0
+  fi
   if [[ -n "$PYTHON_BIN" ]] && command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     return 0
   fi
