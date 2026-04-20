@@ -1767,12 +1767,13 @@ def _spread_marker_y(
     return (base_y - distance).where(mask)
 
 
-def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, float, float]:
+def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, int, float, float]:
     if frame.empty:
-        return 0, 0.0, 0.0
+        return 0, 0, 0.0, 0.0
     in_position = False
     entry_price = 0.0
     trade_returns: list[float] = []
+    closed_returns: list[float] = []
 
     for _, row in frame.iterrows():
         close_price = float(row.get("Close", 0.0) or 0.0)
@@ -1786,7 +1787,9 @@ def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, float, float]:
             entry_price = close_price
             continue
         if in_position and long_close:
-            trade_returns.append((close_price / entry_price) - 1.0 if entry_price > 0 else 0.0)
+            ret = (close_price / entry_price) - 1.0 if entry_price > 0 else 0.0
+            trade_returns.append(ret)
+            closed_returns.append(ret)
             in_position = False
             entry_price = 0.0
 
@@ -1796,13 +1799,17 @@ def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, float, float]:
             trade_returns.append((last_close / entry_price) - 1.0)
 
     if not trade_returns:
-        return 0, 0.0, 0.0
-    win_rate = float(sum(1 for value in trade_returns if value > 0) / len(trade_returns) * 100.0)
+        return 0, 0, 0.0, 0.0
+    win_rate = (
+        float(sum(1 for value in closed_returns if value > 0) / len(closed_returns) * 100.0)
+        if closed_returns
+        else 0.0
+    )
     cumulative = 1.0
     for value in trade_returns:
         cumulative *= 1.0 + value
     cumulative_return = (cumulative - 1.0) * 100.0
-    return len(trade_returns), win_rate, cumulative_return
+    return len(closed_returns), len(trade_returns), win_rate, cumulative_return
 
 
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
@@ -1906,15 +1913,15 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         st.warning("선택한 기간에 데이터가 없습니다. 기간을 넓혀주세요.")
         return
     frame = build_long_short_signals(filtered_frame)
-    trade_count, win_rate_pct, cumulative_return_pct = _backtest_long_performance(frame)
+    closed_trade_count, trade_count, win_rate_pct, cumulative_return_pct = _backtest_long_performance(frame)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Long Open", f"{int(frame['long_open'].sum())}")
     metric_cols[1].metric("Long Close", f"{int(frame['long_close'].sum())}")
     metric_cols[2].metric("Short Open", f"{int(frame['short_open'].sum())}")
     metric_cols[3].metric("Short Close", f"{int(frame['short_close'].sum())}")
     perf_cols = st.columns(3)
-    perf_cols[0].metric("거래 수", f"{trade_count}")
-    perf_cols[1].metric("승률", f"{win_rate_pct:.1f}%")
+    perf_cols[0].metric("거래 수", f"{closed_trade_count}/{trade_count}")
+    perf_cols[1].metric("승률(청산기준)", f"{win_rate_pct:.1f}%")
     perf_cols[2].metric("누적 수익률", f"{cumulative_return_pct:.2f}%")
 
     price_fig = go.Figure()
