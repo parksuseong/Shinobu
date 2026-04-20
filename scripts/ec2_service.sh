@@ -3,13 +3,14 @@ set -euo pipefail
 
 # Lightweight service wrapper for EC2 deploy hooks.
 # Default behavior:
-# - stop: terminate background `python main.py`
-# - start: run `python main.py` in background and write to main.log
+# - stop: terminate background `streamlit run app.py`
+# - start: run Streamlit app in background and write to app.log
 
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PID_PATTERN="python main.py"
-LOG_FILE="$APP_ROOT/main.log"
+PID_PATTERN="streamlit run app.py"
+LOG_FILE="$APP_ROOT/app.log"
 PYTHON_BIN="${PYTHON_BIN:-}"
+PORT="${PORT:-8501}"
 
 detect_python() {
   if [[ -n "$PYTHON_BIN" ]] && command -v "$PYTHON_BIN" >/dev/null 2>&1; then
@@ -30,8 +31,8 @@ detect_python() {
 start_app() {
   cd "$APP_ROOT"
   detect_python
-  nohup "$PYTHON_BIN" main.py >>"$LOG_FILE" 2>&1 &
-  echo "started: $PYTHON_BIN main.py (log: $LOG_FILE)"
+  nohup "$PYTHON_BIN" -m streamlit run app.py --server.address 0.0.0.0 --server.port "$PORT" >>"$LOG_FILE" 2>&1 &
+  echo "started: $PYTHON_BIN -m streamlit run app.py (log: $LOG_FILE)"
 }
 
 stop_app() {
