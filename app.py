@@ -94,6 +94,7 @@ PAIR_RECOVERY_IGNORE_RECENT_MINUTES = 10
 PAIR_RECOVERY_LOCK_NAME = "pair_candle_recovery"
 BACKTEST_RESULT_STATE_KEY = "backtest_result"
 BACKTEST_JOB_ID_STATE_KEY = "backtest_job_id"
+LIVE_CHART_COMPONENT_VERSION = 1
 
 
 def _get_pair_recovery_ignore_recent_minutes(now: pd.Timestamp | None = None) -> int:
@@ -1401,7 +1402,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             strategy_label=strategy_label,
             start_date=visible_start_date.isoformat(),
             end_date=visible_end_date.isoformat(),
-            render_nonce=0,
+            render_nonce=LIVE_CHART_COMPONENT_VERSION,
         ),
         height=740,
     )
