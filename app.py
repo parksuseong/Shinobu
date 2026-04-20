@@ -1736,9 +1736,9 @@ def _filter_frame_by_date(frame: pd.DataFrame, start_value: date, end_value: dat
 
 
 def _load_backtest_frame_from_yfinance(symbol: str, timeframe_label: str) -> pd.DataFrame:
-    allowed = {"일봉", "4시간봉"}
+    allowed = {"30분봉", "일봉", "4시간봉"}
     if timeframe_label not in allowed:
-        raise ValueError("백테스팅 타임프레임은 일봉/4시간봉만 지원합니다.")
+        raise ValueError("백테스팅 타임프레임은 30분봉/일봉/4시간봉만 지원합니다.")
     frame = market_data._load_yfinance_data(symbol, timeframe_label)  # noqa: SLF001
     if frame.empty:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
@@ -1787,7 +1787,7 @@ def _spread_marker_y(
 
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 백테스팅")
-    st.caption("yfinance 기반 `일봉/4시간봉`으로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
+    st.caption("yfinance 기반 `30분봉/일봉/4시간봉`으로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
 
     today = pd.Timestamp.now().date()
     default_end = today
@@ -1802,7 +1802,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         )
         timeframe = st.selectbox(
             "타임프레임",
-            options=["일봉", "4시간봉"],
+            options=["30분봉", "일봉", "4시간봉"],
             index=0,
             key="backtest-timeframe-input",
         )
@@ -1999,10 +1999,8 @@ def main() -> None:
     init_chart_date_range_state()
     init_execution_mode_state()
     adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
-    profile_name = get_current_strategy_profile()
+    base_profile_name = get_current_strategy_profile()
 
-    render_header(profile_name)
-    profile_name = render_live_selector_bar()
     st.markdown(
         """
         <style>
@@ -2022,10 +2020,12 @@ def main() -> None:
     live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
 
     with live_tab:
+        render_header(base_profile_name)
+        live_profile_name = render_live_selector_bar()
         left, right = st.columns([2.2, 1], vertical_alignment="top")
         with right:
             render_live_account_panel()
-            run_live_engine(loaded_symbol, pair_symbol, adjustments, profile_name)
+            run_live_engine(loaded_symbol, pair_symbol, adjustments, live_profile_name)
             render_live_trading_panel(pair_symbol)
         with left:
             render_live_trade_header(loaded_symbol, pair_symbol)
@@ -2035,14 +2035,14 @@ def main() -> None:
             with emotion_slot.container():
                 render_emotion_section()
             with chart_slot.container():
-                render_live_trade_chart(loaded_symbol, pair_symbol, adjustments, profile_name)
+                render_live_trade_chart(loaded_symbol, pair_symbol, adjustments, live_profile_name)
             with history_slot.container():
                 st.markdown("---")
                 render_live_trade_history_panel()
                 render_closed_live_trade_history_panel()
 
     with backtest_tab:
-        render_backtest_tab(profile_name, adjustments)
+        render_backtest_tab(get_current_strategy_profile(), adjustments)
 
 
 if __name__ == "__main__":
