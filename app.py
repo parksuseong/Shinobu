@@ -1299,6 +1299,21 @@ def render_emotion_panel(positions: pd.DataFrame, summary: dict) -> None:
 @st.fragment(run_every="30s")
 
 def render_live_account_panel() -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stDataFrame"] div[role="columnheader"],
+        div[data-testid="stDataFrame"] div[role="gridcell"] {
+            font-size: 11px !important;
+            line-height: 1.15 !important;
+            min-height: 22px !important;
+            padding-top: 1px !important;
+            padding-bottom: 1px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.markdown("#### 실계좌")
     if not has_kis_account():
         st.info("한투 계좌 정보가 없어 계좌 화면을 표시할 수 없습니다.")
