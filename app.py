@@ -1845,7 +1845,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     timeframe_options = get_backtest_timeframe_labels()
     current_timeframe = str(st.session_state.get("backtest-timeframe-input", "30m") or "30m")
     default_timeframe_index = timeframe_options.index(current_timeframe) if current_timeframe in timeframe_options else 2
-    col_a, col_b = st.columns([1.2, 1.0], vertical_alignment="bottom")
+    col_a, col_b = st.columns([1.2, 1.0], vertical_alignment="top")
     with col_a:
         symbol_input = st.text_input(
             "종목",
