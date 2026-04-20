@@ -44,13 +44,13 @@ const isDirectStreamlit = hostPort === "8501";
 const isDirectApi = isLocalHost || isIpv4Host || isDirectStreamlit;
 const chartEndpointBases = isDirectApi
   ? [
-      `${{hostWindow.location.protocol}}//${{hostName}}:8766/chart`,
-      `${{hostWindow.location.protocol}}//${{hostName}}:8766/v1/chart`
+      `${{hostWindow.location.protocol}}//${{hostName}}:8766/v1/chart`,
+      `${{hostWindow.location.protocol}}//${{hostName}}:8766/chart`
     ]
   : [
-      "https://shinobu-chart.ukin.dev/chart",
       "https://shinobu-chart.ukin.dev/v1/chart"
     ];
+const refreshTimerKey = "__shinobu_chart_refresh_{root_suffix}";
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
   {{ key: "primary_open", label: "레버리지 Open" }},
@@ -816,6 +816,9 @@ async function refreshCharts() {{
 loadMarkerFilters();
 renderMarkerFilterControls();
 refreshCharts();
-setInterval(refreshCharts, 5000);
+if (window[refreshTimerKey]) {{
+  clearInterval(window[refreshTimerKey]);
+}}
+window[refreshTimerKey] = setInterval(refreshCharts, 5000);
 </script>
 """
