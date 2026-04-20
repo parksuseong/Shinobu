@@ -1879,7 +1879,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=long_close_y.loc[long_close.index],
                 mode="markers",
                 name="long_close",
-                marker={"color": "#ef4444", "symbol": "triangle-down", "size": 13, "line": {"color": "#ffffff", "width": 1.2}},
+                marker={"color": "#22c55e", "symbol": "triangle-down", "size": 13, "line": {"color": "#ffffff", "width": 1.2}},
             )
         )
     if not short_open.empty:
@@ -1889,7 +1889,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=short_open_y.loc[short_open.index],
                 mode="markers",
                 name="short_open",
-                marker={"color": "#f59e0b", "symbol": "diamond", "size": 12, "line": {"color": "#ffffff", "width": 1.1}},
+                marker={"color": "#ef4444", "symbol": "diamond", "size": 12, "line": {"color": "#ffffff", "width": 1.1}},
             )
         )
     if not short_close.empty:
@@ -1899,7 +1899,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=short_close_y.loc[short_close.index],
                 mode="markers",
                 name="short_close",
-                marker={"color": "#a78bfa", "symbol": "diamond-open", "size": 12, "line": {"color": "#ffffff", "width": 1.1}},
+                marker={"color": "#ef4444", "symbol": "diamond-open", "size": 12, "line": {"color": "#ffffff", "width": 1.1}},
             )
         )
     price_fig.update_layout(
