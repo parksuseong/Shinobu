@@ -1869,10 +1869,10 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     max_days = get_backtest_timeframe_max_days(timeframe)
     if max_days is None:
         min_date = date(1990, 1, 1)
-        default_start = max(min_date, (today - pd.Timedelta(days=365)).date())
+        default_start = max(min_date, (today - pd.Timedelta(days=365)))
     else:
-        min_date = (today - pd.Timedelta(days=max(int(max_days), 1) - 1)).date()
-        default_start = max(min_date, (today - pd.Timedelta(days=min(30, max(int(max_days), 1) - 1))).date())
+        min_date = (today - pd.Timedelta(days=max(int(max_days), 1) - 1))
+        default_start = max(min_date, (today - pd.Timedelta(days=min(30, max(int(max_days), 1) - 1))))
     default_end = today
     with col_b:
         start_date = st.date_input(
