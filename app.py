@@ -1760,7 +1760,7 @@ def _spread_marker_y(
         return pd.Series(dtype=float)
     span = (frame["High"] - frame["Low"]).astype(float)
     fallback = frame["Close"].abs().astype(float) * 0.01
-    gap = span.where(span > 0, fallback).fillna(fallback).replace(0, 1.0) * 0.55
+    gap = span.where(span > 0, fallback).fillna(fallback).replace(0, 1.0) * 0.90
     distance = gap * max(int(level), 0)
     if region == "upper":
         return (base_y + distance).where(mask)
@@ -1894,9 +1894,9 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     short_close_y = _marker_y(frame, frame["short_close"], "lower", 1.40)
     # If two markers share the same candle/region, push one step farther to avoid overlap.
     long_open_y = _spread_marker_y(frame, long_open_y, frame["long_open"], region="lower", level=0)
-    short_close_y = _spread_marker_y(frame, short_close_y, frame["short_close"], region="lower", level=1)
+    short_close_y = _spread_marker_y(frame, short_close_y, frame["short_close"], region="lower", level=2)
     long_close_y = _spread_marker_y(frame, long_close_y, frame["long_close"], region="upper", level=0)
-    short_open_y = _spread_marker_y(frame, short_open_y, frame["short_open"], region="upper", level=1)
+    short_open_y = _spread_marker_y(frame, short_open_y, frame["short_open"], region="upper", level=2)
 
     if not long_open.empty:
         price_fig.add_trace(
@@ -1905,7 +1905,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=long_open_y.loc[long_open.index],
                 mode="markers",
                 name="long_open",
-                marker={"color": "#16a34a", "symbol": "triangle-up", "size": 16, "line": {"color": "#ffffff", "width": 1.4}},
+                marker={"color": "#16a34a", "symbol": "circle", "size": 16, "line": {"color": "#ffffff", "width": 1.4}},
             )
         )
     if not long_close.empty:
@@ -1915,7 +1915,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=long_close_y.loc[long_close.index],
                 mode="markers",
                 name="long_close",
-                marker={"color": "#16a34a", "symbol": "triangle-down", "size": 16, "line": {"color": "#ffffff", "width": 1.4}},
+                marker={"color": "#16a34a", "symbol": "circle-open", "size": 16, "line": {"color": "#ffffff", "width": 1.4}},
             )
         )
     if not short_open.empty:
@@ -1925,7 +1925,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=short_open_y.loc[short_open.index],
                 mode="markers",
                 name="short_open",
-                marker={"color": "#dc2626", "symbol": "diamond", "size": 15, "line": {"color": "#ffffff", "width": 1.3}},
+                marker={"color": "#dc2626", "symbol": "star", "size": 16, "line": {"color": "#ffffff", "width": 1.3}},
             )
         )
     if not short_close.empty:
@@ -1935,7 +1935,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 y=short_close_y.loc[short_close.index],
                 mode="markers",
                 name="short_close",
-                marker={"color": "#dc2626", "symbol": "diamond-open", "size": 15, "line": {"color": "#ffffff", "width": 1.3}},
+                marker={"color": "#dc2626", "symbol": "star-open", "size": 16, "line": {"color": "#ffffff", "width": 1.3}},
             )
         )
     price_fig.update_layout(
