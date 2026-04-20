@@ -11,7 +11,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
-import yfinance as yf
 from PIL import Image
 
 from config import has_kis_account
@@ -1736,23 +1735,13 @@ def _filter_frame_by_date(frame: pd.DataFrame, start_value: date, end_value: dat
     return frame.loc[(frame.index >= start_ts) & (frame.index <= end_ts)].copy()
 
 
-def _load_backtest_daily_from_yfinance(symbol: str) -> pd.DataFrame:
-    raw = yf.download(
-        symbol,
-        period="10y",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-    )
-    frame = raw.copy()
+def _load_backtest_frame_from_yfinance(symbol: str, timeframe_label: str) -> pd.DataFrame:
+    allowed = {"일봉", "4시간봉"}
+    if timeframe_label not in allowed:
+        raise ValueError("백테스팅 타임프레임은 일봉/4시간봉만 지원합니다.")
+    frame = market_data._load_yfinance_data(symbol, timeframe_label)  # noqa: SLF001
     if frame.empty:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
-    if isinstance(frame.columns, pd.MultiIndex):
-        frame.columns = [left or right for left, right in frame.columns]
-    frame = frame.reset_index()
-    time_column = "Date" if "Date" in frame.columns else "Datetime"
-    frame[time_column] = pd.to_datetime(frame[time_column], errors="coerce")
-    frame = frame.dropna(subset=[time_column]).set_index(time_column).sort_index()
     return frame[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
 
@@ -1766,9 +1755,20 @@ def _build_long_short_signals(strategy_frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+def _marker_y(frame: pd.DataFrame, mask: pd.Series, region: str, extra_scale: float = 1.0) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=float)
+    span = (frame["High"] - frame["Low"]).astype(float)
+    fallback = frame["Close"].abs().astype(float) * 0.01
+    offset = span.where(span > 0, fallback).fillna(fallback).replace(0, 1.0) * 0.35 * float(extra_scale)
+    if region == "upper":
+        return (frame["High"] + offset).where(mask)
+    return (frame["Low"] - offset).where(mask)
+
+
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 백테스팅")
-    st.caption("일봉(yfinance) 데이터로 SRC 전략 신호를 계산하고 long/short open·close를 표시합니다.")
+    st.caption("yfinance 기반 `일봉/4시간봉`으로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
 
     today = pd.Timestamp.now().date()
     default_end = today
@@ -1781,7 +1781,12 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
             key="backtest-symbol-input",
             help="예: 122630, 252670, 005930, BTC-USD, 삼성전자",
         )
-        st.text_input("타임프레임", value="일봉", disabled=True, key="backtest-timeframe-fixed")
+        timeframe = st.selectbox(
+            "타임프레임",
+            options=["일봉", "4시간봉"],
+            index=0,
+            key="backtest-timeframe-input",
+        )
     with col_b:
         start_date = st.date_input("시작일", value=default_start, key="backtest-start-date-input")
         end_date = st.date_input("종료일", value=default_end, key="backtest-end-date-input")
@@ -1794,14 +1799,14 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
             start_value, end_value = end_value, start_value
         try:
             resolved_symbol, resolved_name = market_data.resolve_symbol(symbol_input)
-            with st.spinner("일봉 수집 및 신호 계산 중..."):
-                source_frame = _load_backtest_daily_from_yfinance(resolved_symbol)
+            with st.spinner(f"{timeframe} 수집 및 신호 계산 중..."):
+                source_frame = _load_backtest_frame_from_yfinance(resolved_symbol, timeframe)
                 if source_frame.empty:
                     raise ValueError("yfinance에서 데이터를 받지 못했습니다.")
                 strategy_frame = calculate_strategy_cached(
                     source_frame,
                     adjustments,
-                    "일봉",
+                    timeframe,
                     strategy_name=profile_name,
                     symbol=resolved_symbol,
                 )
@@ -1812,7 +1817,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
             st.session_state[BACKTEST_RESULT_STATE_KEY] = {
                 "symbol": resolved_symbol,
                 "name": resolved_name,
-                "timeframe": "일봉",
+                "timeframe": timeframe,
                 "start": start_value.isoformat(),
                 "end": end_value.isoformat(),
                 "frame": signal_frame,
@@ -1852,45 +1857,49 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     long_close = frame.loc[frame["long_close"]]
     short_open = frame.loc[frame["short_open"]]
     short_close = frame.loc[frame["short_close"]]
+    long_open_y = _marker_y(frame, frame["long_open"], "lower", 1.05)
+    long_close_y = _marker_y(frame, frame["long_close"], "upper", 1.05)
+    short_open_y = _marker_y(frame, frame["short_open"], "upper", 1.55)
+    short_close_y = _marker_y(frame, frame["short_close"], "lower", 1.55)
 
     if not long_open.empty:
         price_fig.add_trace(
             go.Scatter(
                 x=long_open.index,
-                y=long_open["Close"],
+                y=long_open_y.loc[long_open.index],
                 mode="markers",
                 name="long_open",
-                marker={"color": "#22c55e", "symbol": "triangle-up", "size": 9},
+                marker={"color": "#22c55e", "symbol": "triangle-up", "size": 13, "line": {"color": "#ffffff", "width": 1.2}},
             )
         )
     if not long_close.empty:
         price_fig.add_trace(
             go.Scatter(
                 x=long_close.index,
-                y=long_close["Close"],
+                y=long_close_y.loc[long_close.index],
                 mode="markers",
                 name="long_close",
-                marker={"color": "#ef4444", "symbol": "triangle-down", "size": 9},
+                marker={"color": "#ef4444", "symbol": "triangle-down", "size": 13, "line": {"color": "#ffffff", "width": 1.2}},
             )
         )
     if not short_open.empty:
         price_fig.add_trace(
             go.Scatter(
                 x=short_open.index,
-                y=short_open["Close"],
+                y=short_open_y.loc[short_open.index],
                 mode="markers",
                 name="short_open",
-                marker={"color": "#f59e0b", "symbol": "diamond", "size": 8},
+                marker={"color": "#f59e0b", "symbol": "diamond", "size": 12, "line": {"color": "#ffffff", "width": 1.1}},
             )
         )
     if not short_close.empty:
         price_fig.add_trace(
             go.Scatter(
                 x=short_close.index,
-                y=short_close["Close"],
+                y=short_close_y.loc[short_close.index],
                 mode="markers",
                 name="short_close",
-                marker={"color": "#a78bfa", "symbol": "diamond-open", "size": 8},
+                marker={"color": "#a78bfa", "symbol": "diamond-open", "size": 12, "line": {"color": "#ffffff", "width": 1.1}},
             )
         )
     price_fig.update_layout(
