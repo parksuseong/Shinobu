@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import asdict
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,8 @@ _ALLOWED_TIMEFRAMES = {"30분봉", "일봉", "4시간봉"}
 _BACKTEST_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="shinobu-backtest")
 _BACKTEST_LOCK = threading.RLock()
 _BACKTEST_JOBS: dict[str, dict[str, Any]] = {}
+BACKTEST_FETCH_TIMEOUT_SECONDS = 25.0
+BACKTEST_CALC_TIMEOUT_SECONDS = 25.0
 
 
 def _now_iso() -> str:
@@ -39,6 +42,17 @@ def build_long_short_signals(strategy_frame: pd.DataFrame) -> pd.DataFrame:
     frame["short_open"] = frame["buy_close"].astype(bool)
     frame["short_close"] = frame["buy_open"].astype(bool)
     return frame
+
+
+def _run_with_timeout(func: Any, *args: Any, timeout_seconds: float) -> Any:
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(func, *args)
+    try:
+        return future.result(timeout=float(timeout_seconds))
+    except FuturesTimeoutError as exc:
+        raise TimeoutError(f"백테스트 작업 시간 초과({timeout_seconds:.0f}초)") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _set_job(job_id: str, **updates: Any) -> None:
@@ -72,20 +86,27 @@ def submit_backtest_job(
     )
 
     def _runner() -> None:
-        _set_job(job_id, status="running")
+        _set_job(job_id, status="running", started_at=_now_iso())
         try:
-            source_frame = _load_backtest_frame_from_yfinance(symbol, timeframe)
+            source_frame = _run_with_timeout(
+                _load_backtest_frame_from_yfinance,
+                symbol,
+                timeframe,
+                timeout_seconds=BACKTEST_FETCH_TIMEOUT_SECONDS,
+            )
             if source_frame.empty:
                 raise ValueError("yfinance에서 데이터를 받지 못했습니다.")
-            strategy_frame = calculate_strategy(
-                frame=source_frame,
-                adjustments=adjustments,
-                timeframe_label=timeframe,
-                strategy_name=normalized_strategy,
+            strategy_frame = _run_with_timeout(
+                calculate_strategy,
+                source_frame,
+                adjustments,
+                timeframe,
+                normalized_strategy,
+                timeout_seconds=BACKTEST_CALC_TIMEOUT_SECONDS,
             )
-            _set_job(job_id, status="succeeded", strategy_frame=strategy_frame)
+            _set_job(job_id, status="succeeded", strategy_frame=strategy_frame, finished_at=_now_iso())
         except Exception as exc:  # pragma: no cover - defensive path
-            _set_job(job_id, status="failed", error=str(exc), strategy_frame=None)
+            _set_job(job_id, status="failed", error=str(exc), strategy_frame=None, finished_at=_now_iso())
 
     _BACKTEST_EXECUTOR.submit(_runner)
     return job_id

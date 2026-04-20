@@ -1838,7 +1838,24 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         return
     status = str(job.get("status", "queued"))
     if status in {"queued", "running"}:
-        st.info("백테스트 계산이 백그라운드 스레드에서 실행 중입니다. 잠시 후 다시 확인해주세요.")
+        started_at_text = str(job.get("started_at", "") or "")
+        elapsed_text = "-"
+        if started_at_text:
+            try:
+                started_at = pd.Timestamp(started_at_text)
+                now_utc = pd.Timestamp.utcnow()
+                if getattr(now_utc, "tzinfo", None) is not None:
+                    now_utc = now_utc.tz_localize(None)
+                if getattr(started_at, "tzinfo", None) is not None:
+                    started_at = started_at.tz_localize(None)
+                elapsed_seconds = max(0, int((now_utc - started_at).total_seconds()))
+                elapsed_text = f"{elapsed_seconds}초"
+            except Exception:
+                elapsed_text = "-"
+        st.info(f"백테스트 계산 실행 중 (경과: {elapsed_text}).")
+        st.caption("완료 확인을 위해 아래 버튼을 눌러 상태를 갱신하세요.")
+        if st.button("상태 새로고침", key="backtest-refresh-button"):
+            st.rerun()
         return
     if status == "failed":
         st.error(f"백테스트 실패: {job.get('error', '알 수 없는 오류')}")
