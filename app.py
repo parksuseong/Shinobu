@@ -1472,8 +1472,8 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
           paper_bgcolor: "#131722",
           plot_bgcolor: "#131722",
           font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
-          margin: {{ l: 24, r: 56, t: 42, b: 40 }},
-          height: 560,
+          margin: {{ l: 24, r: 56, t: 42, b: 64 }},
+          height: 600,
           dragmode: false,
           hovermode: "x unified",
           hoverdistance: 30,
@@ -1532,7 +1532,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     setInterval(refreshChart, 5000);
     </script>
     """
-    components.html(html, height=580)
+    components.html(html, height=640)
 @st.fragment(run_every="5s")
 def run_live_engine(loaded_symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
     if pair_symbol is None:
