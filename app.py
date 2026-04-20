@@ -1979,6 +1979,22 @@ def main() -> None:
 
     render_header(profile_name)
     profile_name = render_live_selector_bar()
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stTabs"] button[role="tab"] {
+            font-size: 1.18rem;
+            font-weight: 800;
+            padding: 0.85rem 1.4rem;
+            min-height: 3.1rem;
+        }
+        div[data-testid="stTabs"] button[role="tab"] p {
+            font-size: 1.18rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
 
     with live_tab:
