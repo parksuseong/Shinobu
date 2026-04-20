@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import threading
@@ -32,7 +32,13 @@ from shinobu.cache_db import (
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
 from shinobu.chart_payload import ensure_live_chart_prewarm_bundle, run_live_chart_prewarm_sync
 from shinobu.live_chart_component import build_live_chart_html
-from shinobu.backtest_engine import build_long_short_signals, get_backtest_job, submit_backtest_job
+from shinobu.backtest_engine import (
+    build_long_short_signals,
+    get_backtest_job,
+    get_backtest_timeframe_labels,
+    get_backtest_timeframe_max_days,
+    submit_backtest_job,
+)
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
@@ -64,7 +70,7 @@ from shinobu.strategy import (
     normalize_strategy_name,
 )
 
-LIVE_TIMEFRAME = "5遺꾨큺"
+LIVE_TIMEFRAME = "5분봉"
 PRIMARY_SYMBOL = "122630.KS"
 LIVE_CHART_STATE_KEY = "live_chart_state"
 LIVE_FIGURE_STATE_KEY = "live_figure_state"
@@ -129,7 +135,7 @@ NEUTRAL_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 _PAIR_RECOVERY_LAST_RUN_MONOTONIC = 0.0
 _PAIR_RECOVERY_STATE: dict[str, str] = {
     "checked_at": "-",
-    "message": "?湲?以?,
+    "message": "대기 중",
 }
 
 
@@ -292,8 +298,8 @@ def _set_pair_recovery_state(message: str) -> None:
 def _get_pair_recovery_state_text() -> str:
     with _PAIR_RECOVERY_STATE_LOCK:
         checked_at = _PAIR_RECOVERY_STATE.get("checked_at", "-")
-        message = _PAIR_RECOVERY_STATE.get("message", "?湲?以?)
-    return f"留덉?留??먭? {checked_at} 쨌 {message}"
+        message = _PAIR_RECOVERY_STATE.get("message", "대기 중")
+    return f"마지막 점검 {checked_at} · {message}"
 
 
 def _lookback_days_from_current_year_start() -> int:
@@ -653,7 +659,7 @@ def _add_live_order_markers(figure: go.Figure, order_frame: pd.DataFrame, price_
         return
 
     color_map = {"buy": "#3b82f6", "sell": "#ef4444"}
-    label_map = {"buy": "?ㅼ젣 留ㅼ닔", "sell": "?ㅼ젣 留ㅻ룄"}
+    label_map = {"buy": "실제 매수", "sell": "실제 매도"}
     for (side, order_symbol), group in working.groupby(["side", "symbol"]):
         color = color_map.get(side, "#9aa4b2")
         label = label_map.get(side, side)
@@ -663,7 +669,7 @@ def _add_live_order_markers(figure: go.Figure, order_frame: pd.DataFrame, price_
                 y=group["y"],
                 mode="markers+text",
                 marker={"symbol": "heart", "size": 15, "color": color, "line": {"width": 1, "color": "#ffffff"}},
-                text=[f"{label} 쨌 {display_name(order_symbol)}" for _ in range(len(group))],
+                text=[f"{label} · {display_name(order_symbol)}" for _ in range(len(group))],
                 textposition="top center",
                 textfont={"size": 10, "color": color},
                 hovertemplate="%{text}<extra></extra>",
@@ -676,9 +682,9 @@ def _add_live_order_markers(figure: go.Figure, order_frame: pd.DataFrame, price_
 
 def render_live_trade_header(symbol: str, pair_symbol: str | None) -> None:
     if pair_symbol is None:
-        st.subheader(f"?ㅼ쟾 留ㅻℓ 李⑦듃 쨌 {display_name(symbol)}")
+        st.subheader(f"실전 매매 차트 · {display_name(symbol)}")
         return
-    st.subheader(f"?ㅼ쟾 留ㅻℓ 李⑦듃 쨌 {display_name(symbol)} / {display_name(pair_symbol)}")
+    st.subheader(f"실전 매매 차트 · {display_name(symbol)} / {display_name(pair_symbol)}")
 
 
 def mask_account_number(account_number: str) -> str:
@@ -784,21 +790,21 @@ def _format_positions_frame(positions: pd.DataFrame) -> pd.DataFrame:
     view = normalized.loc[:, [column for column in display_columns if column in normalized.columns]].copy()
     view = view.rename(
         columns={
-            "code": "醫낅ぉ肄붾뱶",
-            "name": "醫낅ぉ紐?,
-            "quantity": "蹂댁쑀?섎웾",
-            "avg_price": "?됯퇏?④?",
-            "current_price": "?꾩옱媛",
-            "eval_amount": "?됯?湲덉븸",
-            "profit_amount": "?됯??먯씡",
-            "profit_rate": "?섏씡瑜?%)",
+            "code": "종목코드",
+            "name": "종목명",
+            "quantity": "보유수량",
+            "avg_price": "평균단가",
+            "current_price": "현재가",
+            "eval_amount": "평가금액",
+            "profit_amount": "평가손익",
+            "profit_rate": "수익률(%)",
         }
     )
-    for column in ["蹂댁쑀?섎웾", "?됯퇏?④?", "?꾩옱媛", "?됯?湲덉븸", "?됯??먯씡"]:
+    for column in ["보유수량", "평균단가", "현재가", "평가금액", "평가손익"]:
         if column in view.columns:
             view[column] = view[column].map(lambda value: f"{float(value):,.0f}")
-    if "?섏씡瑜?%)" in view.columns:
-        view["?섏씡瑜?%)"] = view["?섏씡瑜?%)"].map(lambda value: f"{float(value):+.2f}")
+    if "수익률(%)" in view.columns:
+        view["수익률(%)"] = view["수익률(%)"].map(lambda value: f"{float(value):+.2f}")
     return view
 
 
@@ -828,8 +834,8 @@ def _group_execution_ledger_by_5m(executions: pd.DataFrame) -> pd.DataFrame:
 
 
 def _account_return_rate(summary: dict) -> float:
-    purchase_amount = float(summary.get("留ㅼ엯湲덉븸", 0) or 0)
-    profit = float(summary.get("?됯??먯씡", 0) or 0)
+    purchase_amount = float(summary.get("매입금액", 0) or 0)
+    profit = float(summary.get("평가손익", 0) or 0)
     if purchase_amount <= 0:
         return 0.0
     return (profit / purchase_amount) * 100
@@ -990,7 +996,7 @@ def _emotion_by_position(positions: pd.DataFrame) -> str:
         return "negative"
     return "neutral"
 def _extract_total_assets(summary: dict) -> float:
-    for key in ["total_assets", "珥앹옄??]:
+    for key in ["total_assets", "총자산"]:
         if key in summary:
             try:
                 return float(summary.get(key) or 0)
@@ -1021,8 +1027,8 @@ def _build_asset_history_figure() -> go.Figure | None:
             line={"color": "#f59e0b", "width": 2},
             fill="tozeroy",
             fillcolor="rgba(245,158,11,0.12)",
-            hovertemplate="%{x|%m-%d %H:%M}<br>珥앹옄??%{y:,.0f}??extra></extra>",
-            name="?먯궛 異붿씠",
+            hovertemplate="%{x|%m-%d %H:%M}<br>총자산 %{y:,.0f}원<extra></extra>",
+            name="자산 추이",
         )
     )
     figure.update_layout(
@@ -1032,7 +1038,7 @@ def _build_asset_history_figure() -> go.Figure | None:
         plot_bgcolor="#131722",
         font={"color": "#d1d4dc", "family": "Malgun Gothic"},
         showlegend=False,
-        title={"text": "?먯궛 ?곸듅 洹몃옒??, "x": 0.02, "font": {"size": 13}},
+        title={"text": "자산 상승 그래프", "x": 0.02, "font": {"size": 13}},
     )
     figure.update_xaxes(showgrid=False, tickfont={"size": 10, "color": "#9aa4b2"}, automargin=True)
     figure.update_yaxes(
@@ -1122,7 +1128,7 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
                 "exit_price": price,
                 "pnl_amount": pnl_amount,
                 "pnl_rate": pnl_rate,
-                "result": "?? if pnl_amount > 0 else "?? if pnl_amount < 0 else "蹂댄빀",
+                "result": "승" if pnl_amount > 0 else "패" if pnl_amount < 0 else "보합",
             }
         )
 
@@ -1186,16 +1192,16 @@ def _render_open_live_positions() -> None:
     else:
         open_view = pd.DataFrame()
 
-    st.markdown("##### 誘몄껌??二쇰Ц / 蹂댁쑀以?)
+    st.markdown("##### 미청산 주문 / 보유중")
     if open_view.empty:
-        st.caption("?꾩옱 蹂댁쑀 以묒씤 ?ㅼ쟾 ?ъ??섏씠 ?놁뒿?덈떎.")
+        st.caption("현재 보유 중인 실전 포지션이 없습니다.")
     else:
         st.dataframe(_format_positions_frame(open_view), width="stretch", hide_index=True)
 
 
 def _render_closed_live_trades() -> None:
-    st.markdown("##### 泥?궛 ?꾨즺 嫄곕옒")
-    st.caption("理쒓렐 5??湲곗?")
+    st.markdown("##### 청산 완료 거래")
+    st.caption("최근 5일 기준")
     runtime = get_live_runtime_state()
     last_order_at = str(runtime.get("last_order_at", "") or "")
     cached_history = st.session_state.get(CLOSED_TRADES_CACHE_KEY)
@@ -1208,13 +1214,13 @@ def _render_closed_live_trades() -> None:
             st.session_state[CLOSED_TRADES_CACHE_KEY] = history
             st.session_state[CLOSED_TRADES_LAST_ORDER_KEY] = last_order_at
     except KisApiError as exc:
-        st.caption(f"嫄곕옒?댁뿭 議고쉶 ?ㅻ쪟: {exc}")
+        st.caption(f"거래내역 조회 오류: {exc}")
         return
     except Exception as exc:
-        st.caption(f"嫄곕옒?댁뿭 吏묎퀎 ?ㅻ쪟: {exc}")
+        st.caption(f"거래내역 집계 오류: {exc}")
         return
     if history.empty:
-        st.caption("理쒓렐 5??湲곗??쇰줈 吏묎퀎??泥?궛 ?꾨즺 嫄곕옒媛 ?놁뒿?덈떎.")
+        st.caption("최근 5일 기준으로 집계된 청산 완료 거래가 없습니다.")
     else:
         wins = int((history["pnl_amount"] > 0).sum())
         draws = int((history["pnl_amount"] == 0).sum())
@@ -1224,14 +1230,14 @@ def _render_closed_live_trades() -> None:
         realized = float(history["pnl_amount"].sum())
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("嫄곕옒??, f"{total}")
-        col2.metric("??臾???, f"{wins}/{draws}/{losses}")
-        col3.metric("?밸쪧", f"{win_rate:.1f}%")
-        col4.metric("?ㅽ쁽?먯씡", f"{realized:,.0f}??)
+        col1.metric("거래수", f"{total}")
+        col2.metric("승/무/패", f"{wins}/{draws}/{losses}")
+        col3.metric("승률", f"{win_rate:.1f}%")
+        col4.metric("실현손익", f"{realized:,.0f}원")
 
         view = history.sort_values("exit_time", ascending=False).copy()
-        view["吏꾩엯援ш컙"] = pd.to_datetime(view["entry_time"]).map(_format_five_min_bucket_label)
-        view["泥?궛援ш컙"] = pd.to_datetime(view["exit_time"]).map(_format_five_min_bucket_label)
+        view["진입구간"] = pd.to_datetime(view["entry_time"]).map(_format_five_min_bucket_label)
+        view["청산구간"] = pd.to_datetime(view["exit_time"]).map(_format_five_min_bucket_label)
         view["entry_time"] = pd.to_datetime(view["entry_time"]).dt.strftime("%m-%d %H:%M")
         view["exit_time"] = pd.to_datetime(view["exit_time"]).dt.strftime("%m-%d %H:%M")
         view["quantity"] = view["quantity"].map(lambda value: f"{float(value):,.0f}")
@@ -1241,19 +1247,19 @@ def _render_closed_live_trades() -> None:
         view["pnl_rate"] = view["pnl_rate"].map(lambda value: f"{float(value):+.2f}%")
         view = view.rename(
             columns={
-                "name": "醫낅ぉ",
-                "entry_time": "吏꾩엯",
-                "exit_time": "泥?궛",
-                "quantity": "?섎웾",
-                "entry_price": "吏꾩엯媛",
-                "exit_price": "泥?궛媛",
-                "pnl_amount": "?먯씡",
-                "pnl_rate": "?섏씡瑜?,
-                "result": "寃곌낵",
+                "name": "종목",
+                "entry_time": "진입",
+                "exit_time": "청산",
+                "quantity": "수량",
+                "entry_price": "진입가",
+                "exit_price": "청산가",
+                "pnl_amount": "손익",
+                "pnl_rate": "수익률",
+                "result": "결과",
             }
         )
         st.dataframe(
-            view[["醫낅ぉ", "吏꾩엯援ш컙", "泥?궛援ш컙", "?섎웾", "吏꾩엯媛", "泥?궛媛", "?먯씡", "?섏씡瑜?, "寃곌낵"]].head(20),
+            view[["종목", "진입구간", "청산구간", "수량", "진입가", "청산가", "손익", "수익률", "결과"]].head(20),
             width="stretch",
             hide_index=True,
         )
@@ -1317,9 +1323,9 @@ def render_live_account_panel() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("#### ?ㅺ퀎醫?)
+    st.markdown("#### 실계좌")
     if not has_kis_account():
-        st.info("?쒗닾 怨꾩쥖 ?뺣낫媛 ?놁뼱 怨꾩쥖 ?붾㈃???쒖떆?????놁뒿?덈떎.")
+        st.info("한투 계좌 정보가 없어 계좌 화면을 표시할 수 없습니다.")
         return
 
     if ACCOUNT_PANEL_CACHE_KEY not in st.session_state:
@@ -1331,33 +1337,33 @@ def render_live_account_panel() -> None:
         summary = fallback_summary
     is_stale = bool(positions_stale or summary_stale)
     if not summary and positions.empty:
-        st.caption("怨꾩쥖 ?뺣낫 濡쒕뵫 以묒엯?덈떎. 李⑦듃??癒쇱? ?쒖떆?⑸땲??")
+        st.caption("계좌 정보 로딩 중입니다. 차트는 먼저 표시됩니다.")
         return
     if is_stale:
-        st.caption("怨꾩쥖 ?⑤꼸? 理쒓렐 罹먯떆 湲곗??쇰줈 癒쇱? ?쒖떆 以묒엯?덈떎.")
+        st.caption("계좌 패널은 최근 캐시 기준으로 먼저 표시 중입니다.")
 
     purchase_amount = float(summary.get("purchase_amount", 0) or 0)
     profit_amount = float(summary.get("profit_amount", 0) or 0)
     profit_rate = (profit_amount / purchase_amount * 100.0) if purchase_amount > 0 else 0.0
 
     col1, col2 = st.columns(2)
-    col1.metric("珥앹옄??, f"{summary.get('total_assets', 0):,.0f}??)
-    col2.metric("?됯?湲덉븸", f"{summary.get('eval_amount', 0):,.0f}??)
+    col1.metric("총자산", f"{summary.get('total_assets', 0):,.0f}원")
+    col2.metric("평가금액", f"{summary.get('eval_amount', 0):,.0f}원")
     col3, col4 = st.columns(2)
-    col3.metric("?됯??먯씡", f"{profit_amount:,.0f}??)
-    col4.metric("?섏씡瑜?, f"{profit_rate:+.2f}%")
-    st.caption(f"怨꾩쥖 {mask_account_number(summary.get('account_number', ''))}")
+    col3.metric("평가손익", f"{profit_amount:,.0f}원")
+    col4.metric("수익률", f"{profit_rate:+.2f}%")
+    st.caption(f"계좌 {mask_account_number(summary.get('account_number', ''))}")
 
-    st.markdown("##### 蹂댁쑀醫낅ぉ")
+    st.markdown("##### 보유종목")
     if positions.empty:
-        st.info("?꾩옱 蹂댁쑀 ?ъ??섏씠 ?놁뒿?덈떎.")
+        st.info("현재 보유 포지션이 없습니다.")
     else:
         st.dataframe(_format_positions_frame(positions), width="stretch", hide_index=True)
 
 
 @st.fragment(run_every="5s")
 def render_live_trade_history_panel() -> None:
-    st.markdown("#### ?ㅼ쟾 嫄곕옒 ?댁뿭")
+    st.markdown("#### 실전 거래 내역")
     _render_open_live_positions()
 
 
@@ -1381,8 +1387,8 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     visible_start_date, visible_end_date = get_current_chart_date_range()
     runtime = get_live_runtime_state()
     if runtime["last_status"] in {"checking", "waiting_data"} or not runtime["last_checked_candle"]:
-        st.info("?붿쭊??怨꾩궛?섍퀬 ?덉뒿?덈떎. 李⑦듃? ?쒓렇?먯쓣 以鍮꾪븯??以묒엯?덈떎.")
-    st.caption(f"李⑦듃 諛섏쁺 ?꾨왂: {strategy_label} 쨌 ?쒖떆 湲곌컙: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
+        st.info("엔진이 계산하고 있습니다. 차트와 시그널을 준비하는 중입니다.")
+    st.caption(f"차트 반영 전략: {strategy_label} · 표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
     components.html(
         build_live_chart_html(
             server_url="",
@@ -1463,7 +1469,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
             decreasing: {{ line: {{ color: "#f23645" }}, fillcolor: "#f23645" }},
             xaxis: "x",
             yaxis: "y",
-            hovertemplate: "?쒓? %{{open:,.0f}}<br>怨좉? %{{high:,.0f}}<br>?媛 %{{low:,.0f}}<br>醫낃? %{{close:,.0f}}<extra></extra>",
+            hovertemplate: "시가 %{{open:,.0f}}<br>고가 %{{high:,.0f}}<br>저가 %{{low:,.0f}}<br>종가 %{{close:,.0f}}<extra></extra>",
             showlegend: false
           }},
           markerTrace(data.signals.primaryOpenMain || [], "#3b82f6", "circle"),
@@ -1479,7 +1485,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
           {{
             type: "scatter", mode: "lines", x, y: data.pairScr || [], xaxis: "x2", yaxis: "y2",
             line: {{ color: "#f59e0b", width: 2.5, dash: "dot" }}, showlegend: false,
-            hovertemplate: `${{data.pairName || "怨깅쾭??}} SCR %{{y:.2f}}<extra></extra>`
+            hovertemplate: `${{data.pairName || "곱버스"}} SCR %{{y:.2f}}<extra></extra>`
           }},
           markerTrace(data.signals.primaryOpenIndicator || [], "#3b82f6", "circle", "2"),
           markerTrace(data.signals.primaryCloseIndicator || [], "#ef4444", "circle", "2"),
@@ -1523,10 +1529,10 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
           }},
           yaxis: {{ domain: [0.31, 1], side: "right", showgrid: true, gridcolor: "rgba(42,46,57,0.65)", fixedrange: true }},
           xaxis2: {{ domain: [0, 1], anchor: "y2", tickmode: "array", tickvals, ticktext, showticklabels: false, showgrid: false, range: [-0.45, Math.max(x.length - 0.55, 1)], fixedrange: true, showspikes: true, spikemode: "across", spikecolor: "#4b5563", spikethickness: 1 }},
-          yaxis2: {{ domain: [0, 0.24], side: "right", range: [-1.6, 1.6], tickmode: "array", tickvals: [-1, 0, 1], ticktext: ["?섎떒", "0", "?곷떒"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)" }},
+          yaxis2: {{ domain: [0, 0.24], side: "right", range: [-1.6, 1.6], tickmode: "array", tickvals: [-1, 0, 1], ticktext: ["하단", "0", "상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)" }},
           annotations: [
-            {{ x: 0.012, y: 1.04, xref: "paper", yref: "paper", xanchor: "left", showarrow: false, text: `${{data.symbolName}} 쨌 5遺꾨큺 쨌 ?ㅼ쟾`, font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }} }},
-            {{ x: 0.012, y: 0.27, xref: "paper", yref: "paper", xanchor: "left", showarrow: false, text: "蹂댁“吏??(?곗깋 ?먯꽑: ?덈쾭由ъ? / 二쇳솴 ?먯꽑: 怨깅쾭??", font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }} }}
+            {{ x: 0.012, y: 1.04, xref: "paper", yref: "paper", xanchor: "left", showarrow: false, text: `${{data.symbolName}} · 5분봉 · 실전`, font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }} }},
+            {{ x: 0.012, y: 0.27, xref: "paper", yref: "paper", xanchor: "left", showarrow: false, text: "보조지표 (흰색 점선: 레버리지 / 주황 점선: 곱버스)", font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }} }}
           ]
         }}
       }};
@@ -1583,7 +1589,7 @@ def _run_pair_candle_recovery_if_due(
     _PAIR_RECOVERY_LAST_RUN_MONOTONIC = now_monotonic
 
     if not acquire_named_lock(PAIR_RECOVERY_LOCK_NAME, stale_after_seconds=120):
-        _set_pair_recovery_state("?ㅻⅨ ?몄뀡?먯꽌 由ъ빱踰꾨━ ?ㅽ뻾 以?)
+        _set_pair_recovery_state("다른 세션에서 리커버리 실행 중")
         return
 
     try:
@@ -1599,7 +1605,7 @@ def _run_pair_candle_recovery_if_due(
             timeframe=LIVE_TIMEFRAME,
             ignore_recent_minutes=ignore_recent_minutes,
         ):
-            _set_pair_recovery_state("?뺤긽 (遺덉씪移??놁쓬)")
+            _set_pair_recovery_state("정상 (불일치 없음)")
             return
         recovery = align_raw_intraday_pair_to_intersection(
             symbol_a=raw_primary,
@@ -1614,14 +1620,14 @@ def _run_pair_candle_recovery_if_due(
         only_b_head = ", ".join((recovery.get("only_b", []) or [])[:3]) or "-"
         if deleted_total <= 0:
             _set_pair_recovery_state(
-                f"遺덉씪移?媛먯?(?뺣━ 0嫄? 濡깅떒??{only_a_count} / ?뤿떒??{only_b_count}"
+                f"불일치 감지(정리 0건) 롱단독:{only_a_count} / 숏단독:{only_b_count}"
             )
             append_live_log(
-                "蹂듦뎄",
+                "복구",
                 (
-                    "罹붾뱾 由ъ빱踰꾨━ ?댁뒋 媛먯?: 遺덉씪移섍? ?덉쑝???뺣━ ????놁쓬 "
-                    f"(濡깅떒??{only_a_count}, ?뤿떒??{only_b_count}, "
-                    f"濡깆삁??{only_a_head}, ?륁삁??{only_b_head})"
+                    "캔들 리커버리 이슈 감지: 불일치가 있으나 정리 대상 없음 "
+                    f"(롱단독:{only_a_count}, 숏단독:{only_b_count}, "
+                    f"롱예시:{only_a_head}, 숏예시:{only_b_head})"
                 ),
             )
             return
@@ -1639,76 +1645,76 @@ def _run_pair_candle_recovery_if_due(
         clear_chart_payload_caches()
         st.cache_data.clear()
         _set_pair_recovery_state(
-            f"蹂듦뎄 ?꾨즺 (??젣 {deleted_total}媛? 濡?{int(recovery.get('deleted_a', 0) or 0)} / ??{int(recovery.get('deleted_b', 0) or 0)})"
+            f"복구 완료 (삭제 {deleted_total}개, 롱:{int(recovery.get('deleted_a', 0) or 0)} / 숏:{int(recovery.get('deleted_b', 0) or 0)})"
         )
         append_live_log(
-            "蹂듦뎄",
+            "복구",
             (
-                "罹붾뱾 由ъ빱踰꾨━ ?꾨즺: "
-                f"珥?{deleted_total}媛??뺣━ "
-                f"(濡깆궘??{int(recovery.get('deleted_a', 0) or 0)}, ?륁궘??{int(recovery.get('deleted_b', 0) or 0)}, "
-                f"濡깅떒??{only_a_count}, ?뤿떒??{only_b_count}, "
-                f"濡깆삁??{only_a_head}, ?륁삁??{only_b_head})"
+                "캔들 리커버리 완료: "
+                f"총 {deleted_total}개 정리 "
+                f"(롱삭제:{int(recovery.get('deleted_a', 0) or 0)}, 숏삭제:{int(recovery.get('deleted_b', 0) or 0)}, "
+                f"롱단독:{only_a_count}, 숏단독:{only_b_count}, "
+                f"롱예시:{only_a_head}, 숏예시:{only_b_head})"
             ),
         )
     except Exception as exc:
-        _set_pair_recovery_state(f"蹂듦뎄 ?ㅽ뙣: {exc}")
-        append_live_log("?ㅻ쪟", f"罹붾뱾 由ъ빱踰꾨━ ?ㅽ뙣: {exc}")
+        _set_pair_recovery_state(f"복구 실패: {exc}")
+        append_live_log("오류", f"캔들 리커버리 실패: {exc}")
         raise
     finally:
         release_named_lock(PAIR_RECOVERY_LOCK_NAME)
 
 
 def render_live_trading_panel(pair_symbol: str | None) -> None:
-    st.markdown("#### ?ㅼ쟾 ?ъ옄")
+    st.markdown("#### 실전 투자")
     execution_mode = get_current_execution_mode()
-    execution_label = "x1 ETF" if execution_mode == EXECUTION_MODE_X1 else "?덈쾭由ъ?/怨깅쾭??
+    execution_label = "x1 ETF" if execution_mode == EXECUTION_MODE_X1 else "레버리지/곱버스"
     if pair_symbol is None:
-        st.warning("?ㅼ쟾 ?ъ옄???덈쾭由ъ?/?몃쾭???섏뼱 醫낅ぉ?먯꽌留??ㅽ뻾?⑸땲??")
+        st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
 
-    status_text = "??긽 ?ㅽ뻾 以?
+    status_text = "항상 실행 중"
     status_color = "#3b82f6"
     st.markdown(
         f"""
         <div style="margin-bottom:10px;">
             <span style="display:inline-block;padding:5px 10px;border-radius:999px;background:{status_color}22;color:{status_color};font-size:12px;">
-                ?곹깭: {status_text}
+                상태: {status_text}
             </span>
         </div>
         """,
         unsafe_allow_html=True,
     )
     st.caption(
-        f"?ㅼ쟾 二쇰Ц? 5遺꾨큺 湲곗??쇰줈留?泥섎━?섍퀬, 5珥덈쭏??理쒖떊 ?꾨즺 遊됱쓣 ?뺤씤?⑸땲?? "
-        f"?꾩옱 ?꾨왂? {get_strategy_label(get_current_strategy_profile())}, ?ㅼ젣 二쇰Ц ??곸? {execution_label}?대ŉ, 留ㅼ닔 ??二쇰Ц媛?ν쁽湲덉쓣 理쒕????ъ슜?⑸땲??"
+        f"실전 주문은 5분봉 기준으로만 처리하고, 5초마다 최신 완료 봉을 확인합니다. "
+        f"현재 전략은 {get_strategy_label(get_current_strategy_profile())}, 실제 주문 대상은 {execution_label}이며, 매수 시 주문가능현금을 최대한 사용합니다."
     )
     st.caption(
-        f"罹붾뱾 由ъ빱踰꾨━(理쒓렐 {_get_pair_recovery_ignore_recent_minutes()}遺??쒖쇅): {_get_pair_recovery_state_text()}"
+        f"캔들 리커버리(최근 {_get_pair_recovery_ignore_recent_minutes()}분 제외): {_get_pair_recovery_state_text()}"
     )
 
     runtime = get_live_runtime_state()
     status_name = {
-        "running": "?ㅽ뻾 以?,
-        "stopped": "以묒???,
-        "checking": "遊??뺤씤 以?,
-        "waiting_data": "?곗씠???湲?,
-        "idle": "?좏샇 ?湲?,
-        "holding": "蹂댁쑀 ?좎?",
-        "ordered": "二쇰Ц ?꾨즺",
-        "waiting_cash": "二쇰Ц 媛??湲덉븸 ?湲?,
-        "error": "?ㅻ쪟",
+        "running": "실행 중",
+        "stopped": "중지됨",
+        "checking": "봉 확인 중",
+        "waiting_data": "데이터 대기",
+        "idle": "신호 대기",
+        "holding": "보유 유지",
+        "ordered": "주문 완료",
+        "waiting_cash": "주문 가능 금액 대기",
+        "error": "오류",
     }.get(runtime["last_status"], runtime["last_status"] or "-")
-    st.markdown("##### ?붿쭊 ?곹깭")
+    st.markdown("##### 엔진 상태")
     info_left, info_right = st.columns(2)
-    info_left.caption(f"留덉?留??뺤씤: {runtime['last_cycle_at'] or '-'}")
-    info_right.caption(f"留덉?留?二쇰Ц: {runtime['last_order_at'] or '-'}")
-    st.caption(f"留덉?留??꾨즺 遊? {runtime['last_checked_candle'] or '-'}")
-    st.caption(f"?붿쭊 ?곹깭: {status_name}")
+    info_left.caption(f"마지막 확인: {runtime['last_cycle_at'] or '-'}")
+    info_right.caption(f"마지막 주문: {runtime['last_order_at'] or '-'}")
+    st.caption(f"마지막 완료 봉: {runtime['last_checked_candle'] or '-'}")
+    st.caption(f"엔진 상태: {status_name}")
     if runtime["last_error"]:
         st.warning(runtime["last_error"])
 
     if pair_symbol is None:
-        st.warning("?꾩옱 醫낅ぉ? ?ㅼ쟾 ?섏뼱 ?꾨왂 ??곸씠 ?꾨떃?덈떎.")
+        st.warning("현재 종목은 실전 페어 전략 대상이 아닙니다.")
 
     logs = get_live_logs()
     log_html = "".join(
@@ -1716,12 +1722,12 @@ def render_live_trading_panel(pair_symbol: str | None) -> None:
         for message in logs
     )
     if not log_html:
-        log_html = '<div style="padding:10px 0;color:#9aa4b2;font-size:14px;">?ㅼ쟾 留ㅻℓ 濡쒓렇媛 ?꾩쭅 ?놁뒿?덈떎.</div>'
+        log_html = '<div style="padding:10px 0;color:#9aa4b2;font-size:14px;">실전 매매 로그가 아직 없습니다.</div>'
 
     st.markdown(
         f"""
         <div style="background:#131722;border:1px solid #2a2e39;border-radius:12px;padding:14px;height:280px;overflow-y:auto;">
-            <div style="font-size:13px;color:#9aa4b2;margin-bottom:12px;">?ㅼ쟾 留ㅻℓ 濡쒓렇</div>
+            <div style="font-size:13px;color:#9aa4b2;margin-bottom:12px;">실전 매매 로그</div>
             {log_html}
         </div>
         """,
@@ -1832,31 +1838,66 @@ def _backtest_combined_performance(frame: pd.DataFrame) -> tuple[int, int, float
 
 
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
-    st.markdown("#### 諛깊뀒?ㅽ똿")
-    st.caption("yfinance 湲곕컲 `30遺꾨큺/?쇰큺/4?쒓컙遊??쇰줈 SRC ?좏샇瑜?怨꾩궛?섍퀬 long/short open쨌close瑜??쒖떆?⑸땲??")
+    st.markdown("#### 백테스팅")
+    st.caption("yfinance 기반 `5m/15m/30m/60m/1h/4h/1d`로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
 
     today = pd.Timestamp.now().date()
-    default_end = today
-    default_start = today - pd.Timedelta(days=30)
+    timeframe_options = get_backtest_timeframe_labels()
+    current_timeframe = str(st.session_state.get("backtest-timeframe-input", "30m") or "30m")
+    default_timeframe_index = timeframe_options.index(current_timeframe) if current_timeframe in timeframe_options else 2
     col_a, col_b = st.columns([1.2, 1.0], vertical_alignment="bottom")
     with col_a:
         symbol_input = st.text_input(
-            "醫낅ぉ",
-            value="?먯씠鍮꾩뿕諛붿씠??,
+            "종목",
+            value="에이비엘바이오",
             key="backtest-symbol-input",
-            help="?? 122630, 252670, 005930, BTC-USD, ?쇱꽦?꾩옄",
+            help="예: 122630, 252670, 005930, BTC-USD, 삼성전자",
         )
         timeframe = st.selectbox(
-            "??꾪봽?덉엫",
-            options=["30遺꾨큺", "?쇰큺", "4?쒓컙遊?],
-            index=0,
+            "타임프레임",
+            options=timeframe_options,
+            index=default_timeframe_index,
             key="backtest-timeframe-input",
         )
+        max_days = get_backtest_timeframe_max_days(timeframe)
+        if max_days is None:
+            st.caption("조회 가능 기간: 제한 없음 (1d)")
+        else:
+            st.caption(f"조회 가능 기간: 최근 {int(max_days)}일")
+        if timeframe == "4h":
+            st.caption("4h는 yfinance 60m 데이터를 `resample('4h')`로 집계해 계산합니다.")
+    max_days = get_backtest_timeframe_max_days(timeframe)
+    if max_days is None:
+        min_date = date(1990, 1, 1)
+        default_start = max(min_date, (today - pd.Timedelta(days=365)).date())
+    else:
+        min_date = (today - pd.Timedelta(days=max(int(max_days), 1) - 1)).date()
+        default_start = max(min_date, (today - pd.Timedelta(days=min(30, max(int(max_days), 1) - 1))).date())
+    default_end = today
     with col_b:
-        start_date = st.date_input("?쒖옉??, value=default_start, key="backtest-start-date-input")
-        end_date = st.date_input("醫낅즺??, value=default_end, key="backtest-end-date-input")
+        start_date = st.date_input(
+            "시작일",
+            value=default_start,
+            min_value=min_date,
+            max_value=today,
+            key="backtest-start-date-input",
+        )
+        end_date = st.date_input(
+            "종료일",
+            value=default_end,
+            min_value=min_date,
+            max_value=today,
+            key="backtest-end-date-input",
+        )
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    if max_days is not None:
+        selected_days = (pd.Timestamp(end_date) - pd.Timestamp(start_date)).days + 1
+        if selected_days > int(max_days):
+            start_date = (pd.Timestamp(end_date) - pd.Timedelta(days=int(max_days) - 1)).date()
+            st.warning(f"{timeframe}는 최근 {int(max_days)}일만 조회할 수 있어 시작일을 자동 보정했습니다.")
 
-    run_clicked = st.button("?좏샇 怨꾩궛", type="primary", key="backtest-run-button")
+    run_clicked = st.button("신호 계산", type="primary", key="backtest-run-button")
     if run_clicked:
         try:
             resolved_symbol, resolved_name = market_data.resolve_symbol(symbol_input)
@@ -1879,10 +1920,10 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
 
     result = st.session_state.get(BACKTEST_RESULT_STATE_KEY)
     if not isinstance(result, dict):
-        st.info("?낅젰媛믪쓣 ?뺥븯怨?`?쒕??덉씠???ㅽ뻾`???뚮윭二쇱꽭??")
+        st.info("입력값을 정하고 `시뮬레이션 실행`을 눌러주세요.")
         return
     if result.get("error"):
-        st.error(f"諛깊뀒?ㅽ듃 ?ㅽ뙣: {result['error']}")
+        st.error(f"백테스트 실패: {result['error']}")
         return
 
     current_start = pd.Timestamp(start_date).date()
@@ -1890,15 +1931,15 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     if current_start > current_end:
         current_start, current_end = current_end, current_start
     st.caption(
-        f"{result['name']} ({result['symbol']}) 쨌 {result['timeframe']} 쨌 {current_start.isoformat()} ~ {current_end.isoformat()}"
+        f"{result['name']} ({result['symbol']}) · {result['timeframe']} · {current_start.isoformat()} ~ {current_end.isoformat()}"
     )
     job_id = str(result.get("job_id") or st.session_state.get(BACKTEST_JOB_ID_STATE_KEY) or "")
     if not job_id:
-        st.info("?좏샇 怨꾩궛??癒쇱? ?ㅽ뻾?댁＜?몄슂.")
+        st.info("신호 계산을 먼저 실행해주세요.")
         return
     job = get_backtest_job(job_id)
     if not isinstance(job, dict):
-        st.error("諛깊뀒?ㅽ듃 ?묒뾽 ?뺣낫瑜?李얠쓣 ???놁뒿?덈떎. ?ㅼ떆 ?ㅽ뻾?댁＜?몄슂.")
+        st.error("백테스트 작업 정보를 찾을 수 없습니다. 다시 실행해주세요.")
         return
     status = str(job.get("status", "queued"))
     if status in {"queued", "running"}:
@@ -1913,23 +1954,23 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 if getattr(started_at, "tzinfo", None) is not None:
                     started_at = started_at.tz_localize(None)
                 elapsed_seconds = max(0, int((now_utc - started_at).total_seconds()))
-                elapsed_text = f"{elapsed_seconds}珥?
+                elapsed_text = f"{elapsed_seconds}초"
             except Exception:
                 elapsed_text = "-"
-        st.info(f"諛깊뀒?ㅽ듃 怨꾩궛 ?ㅽ뻾 以?(寃쎄낵: {elapsed_text}). ?꾨즺?섎㈃ ?먮룞?쇰줈 寃곌낵瑜?媛깆떊?⑸땲??")
+        st.info(f"백테스트 계산 실행 중 (경과: {elapsed_text}). 완료되면 자동으로 결과를 갱신합니다.")
         time.sleep(1.2)
         st.rerun()
         return
     if status == "failed":
-        st.error(f"諛깊뀒?ㅽ듃 ?ㅽ뙣: {job.get('error', '?????녿뒗 ?ㅻ쪟')}")
+        st.error(f"백테스트 실패: {job.get('error', '알 수 없는 오류')}")
         return
     strategy_frame = job.get("strategy_frame")
     if not isinstance(strategy_frame, pd.DataFrame):
-        st.error("諛깊뀒?ㅽ듃 ?곗씠?곌? ?좏슚?섏? ?딆뒿?덈떎. ?ㅼ떆 ?ㅽ뻾?댁＜?몄슂.")
+        st.error("백테스트 데이터가 유효하지 않습니다. 다시 실행해주세요.")
         return
     filtered_frame = _filter_frame_by_date(strategy_frame, current_start, current_end)
     if filtered_frame.empty:
-        st.warning("?좏깮??湲곌컙???곗씠?곌? ?놁뒿?덈떎. 湲곌컙???볧?二쇱꽭??")
+        st.warning("선택한 기간에 데이터가 없습니다. 기간을 넓혀주세요.")
         return
     frame = build_long_short_signals(filtered_frame)
     closed_trade_count, trade_count, win_rate_pct, cumulative_return_pct = _backtest_combined_performance(frame)
@@ -1939,22 +1980,18 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     metric_cols[2].metric("Short Open", f"{int(frame['short_open'].sum())}")
     metric_cols[3].metric("Short Close", f"{int(frame['short_close'].sum())}")
     perf_cols = st.columns(3)
-    perf_cols[0].metric("嫄곕옒 ??, f"{closed_trade_count}/{trade_count}")
-    perf_cols[1].metric("?밸쪧(泥?궛湲곗?)", f"{win_rate_pct:.1f}%")
-    perf_cols[2].metric("?꾩쟻 ?섏씡瑜?, f"{cumulative_return_pct:.2f}%")
+    perf_cols[0].metric("거래 수", f"{closed_trade_count}/{trade_count}")
+    perf_cols[1].metric("승률(청산기준)", f"{win_rate_pct:.1f}%")
+    perf_cols[2].metric("누적 수익률", f"{cumulative_return_pct:.2f}%")
 
     price_fig = go.Figure()
     price_fig.add_trace(
-        go.Candlestick(
+        go.Scatter(
             x=frame.index,
-            open=frame["Open"],
-            high=frame["High"],
-            low=frame["Low"],
-            close=frame["Close"],
-            name="price",
-            increasing={"line": {"color": "#089981"}, "fillcolor": "#089981"},
-            decreasing={"line": {"color": "#f23645"}, "fillcolor": "#f23645"},
-            showlegend=False,
+            y=frame["Close"],
+            mode="lines",
+            name="종가",
+            line={"color": "#60a5fa", "width": 1.8},
         )
     )
     long_open = frame.loc[frame["long_open"]]
@@ -2014,47 +2051,20 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
             )
         )
     price_fig.update_layout(
-        height=560,
-        margin={"l": 36, "r": 56, "t": 42, "b": 64},
-        paper_bgcolor="#131722",
-        plot_bgcolor="#131722",
-        font={"color": "#d1d4dc", "family": "Malgun Gothic"},
-        hovermode="x unified",
-        hoverdistance=30,
-        spikedistance=30,
-        showlegend=True,
+        height=420,
+        margin={"l": 24, "r": 24, "t": 24, "b": 24},
+        template="plotly_dark",
         legend={"orientation": "h", "y": 1.02, "x": 0},
-        xaxis={
-            "showgrid": False,
-            "showline": True,
-            "linecolor": "rgba(75,85,99,0.8)",
-            "tickfont": {"size": 11, "color": "#9aa4b2"},
-            "ticks": "outside",
-            "ticklen": 4,
-            "automargin": True,
-            "rangeslider": {"visible": False},
-            "showspikes": True,
-            "spikemode": "across",
-            "spikecolor": "#4b5563",
-            "spikethickness": 1,
-        },
-        yaxis={
-            "side": "right",
-            "showgrid": True,
-            "gridcolor": "rgba(42,46,57,0.65)",
-            "tickfont": {"size": 11, "color": "#d1d4dc"},
-            "fixedrange": True,
-        },
     )
     st.plotly_chart(price_fig, use_container_width=True)
 
-    st.markdown("##### ?좏샇 濡쒓렇")
+    st.markdown("##### 신호 로그")
     signal_rows = frame.loc[
         frame["long_open"] | frame["long_close"] | frame["short_open"] | frame["short_close"],
         ["Close", "long_open", "long_close", "short_open", "short_close"],
     ].copy()
     if signal_rows.empty:
-        st.caption("湲곌컙 ???좏샇媛 ?놁뒿?덈떎.")
+        st.caption("기간 내 신호가 없습니다.")
     else:
         signal_rows = signal_rows.reset_index()
         time_col = signal_rows.columns[0]
@@ -2064,8 +2074,8 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
             use_container_width=True,
             hide_index=True,
             column_config={
-                time_col: st.column_config.TextColumn("?쇱옄"),
-                "Close": st.column_config.NumberColumn("醫낃?", format="%.2f"),
+                time_col: st.column_config.TextColumn("일자"),
+                "Close": st.column_config.NumberColumn("종가", format="%.2f"),
                 "long_open": st.column_config.CheckboxColumn("Long Open"),
                 "long_close": st.column_config.CheckboxColumn("Long Close"),
                 "short_open": st.column_config.CheckboxColumn("Short Open"),
@@ -2131,7 +2141,7 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    live_tab, backtest_tab = st.tabs(["?ㅼ쟾", "諛깊뀒?ㅽ똿"])
+    live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
 
     with live_tab:
         render_header(base_profile_name)
@@ -2161,4 +2171,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
