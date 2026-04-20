@@ -36,9 +36,13 @@ const indicatorRoot = document.getElementById("{indicator_root_id}");
 const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
 const markerFilterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
-const isLocalHost = ["localhost", "127.0.0.1"].includes(hostWindow.location.hostname);
-const chartBaseUrl = isLocalHost
-  ? `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:8766`
+const hostName = hostWindow.location.hostname || "";
+const hostPort = hostWindow.location.port || "";
+const isLocalHost = ["localhost", "127.0.0.1"].includes(hostName);
+const isIpv4Host = /^(\\d{1,3}\\.){3}\\d{1,3}$/.test(hostName);
+const isDirectStreamlit = hostPort === "8501";
+const chartBaseUrl = (isLocalHost || isIpv4Host || isDirectStreamlit)
+  ? `${{hostWindow.location.protocol}}//${{hostName}}:8766`
   : `${{hostWindow.location.origin}}/api`;
 const endpointBase =
   `${{chartBaseUrl}}/v1/chart?kind=overlay&symbol={symbol}` +
