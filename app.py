@@ -1868,7 +1868,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     if filtered_frame.empty:
         st.warning("선택한 기간에 데이터가 없습니다. 기간을 넓혀주세요.")
         return
-    frame = _build_long_short_signals(filtered_frame)
+    frame = build_long_short_signals(filtered_frame)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Long Open", f"{int(frame['long_open'].sum())}")
     metric_cols[1].metric("Long Close", f"{int(frame['long_close'].sum())}")
