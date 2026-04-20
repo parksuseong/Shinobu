@@ -35,6 +35,42 @@ def _load_backtest_frame_from_yfinance(symbol: str, timeframe_label: str) -> pd.
     return frame[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
 
+def _backtest_symbol_candidates(symbol: str) -> list[str]:
+    text = str(symbol or "").strip().upper()
+    candidates: list[str] = []
+    if text:
+        candidates.append(text)
+    if text.endswith(".KS"):
+        candidates.append(text[:-3] + ".KQ")
+    elif text.endswith(".KQ"):
+        candidates.append(text[:-3] + ".KS")
+    elif text.isdigit() and len(text) == 6:
+        candidates.append(f"{text}.KS")
+        candidates.append(f"{text}.KQ")
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if item and item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return unique
+
+
+def _load_backtest_frame_with_fallback(symbol: str, timeframe_label: str) -> tuple[pd.DataFrame, str]:
+    last_error: Exception | None = None
+    for candidate in _backtest_symbol_candidates(symbol):
+        try:
+            frame = _load_backtest_frame_from_yfinance(candidate, timeframe_label)
+        except Exception as exc:  # pragma: no cover - defensive path
+            last_error = exc
+            continue
+        if not frame.empty:
+            return frame, candidate
+    if last_error is not None:
+        raise last_error
+    return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"]), str(symbol)
+
+
 def build_long_short_signals(strategy_frame: pd.DataFrame) -> pd.DataFrame:
     frame = strategy_frame.copy()
     frame["long_open"] = frame["buy_open"].astype(bool)
@@ -88,8 +124,8 @@ def submit_backtest_job(
     def _runner() -> None:
         _set_job(job_id, status="running", started_at=_now_iso())
         try:
-            source_frame = _run_with_timeout(
-                _load_backtest_frame_from_yfinance,
+            source_frame, used_symbol = _run_with_timeout(
+                _load_backtest_frame_with_fallback,
                 symbol,
                 timeframe,
                 timeout_seconds=BACKTEST_FETCH_TIMEOUT_SECONDS,
@@ -104,7 +140,13 @@ def submit_backtest_job(
                 normalized_strategy,
                 timeout_seconds=BACKTEST_CALC_TIMEOUT_SECONDS,
             )
-            _set_job(job_id, status="succeeded", strategy_frame=strategy_frame, finished_at=_now_iso())
+            _set_job(
+                job_id,
+                status="succeeded",
+                strategy_frame=strategy_frame,
+                data_symbol=used_symbol,
+                finished_at=_now_iso(),
+            )
         except Exception as exc:  # pragma: no cover - defensive path
             _set_job(job_id, status="failed", error=str(exc), strategy_frame=None, finished_at=_now_iso())
 
