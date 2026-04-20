@@ -1777,7 +1777,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     with col_a:
         symbol_input = st.text_input(
             "종목",
-            value="122630",
+            value="에이비엘바이오",
             key="backtest-symbol-input",
             help="예: 122630, 252670, 005930, BTC-USD, 삼성전자",
         )
