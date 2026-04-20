@@ -43,7 +43,7 @@ const isIpv4Host = /^(\\d{1,3}\\.){3}\\d{1,3}$/.test(hostName);
 const isDirectStreamlit = hostPort === "8501";
 const isDirectApi = isLocalHost || isIpv4Host || isDirectStreamlit;
 const chartEndpointBase = isDirectApi
-  ? `${{hostWindow.location.protocol}}//${{hostName}}:8766/v1/chart`
+  ? `${{hostWindow.location.protocol}}//${{hostName}}:8766/chart`
   : `${{hostWindow.location.origin}}/chart`;
 const endpointBase =
   `${{chartEndpointBase}}?kind=overlay&symbol={symbol}` +

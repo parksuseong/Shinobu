@@ -433,6 +433,7 @@ def get_recent_executions(
     return ExecutionListResponse(count=len(items), updated_at=updated_at, items=items)
 
 
+@app.get("/chart", tags=["chart"])
 @app.get("/v1/chart", tags=["chart"])
 def get_chart_payload(
     kind: str = Query("overlay"),
