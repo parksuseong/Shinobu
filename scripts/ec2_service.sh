@@ -27,6 +27,7 @@ Usage:
   bash scripts/ec2_service.sh reset       # stop -> clear sqlite caches -> force startup re-init -> start
   bash scripts/ec2_service.sh status      # show process status
   bash scripts/ec2_service.sh nginx-apply # write nginx conf (/ + /chart) and reload nginx
+  bash scripts/ec2_service.sh nginx-check # verify /chart and /v1/chart return JSON
 EOF
 }
 
@@ -329,6 +330,28 @@ EOF
   echo "Reloading nginx..."
   sudo systemctl reload nginx
   echo "nginx apply complete: https://$NGINX_DOMAIN -> / (streamlit:$STREAMLIT_PORT), /chart|/v1/* (api:$SIGNAL_API_PORT)"
+  check_nginx_routes
+}
+
+check_nginx_routes() {
+  local chart_local chart_v1_local chart_public chart_v1_public
+  local query="kind=overlay&symbol=122630.KS&pair_symbol=252670.KS&strategy_name=src&start_date=2026-04-01&end_date=2026-04-17&include_markers=1"
+
+  chart_local="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$SIGNAL_API_PORT/chart?$query" || true)"
+  chart_v1_local="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$SIGNAL_API_PORT/v1/chart?$query" || true)"
+  chart_public="$(curl -k -sS -o /dev/null -w '%{http_code} %{content_type}' "https://$NGINX_DOMAIN/chart?$query" || true)"
+  chart_v1_public="$(curl -k -sS -o /dev/null -w '%{http_code} %{content_type}' "https://$NGINX_DOMAIN/v1/chart?$query" || true)"
+
+  echo "local  /chart    -> $chart_local"
+  echo "local  /v1/chart -> $chart_v1_local"
+  echo "public /chart    -> $chart_public"
+  echo "public /v1/chart -> $chart_v1_public"
+
+  if [[ "$chart_public" != *"application/json"* && "$chart_v1_public" != *"application/json"* ]]; then
+    echo "ERROR: public routes are not returning JSON. Check nginx loaded config and domain origin settings."
+    echo "Hint: sudo nginx -T | sed -n '/server_name $NGINX_DOMAIN/,/}/p'"
+    return 1
+  fi
 }
 
 main() {
@@ -341,6 +364,7 @@ main() {
     reset) reset_data ;;
     status) status_all ;;
     nginx-apply) apply_nginx_conf ;;
+    nginx-check) check_nginx_routes ;;
     *) usage; exit 1 ;;
   esac
 }
