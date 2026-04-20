@@ -1767,6 +1767,44 @@ def _spread_marker_y(
     return (base_y - distance).where(mask)
 
 
+def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, float, float]:
+    if frame.empty:
+        return 0, 0.0, 0.0
+    in_position = False
+    entry_price = 0.0
+    trade_returns: list[float] = []
+
+    for _, row in frame.iterrows():
+        close_price = float(row.get("Close", 0.0) or 0.0)
+        if close_price <= 0:
+            continue
+        long_open = bool(row.get("long_open", False))
+        long_close = bool(row.get("long_close", False))
+
+        if not in_position and long_open:
+            in_position = True
+            entry_price = close_price
+            continue
+        if in_position and long_close:
+            trade_returns.append((close_price / entry_price) - 1.0 if entry_price > 0 else 0.0)
+            in_position = False
+            entry_price = 0.0
+
+    if in_position and entry_price > 0:
+        last_close = float(frame.iloc[-1].get("Close", 0.0) or 0.0)
+        if last_close > 0:
+            trade_returns.append((last_close / entry_price) - 1.0)
+
+    if not trade_returns:
+        return 0, 0.0, 0.0
+    win_rate = float(sum(1 for value in trade_returns if value > 0) / len(trade_returns) * 100.0)
+    cumulative = 1.0
+    for value in trade_returns:
+        cumulative *= 1.0 + value
+    cumulative_return = (cumulative - 1.0) * 100.0
+    return len(trade_returns), win_rate, cumulative_return
+
+
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 백테스팅")
     st.caption("yfinance 기반 `30분봉/일봉/4시간봉`으로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
@@ -1868,11 +1906,16 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         st.warning("선택한 기간에 데이터가 없습니다. 기간을 넓혀주세요.")
         return
     frame = build_long_short_signals(filtered_frame)
+    trade_count, win_rate_pct, cumulative_return_pct = _backtest_long_performance(frame)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Long Open", f"{int(frame['long_open'].sum())}")
     metric_cols[1].metric("Long Close", f"{int(frame['long_close'].sum())}")
     metric_cols[2].metric("Short Open", f"{int(frame['short_open'].sum())}")
     metric_cols[3].metric("Short Close", f"{int(frame['short_close'].sum())}")
+    perf_cols = st.columns(3)
+    perf_cols[0].metric("거래 수", f"{trade_count}")
+    perf_cols[1].metric("승률", f"{win_rate_pct:.1f}%")
+    perf_cols[2].metric("누적 수익률", f"{cumulative_return_pct:.2f}%")
 
     price_fig = go.Figure()
     price_fig.add_trace(
