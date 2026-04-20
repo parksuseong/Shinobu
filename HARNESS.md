@@ -80,6 +80,7 @@ bash scripts/ec2_service.sh start
 `nginx-apply` writes a server config so:
 - `https://shinobu.ukin.dev/` -> Streamlit (`8501`)
 - `https://shinobu.ukin.dev/chart` -> Signal API chart JSON (`8766/chart`)
+- `https://shinobu.ukin.dev/v1/*` -> Signal API (`8766/v1/*`)
 
 Quick verify:
 

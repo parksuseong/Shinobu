@@ -274,14 +274,38 @@ server {
   ssl_certificate $NGINX_CERT_PATH;
   ssl_certificate_key $NGINX_CERT_KEY_PATH;
 
-  location = /chart {
-    proxy_pass http://127.0.0.1:$SIGNAL_API_PORT/chart;
+  location ^~ /chart {
+    proxy_pass http://127.0.0.1:$SIGNAL_API_PORT;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_read_timeout 60s;
+  }
+
+  location ^~ /v1/ {
+    proxy_pass http://127.0.0.1:$SIGNAL_API_PORT/v1/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_read_timeout 60s;
+  }
+
+  location = /docs {
+    proxy_pass http://127.0.0.1:$SIGNAL_API_PORT/docs;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+  }
+
+  location = /openapi.json {
+    proxy_pass http://127.0.0.1:$SIGNAL_API_PORT/openapi.json;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto \$scheme;
   }
 
   location / {
@@ -304,7 +328,7 @@ EOF
   sudo nginx -t
   echo "Reloading nginx..."
   sudo systemctl reload nginx
-  echo "nginx apply complete: https://$NGINX_DOMAIN -> / (streamlit:$STREAMLIT_PORT), /chart (api:$SIGNAL_API_PORT/chart)"
+  echo "nginx apply complete: https://$NGINX_DOMAIN -> / (streamlit:$STREAMLIT_PORT), /chart|/v1/* (api:$SIGNAL_API_PORT)"
 }
 
 main() {
