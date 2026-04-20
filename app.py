@@ -871,7 +871,7 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
     image_opacity = "1" if highlighted else "0.42"
     image_filter = "saturate(1.08) contrast(1.04)" if highlighted else "grayscale(0.22) saturate(0.72) brightness(0.78)"
 
-    caption_size = "30px" if highlighted else "22px"
+    caption_size = "20px" if highlighted else "18px"
     caption_weight = "900" if highlighted else "700"
     header_min_height = "122px"
     title_min_height = "20px"
@@ -880,7 +880,7 @@ def _render_emotion_card(title: str, caption: str, image_path: Path, fallback_pa
         f"""
         <div style="border:2px solid {border};background:{background};border-radius:14px;padding:10px 10px 6px 10px;box-shadow:{header_shadow};transition:all 0.2s ease;min-height:{header_min_height};display:flex;flex-direction:column;">
             <div style="font-size:13px;color:#e5e7eb;font-weight:700;margin-bottom:4px;min-height:{title_min_height};">{title}</div>
-            <div style="font-size:{caption_size};font-weight:{caption_weight};color:{accent};margin-bottom:0;text-align:center;text-shadow:{text_shadow};letter-spacing:-0.02em;min-height:{caption_min_height};display:flex;align-items:center;justify-content:center;line-height:1.25;">{caption}</div>
+            <div style="font-size:{caption_size};font-weight:{caption_weight};color:{accent};margin-bottom:0;text-align:center;text-shadow:{text_shadow};letter-spacing:-0.02em;min-height:{caption_min_height};display:flex;align-items:center;justify-content:center;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{caption}</div>
         </div>
         """,
         unsafe_allow_html=True,
