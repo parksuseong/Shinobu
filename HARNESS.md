@@ -50,6 +50,7 @@ bash scripts/ec2_service.sh start
 bash scripts/ec2_service.sh stop
 bash scripts/ec2_service.sh restart
 bash scripts/ec2_service.sh status
+bash scripts/ec2_service.sh nginx-apply
 ```
 
 데이터 리셋 + 재수집/재계산 + 재기동:
@@ -72,4 +73,16 @@ lsof -i :8766 -P -n
 ```bash
 kill -9 <PID>
 bash scripts/ec2_service.sh start
+```
+
+## Nginx domain route (single domain for UI + chart)
+
+`nginx-apply` writes a server config so:
+- `https://shinobu.ukin.dev/` -> Streamlit (`8501`)
+- `https://shinobu.ukin.dev/chart` -> Signal API chart JSON (`8766/chart`)
+
+Quick verify:
+
+```bash
+curl -i "https://shinobu.ukin.dev/chart?kind=overlay&symbol=122630.KS&pair_symbol=252670.KS&strategy_name=src&start_date=2026-04-01&end_date=2026-04-17&include_markers=1"
 ```

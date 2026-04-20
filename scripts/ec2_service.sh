@@ -9,6 +9,10 @@ LOG_DIR="$ROOT_DIR/.streamlit"
 STREAMLIT_HOST="${STREAMLIT_HOST:-0.0.0.0}"
 STREAMLIT_PORT="${STREAMLIT_PORT:-8501}"
 SIGNAL_API_PORT="${SIGNAL_API_PORT:-8766}"
+NGINX_DOMAIN="${NGINX_DOMAIN:-shinobu.ukin.dev}"
+NGINX_CONF_PATH="${NGINX_CONF_PATH:-/etc/nginx/conf.d/shinobu.conf}"
+NGINX_CERT_PATH="${NGINX_CERT_PATH:-/etc/letsencrypt/live/$NGINX_DOMAIN/fullchain.pem}"
+NGINX_CERT_KEY_PATH="${NGINX_CERT_KEY_PATH:-/etc/letsencrypt/live/$NGINX_DOMAIN/privkey.pem}"
 
 STREAMLIT_PID_FILE="$LOG_DIR/streamlit.pid"
 SIGNAL_PID_FILE="$LOG_DIR/signal_api.pid"
@@ -22,6 +26,7 @@ Usage:
   bash scripts/ec2_service.sh restart     # stop then start
   bash scripts/ec2_service.sh reset       # stop -> clear sqlite caches -> force startup re-init -> start
   bash scripts/ec2_service.sh status      # show process status
+  bash scripts/ec2_service.sh nginx-apply # write nginx conf (/ + /chart) and reload nginx
 EOF
 }
 
@@ -251,6 +256,57 @@ PY
   echo "Reset flow complete. Streamlit will recollect and recalculate on startup."
 }
 
+apply_nginx_conf() {
+  local tmp_conf
+  tmp_conf="$(mktemp)"
+
+  cat >"$tmp_conf" <<EOF
+server {
+  listen 80;
+  server_name $NGINX_DOMAIN;
+  return 301 https://\$host\$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name $NGINX_DOMAIN;
+
+  ssl_certificate $NGINX_CERT_PATH;
+  ssl_certificate_key $NGINX_CERT_KEY_PATH;
+
+  location = /chart {
+    proxy_pass http://127.0.0.1:$SIGNAL_API_PORT/chart;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_read_timeout 60s;
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:$STREAMLIT_PORT;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_read_timeout 86400;
+  }
+}
+EOF
+
+  echo "Applying nginx config to $NGINX_CONF_PATH"
+  sudo cp "$tmp_conf" "$NGINX_CONF_PATH"
+  rm -f "$tmp_conf"
+
+  echo "Validating nginx config..."
+  sudo nginx -t
+  echo "Reloading nginx..."
+  sudo systemctl reload nginx
+  echo "nginx apply complete: https://$NGINX_DOMAIN -> / (streamlit:$STREAMLIT_PORT), /chart (api:$SIGNAL_API_PORT/chart)"
+}
+
 main() {
   local cmd="${1:-}"
   case "$cmd" in
@@ -260,6 +316,7 @@ main() {
     restart) stop_all; start_all ;;
     reset) reset_data ;;
     status) status_all ;;
+    nginx-apply) apply_nginx_conf ;;
     *) usage; exit 1 ;;
   esac
 }
