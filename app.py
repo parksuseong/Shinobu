@@ -1767,10 +1767,10 @@ def _spread_marker_y(
     return (base_y - distance).where(mask)
 
 
-def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, int, float, float]:
+def _backtest_combined_performance(frame: pd.DataFrame) -> tuple[int, int, float, float]:
     if frame.empty:
         return 0, 0, 0.0, 0.0
-    in_position = False
+    position: str | None = None
     entry_price = 0.0
     trade_returns: list[float] = []
     closed_returns: list[float] = []
@@ -1781,22 +1781,41 @@ def _backtest_long_performance(frame: pd.DataFrame) -> tuple[int, int, float, fl
             continue
         long_open = bool(row.get("long_open", False))
         long_close = bool(row.get("long_close", False))
+        short_open = bool(row.get("short_open", False))
+        short_close = bool(row.get("short_close", False))
 
-        if not in_position and long_open:
-            in_position = True
-            entry_price = close_price
-            continue
-        if in_position and long_close:
+        # Close first so same-candle switch (close + open) is reflected in order.
+        if position == "long" and long_close:
             ret = (close_price / entry_price) - 1.0 if entry_price > 0 else 0.0
             trade_returns.append(ret)
             closed_returns.append(ret)
-            in_position = False
+            position = None
+            entry_price = 0.0
+        elif position == "short" and short_close:
+            ret = (entry_price / close_price) - 1.0 if entry_price > 0 else 0.0
+            trade_returns.append(ret)
+            closed_returns.append(ret)
+            position = None
             entry_price = 0.0
 
-    if in_position and entry_price > 0:
+        if position is not None:
+            continue
+
+        if long_open and not short_open:
+            position = "long"
+            entry_price = close_price
+            continue
+        if short_open and not long_open:
+            position = "short"
+            entry_price = close_price
+
+    if position is not None and entry_price > 0:
         last_close = float(frame.iloc[-1].get("Close", 0.0) or 0.0)
         if last_close > 0:
-            trade_returns.append((last_close / entry_price) - 1.0)
+            if position == "long":
+                trade_returns.append((last_close / entry_price) - 1.0)
+            elif position == "short":
+                trade_returns.append((entry_price / last_close) - 1.0)
 
     if not trade_returns:
         return 0, 0, 0.0, 0.0
@@ -1913,7 +1932,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         st.warning("선택한 기간에 데이터가 없습니다. 기간을 넓혀주세요.")
         return
     frame = build_long_short_signals(filtered_frame)
-    closed_trade_count, trade_count, win_rate_pct, cumulative_return_pct = _backtest_long_performance(frame)
+    closed_trade_count, trade_count, win_rate_pct, cumulative_return_pct = _backtest_combined_performance(frame)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Long Open", f"{int(frame['long_open'].sum())}")
     metric_cols[1].metric("Long Close", f"{int(frame['long_close'].sum())}")
