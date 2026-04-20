@@ -1766,6 +1766,25 @@ def _marker_y(frame: pd.DataFrame, mask: pd.Series, region: str, extra_scale: fl
     return (frame["Low"] - offset).where(mask)
 
 
+def _spread_marker_y(
+    frame: pd.DataFrame,
+    base_y: pd.Series,
+    mask: pd.Series,
+    *,
+    region: str,
+    level: int,
+) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=float)
+    span = (frame["High"] - frame["Low"]).astype(float)
+    fallback = frame["Close"].abs().astype(float) * 0.01
+    gap = span.where(span > 0, fallback).fillna(fallback).replace(0, 1.0) * 0.55
+    distance = gap * max(int(level), 0)
+    if region == "upper":
+        return (base_y + distance).where(mask)
+    return (base_y - distance).where(mask)
+
+
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 백테스팅")
     st.caption("yfinance 기반 `일봉/4시간봉`으로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
@@ -1859,8 +1878,13 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     short_close = frame.loc[frame["short_close"]]
     long_open_y = _marker_y(frame, frame["long_open"], "lower", 1.40)
     long_close_y = _marker_y(frame, frame["long_close"], "upper", 1.40)
-    short_open_y = _marker_y(frame, frame["short_open"], "upper", 1.90)
-    short_close_y = _marker_y(frame, frame["short_close"], "lower", 1.90)
+    short_open_y = _marker_y(frame, frame["short_open"], "upper", 1.40)
+    short_close_y = _marker_y(frame, frame["short_close"], "lower", 1.40)
+    # If two markers share the same candle/region, push one step farther to avoid overlap.
+    long_open_y = _spread_marker_y(frame, long_open_y, frame["long_open"], region="lower", level=0)
+    short_close_y = _spread_marker_y(frame, short_close_y, frame["short_close"], region="lower", level=1)
+    long_close_y = _spread_marker_y(frame, long_close_y, frame["long_close"], region="upper", level=0)
+    short_open_y = _spread_marker_y(frame, short_open_y, frame["short_open"], region="upper", level=1)
 
     if not long_open.empty:
         price_fig.add_trace(
