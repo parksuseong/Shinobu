@@ -1829,17 +1829,11 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                     strategy_name=profile_name,
                     symbol=resolved_symbol,
                 )
-                filtered_frame = _filter_frame_by_date(strategy_frame, start_value, end_value)
-                if filtered_frame.empty:
-                    raise ValueError("선택한 기간에 데이터가 없습니다.")
-                signal_frame = _build_long_short_signals(filtered_frame)
             st.session_state[BACKTEST_RESULT_STATE_KEY] = {
                 "symbol": resolved_symbol,
                 "name": resolved_name,
                 "timeframe": timeframe,
-                "start": start_value.isoformat(),
-                "end": end_value.isoformat(),
-                "frame": signal_frame,
+                "strategy_frame": strategy_frame,
             }
         except Exception as exc:
             st.session_state[BACKTEST_RESULT_STATE_KEY] = {"error": str(exc)}
@@ -1852,10 +1846,22 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         st.error(f"백테스트 실패: {result['error']}")
         return
 
+    current_start = pd.Timestamp(start_date).date()
+    current_end = pd.Timestamp(end_date).date()
+    if current_start > current_end:
+        current_start, current_end = current_end, current_start
     st.caption(
-        f"{result['name']} ({result['symbol']}) · {result['timeframe']} · {result['start']} ~ {result['end']}"
+        f"{result['name']} ({result['symbol']}) · {result['timeframe']} · {current_start.isoformat()} ~ {current_end.isoformat()}"
     )
-    frame = result["frame"]
+    strategy_frame = result.get("strategy_frame")
+    if not isinstance(strategy_frame, pd.DataFrame):
+        st.error("백테스트 데이터가 없어 다시 `신호 계산`이 필요합니다.")
+        return
+    filtered_frame = _filter_frame_by_date(strategy_frame, current_start, current_end)
+    if filtered_frame.empty:
+        st.warning("선택한 기간에 데이터가 없습니다. 기간을 넓혀주세요.")
+        return
+    frame = _build_long_short_signals(filtered_frame)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Long Open", f"{int(frame['long_open'].sum())}")
     metric_cols[1].metric("Long Close", f"{int(frame['long_close'].sum())}")
