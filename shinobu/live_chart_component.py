@@ -41,11 +41,12 @@ const hostPort = hostWindow.location.port || "";
 const isLocalHost = ["localhost", "127.0.0.1"].includes(hostName);
 const isIpv4Host = /^(\\d{1,3}\\.){3}\\d{1,3}$/.test(hostName);
 const isDirectStreamlit = hostPort === "8501";
-const chartBaseUrl = (isLocalHost || isIpv4Host || isDirectStreamlit)
-  ? `${{hostWindow.location.protocol}}//${{hostName}}:8766`
-  : `${{hostWindow.location.origin}}/api`;
+const isDirectApi = isLocalHost || isIpv4Host || isDirectStreamlit;
+const chartEndpointBase = isDirectApi
+  ? `${{hostWindow.location.protocol}}//${{hostName}}:8766/v1/chart`
+  : `${{hostWindow.location.origin}}/chart`;
 const endpointBase =
-  `${{chartBaseUrl}}/v1/chart?kind=overlay&symbol={symbol}` +
+  `${{chartEndpointBase}}?kind=overlay&symbol={symbol}` +
   `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}`;
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
