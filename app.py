@@ -32,6 +32,7 @@ from shinobu.cache_db import (
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
 from shinobu.chart_payload import ensure_live_chart_prewarm_bundle, run_live_chart_prewarm_sync
 from shinobu.live_chart_component import build_live_chart_html
+from shinobu.backtest_engine import build_long_short_signals, get_backtest_job, submit_backtest_job
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
@@ -86,6 +87,7 @@ PAIR_RECOVERY_INTERVAL_SECONDS = 60.0
 PAIR_RECOVERY_IGNORE_RECENT_MINUTES = 10
 PAIR_RECOVERY_LOCK_NAME = "pair_candle_recovery"
 BACKTEST_RESULT_STATE_KEY = "backtest_result"
+BACKTEST_JOB_ID_STATE_KEY = "backtest_job_id"
 
 
 def _get_pair_recovery_ignore_recent_minutes(now: pd.Timestamp | None = None) -> int:
@@ -1735,26 +1737,6 @@ def _filter_frame_by_date(frame: pd.DataFrame, start_value: date, end_value: dat
     return frame.loc[(frame.index >= start_ts) & (frame.index <= end_ts)].copy()
 
 
-def _load_backtest_frame_from_yfinance(symbol: str, timeframe_label: str) -> pd.DataFrame:
-    allowed = {"30분봉", "일봉", "4시간봉"}
-    if timeframe_label not in allowed:
-        raise ValueError("백테스팅 타임프레임은 30분봉/일봉/4시간봉만 지원합니다.")
-    frame = market_data._load_yfinance_data(symbol, timeframe_label)  # noqa: SLF001
-    if frame.empty:
-        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
-    return frame[["Open", "High", "Low", "Close", "Volume"]].dropna()
-
-
-def _build_long_short_signals(strategy_frame: pd.DataFrame) -> pd.DataFrame:
-    frame = strategy_frame.copy()
-    # SRC is long-biased (`buy_open`/`buy_close`); mirror it for short leg visibility.
-    frame["long_open"] = frame["buy_open"].astype(bool)
-    frame["long_close"] = frame["buy_close"].astype(bool)
-    frame["short_open"] = frame["buy_close"].astype(bool)
-    frame["short_close"] = frame["buy_open"].astype(bool)
-    return frame
-
-
 def _marker_y(frame: pd.DataFrame, mask: pd.Series, region: str, extra_scale: float = 1.0) -> pd.Series:
     if frame.empty:
         return pd.Series(dtype=float)
@@ -1812,31 +1794,24 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
 
     run_clicked = st.button("신호 계산", type="primary", key="backtest-run-button")
     if run_clicked:
-        start_value = pd.Timestamp(start_date).date()
-        end_value = pd.Timestamp(end_date).date()
-        if start_value > end_value:
-            start_value, end_value = end_value, start_value
         try:
             resolved_symbol, resolved_name = market_data.resolve_symbol(symbol_input)
-            with st.spinner(f"{timeframe} 수집 및 신호 계산 중..."):
-                source_frame = _load_backtest_frame_from_yfinance(resolved_symbol, timeframe)
-                if source_frame.empty:
-                    raise ValueError("yfinance에서 데이터를 받지 못했습니다.")
-                strategy_frame = calculate_strategy_cached(
-                    source_frame,
-                    adjustments,
-                    timeframe,
-                    strategy_name=profile_name,
-                    symbol=resolved_symbol,
-                )
+            job_id = submit_backtest_job(
+                symbol=resolved_symbol,
+                timeframe=timeframe,
+                strategy_name=profile_name,
+                adjustments=adjustments,
+            )
+            st.session_state[BACKTEST_JOB_ID_STATE_KEY] = job_id
             st.session_state[BACKTEST_RESULT_STATE_KEY] = {
                 "symbol": resolved_symbol,
                 "name": resolved_name,
                 "timeframe": timeframe,
-                "strategy_frame": strategy_frame,
+                "job_id": job_id,
             }
         except Exception as exc:
             st.session_state[BACKTEST_RESULT_STATE_KEY] = {"error": str(exc)}
+            st.session_state[BACKTEST_JOB_ID_STATE_KEY] = ""
 
     result = st.session_state.get(BACKTEST_RESULT_STATE_KEY)
     if not isinstance(result, dict):
@@ -1853,9 +1828,24 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
     st.caption(
         f"{result['name']} ({result['symbol']}) · {result['timeframe']} · {current_start.isoformat()} ~ {current_end.isoformat()}"
     )
-    strategy_frame = result.get("strategy_frame")
+    job_id = str(result.get("job_id") or st.session_state.get(BACKTEST_JOB_ID_STATE_KEY) or "")
+    if not job_id:
+        st.info("신호 계산을 먼저 실행해주세요.")
+        return
+    job = get_backtest_job(job_id)
+    if not isinstance(job, dict):
+        st.error("백테스트 작업 정보를 찾을 수 없습니다. 다시 실행해주세요.")
+        return
+    status = str(job.get("status", "queued"))
+    if status in {"queued", "running"}:
+        st.info("백테스트 계산이 백그라운드 스레드에서 실행 중입니다. 잠시 후 다시 확인해주세요.")
+        return
+    if status == "failed":
+        st.error(f"백테스트 실패: {job.get('error', '알 수 없는 오류')}")
+        return
+    strategy_frame = job.get("strategy_frame")
     if not isinstance(strategy_frame, pd.DataFrame):
-        st.error("백테스트 데이터가 없어 다시 `신호 계산`이 필요합니다.")
+        st.error("백테스트 데이터가 유효하지 않습니다. 다시 실행해주세요.")
         return
     filtered_frame = _filter_frame_by_date(strategy_frame, current_start, current_end)
     if filtered_frame.empty:
