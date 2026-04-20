@@ -18,6 +18,7 @@ from shinobu.live_trading import (
     SIGNAL_TO_TRADE_SYMBOL,
     TRADE_TO_SIGNAL_SYMBOL,
     get_live_orders,
+    get_live_runtime_state,
     get_live_started_at,
 )
 from shinobu.strategy import DEFAULT_STRATEGY_NAME, StrategyAdjustments
@@ -152,6 +153,8 @@ def _build_payload_cache_key(
 ) -> str:
     started_at = get_live_started_at()
     started_at_text = started_at.isoformat() if started_at is not None else ""
+    runtime_state = get_live_runtime_state()
+    last_order_at = str(runtime_state.get("last_order_at", "") or "")
     return "|".join(
         [
             kind,
@@ -164,6 +167,7 @@ def _build_payload_cache_key(
             "m1" if include_markers else "m0",
             f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}",
             started_at_text,
+            last_order_at,
         ]
     )
 
@@ -422,6 +426,8 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
         runtime_frame["candle_time"] = pd.to_datetime(runtime_frame["candle_time"], errors="coerce") if "candle_time" in runtime_frame.columns else pd.NaT
         runtime_frame["name"] = runtime_frame["symbol"].map(market_data.display_name) if "symbol" in runtime_frame.columns else ""
         runtime_frame["source"] = "runtime"
+        if "execution_tag" not in runtime_frame.columns:
+            runtime_frame["execution_tag"] = ""
 
     execution_marker_frame = pd.DataFrame()
     if not execution_frame.empty:
@@ -429,6 +435,7 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
         execution_marker_frame["candle_time"] = pd.to_datetime(execution_marker_frame["timestamp"]).dt.floor("5min")
         execution_marker_frame["reason"] = "실제 체결"
         execution_marker_frame["source"] = "execution"
+        execution_marker_frame["execution_tag"] = ""
 
     if runtime_frame.empty and execution_marker_frame.empty:
         return []
@@ -464,7 +471,16 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
 
         side = str(order.get("side", ""))
         y_value = float(candle["Low"]) * 0.99625 if side == "buy" else float(candle["High"]) * 1.00375
-        label = f"실매수 - {market_data.display_name(order['symbol'])}" if side == "buy" else f"실매도 - {market_data.display_name(order['symbol'])}"
+        reason = str(order.get("reason", "") or "").strip()
+        execution_tag = str(order.get("execution_tag", "") or "").strip().lower()
+        if side == "buy":
+            label = f"실매수 - {market_data.display_name(order['symbol'])}"
+        elif execution_tag == "reconcile_close":
+            label = f"보정청산 - {market_data.display_name(order['symbol'])}"
+        else:
+            label = f"실매도 - {market_data.display_name(order['symbol'])}"
+        if reason:
+            label = f"{label} ({reason})"
         markers.append(
             {
                 "x": int(x_value),
@@ -473,7 +489,8 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
                 "side": side,
                 "time": pd.Timestamp(order["candle_time"]).strftime("%Y-%m-%d %H:%M"),
                 "price": float(order.get("price", 0) or 0),
-                "reason": str(order.get("reason", "")),
+                "reason": reason,
+                "executionTag": execution_tag,
             }
         )
     return markers

@@ -158,6 +158,7 @@ def _append_order(
     price: float,
     reason: str,
     candle_time: pd.Timestamp,
+    execution_tag: str = "",
 ) -> dict[str, Any]:
     entry = {
         "symbol": symbol,
@@ -165,6 +166,7 @@ def _append_order(
         "quantity": quantity,
         "price": float(price),
         "reason": reason,
+        "execution_tag": str(execution_tag or ""),
         "candle_time": candle_time.strftime("%Y-%m-%d %H:%M"),
         "timestamp": _now_text(),
         "order_no": "",
@@ -710,6 +712,7 @@ def _submit_live_order(
     reason: str,
     candle_time: pd.Timestamp,
     baseline_quantity: int,
+    execution_tag: str = "",
 ) -> None:
     current_baseline = int(baseline_quantity)
     round_count = 0
@@ -758,6 +761,7 @@ def _submit_live_order(
             reason=reason,
             candle_time=candle_time,
             baseline_quantity=baseline_for_fill,
+            execution_tag=execution_tag,
         )
         if side == "buy" and used_cash_fallback:
             buy_half_ladder_mode = True
@@ -800,6 +804,7 @@ def _submit_live_order_once(
     reason: str,
     candle_time: pd.Timestamp,
     baseline_quantity: int,
+    execution_tag: str = "",
 ) -> bool:
     last_error: Exception | None = None
     working_quantity = max(int(quantity), 0)
@@ -826,7 +831,16 @@ def _submit_live_order_once(
                     working_quantity = recalculated_quantity
 
             broker_output = place_domestic_order(symbol.replace(".KS", ""), side, working_quantity)
-            order_entry = _append_order(state, symbol, side, working_quantity, expected_price, reason, candle_time)
+            order_entry = _append_order(
+                state,
+                symbol,
+                side,
+                working_quantity,
+                expected_price,
+                reason,
+                candle_time,
+                execution_tag=execution_tag,
+            )
             order_orgno, order_no = _extract_order_numbers(broker_output)
             order_entry["order_orgno"] = order_orgno
             order_entry["order_no"] = order_no
@@ -1021,6 +1035,7 @@ def process_live_trading_cycle(
                 pending_reason or "지표 과열 청산",
                 target_time,
                 baseline_quantity=current_quantity,
+                execution_tag="reconcile_close",
             )
             fetch_domestic_balance.clear()
             positions, _ = fetch_domestic_balance()
