@@ -5,9 +5,12 @@ import sqlite3
 from typing import Any
 
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from shinobu.cache_db import DB_PATH
+from shinobu.chart_controller import build_chart_payload_controlled
+from shinobu.strategy import StrategyAdjustments
 from shinobu.strategy import DEFAULT_STRATEGY_NAME
 
 
@@ -76,6 +79,13 @@ app = FastAPI(
         "- Swagger UI: /docs\n"
         "- ReDoc: /redoc"
     ),
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -421,3 +431,35 @@ def get_recent_executions(
     rows = sorted(rows, key=lambda row: str(row.get("timestamp", "")), reverse=True)[: int(limit)]
     items = [_to_execution_item(row) for row in rows]
     return ExecutionListResponse(count=len(items), updated_at=updated_at, items=items)
+
+
+@app.get("/v1/chart", tags=["chart"])
+def get_chart_payload(
+    kind: str = Query("overlay"),
+    symbol: str = Query("122630.KS"),
+    pair_symbol: str | None = Query(None),
+    stoch_pct: int = Query(0),
+    cci_pct: int = Query(0),
+    rsi_pct: int = Query(0),
+    strategy_name: str = Query(DEFAULT_STRATEGY_NAME),
+    visible_business_days: int = Query(5, ge=1, le=30),
+    start_date: str = Query(""),
+    end_date: str = Query(""),
+    include_markers: bool = Query(True),
+) -> dict[str, Any]:
+    adjustments = StrategyAdjustments(
+        stoch_pct=int(stoch_pct),
+        cci_pct=int(cci_pct),
+        rsi_pct=int(rsi_pct),
+    )
+    return build_chart_payload_controlled(
+        kind=kind,
+        symbol=symbol,
+        pair_symbol=pair_symbol,
+        adjustments=adjustments,
+        strategy_name=strategy_name,
+        visible_business_days=int(visible_business_days),
+        start_date=str(start_date or "").strip(),
+        end_date=str(end_date or "").strip(),
+        include_markers=bool(include_markers),
+    )

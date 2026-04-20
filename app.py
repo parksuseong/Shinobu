@@ -31,7 +31,6 @@ from shinobu.cache_db import (
 )
 from shinobu.chart import build_candlestick_chart, update_candlestick_chart
 from shinobu.chart_payload import ensure_live_chart_prewarm_bundle, run_live_chart_prewarm_sync
-from shinobu.chart_server import ensure_chart_server
 from shinobu.live_chart_component import build_live_chart_html
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.strategy_cache import calculate_strategy_cached
@@ -1365,7 +1364,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     st.caption(f"차트 반영 전략: {strategy_label} · 표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
     components.html(
         build_live_chart_html(
-            server_url=ensure_chart_server(),
+            server_url="",
             symbol=symbol,
             pair_symbol=pair_symbol,
             stoch_pct=adjustments.stoch_pct,
@@ -1715,7 +1714,6 @@ def main() -> None:
     init_execution_mode_state()
     adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
     profile_name = get_current_strategy_profile()
-    ensure_chart_server()
 
     render_header(profile_name)
     profile_name = render_live_selector_bar()

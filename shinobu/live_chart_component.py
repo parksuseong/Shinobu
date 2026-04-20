@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
 
 
 def build_live_chart_html(
@@ -19,8 +18,6 @@ def build_live_chart_html(
     render_nonce: int,
 ) -> str:
     pair_query = pair_symbol or ""
-    parsed_server = urlparse(server_url)
-    chart_port = parsed_server.port or 8765
     root_suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", f"{symbol}-{pair_query or 'none'}-{strategy_name}-{render_nonce}-{stoch_pct}-{cci_pct}-{rsi_pct}")
     main_root_id = f"main-chart-root-{root_suffix}"
     indicator_root_id = f"indicator-chart-root-{root_suffix}"
@@ -39,9 +36,12 @@ const indicatorRoot = document.getElementById("{indicator_root_id}");
 const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
 const markerFilterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
-const chartBaseUrl = `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:{chart_port}`;
+const isLocalHost = ["localhost", "127.0.0.1"].includes(hostWindow.location.hostname);
+const chartBaseUrl = isLocalHost
+  ? `${{hostWindow.location.protocol}}//${{hostWindow.location.hostname}}:8766`
+  : `${{hostWindow.location.origin}}/api`;
 const endpointBase =
-  `${{chartBaseUrl}}/chart?kind=overlay&symbol={symbol}` +
+  `${{chartBaseUrl}}/v1/chart?kind=overlay&symbol={symbol}` +
   `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}`;
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
