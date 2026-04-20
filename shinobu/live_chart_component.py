@@ -42,12 +42,15 @@ const isLocalHost = ["localhost", "127.0.0.1"].includes(hostName);
 const isIpv4Host = /^(\\d{1,3}\\.){3}\\d{1,3}$/.test(hostName);
 const isDirectStreamlit = hostPort === "8501";
 const isDirectApi = isLocalHost || isIpv4Host || isDirectStreamlit;
-const chartEndpointBase = isDirectApi
-  ? `${{hostWindow.location.protocol}}//${{hostName}}:8766/chart`
-  : `${{hostWindow.location.origin}}/chart`;
-const endpointBase =
-  `${{chartEndpointBase}}?kind=overlay&symbol={symbol}` +
-  `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}`;
+const chartEndpointBases = isDirectApi
+  ? [
+      `${{hostWindow.location.protocol}}//${{hostName}}:8766/chart`,
+      `${{hostWindow.location.protocol}}//${{hostName}}:8766/v1/chart`
+    ]
+  : [
+      `${{hostWindow.location.origin}}/chart`,
+      `${{hostWindow.location.origin}}/v1/chart`
+    ];
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
   {{ key: "primary_open", label: "레버리지 Open" }},
@@ -744,10 +747,28 @@ async function applyMarkerPayload(basePayload, markerPayload) {{
 }}
 
 async function fetchPayload(includeMarkers) {{
-  const endpoint = `${{endpointBase}}&include_markers=${{includeMarkers ? "1" : "0"}}`;
-  const response = await fetch(endpoint, {{ cache: "no-store" }});
-  if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
-  return response.json();
+  let lastError = null;
+  for (const base of chartEndpointBases) {{
+    const endpoint =
+      `${{base}}?kind=overlay&symbol={symbol}` +
+      `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}` +
+      `&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}` +
+      `&include_markers=${{includeMarkers ? "1" : "0"}}`;
+    try {{
+      const response = await fetch(endpoint, {{ cache: "no-store" }});
+      if (!response.ok) {{
+        throw new Error(`HTTP ${{response.status}}`);
+      }}
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+      if (!contentType.includes("application/json")) {{
+        throw new Error(`Unexpected content-type: ${{contentType || "unknown"}}`);
+      }}
+      return response.json();
+    }} catch (error) {{
+      lastError = error;
+    }}
+  }}
+  throw lastError || new Error("Failed to fetch chart payload");
 }}
 
 async function refreshCharts() {{
