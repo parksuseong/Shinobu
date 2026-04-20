@@ -1738,9 +1738,18 @@ def render_live_trading_panel(pair_symbol: str | None) -> None:
 def _filter_frame_by_date(frame: pd.DataFrame, start_value: date, end_value: date) -> pd.DataFrame:
     if frame.empty:
         return frame
+    index = pd.DatetimeIndex(frame.index)
     start_ts = pd.Timestamp(start_value)
     end_ts = pd.Timestamp(end_value) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
-    return frame.loc[(frame.index >= start_ts) & (frame.index <= end_ts)].copy()
+    if index.tz is not None:
+        start_ts = start_ts.tz_localize(index.tz) if start_ts.tzinfo is None else start_ts.tz_convert(index.tz)
+        end_ts = end_ts.tz_localize(index.tz) if end_ts.tzinfo is None else end_ts.tz_convert(index.tz)
+    else:
+        if start_ts.tzinfo is not None:
+            start_ts = start_ts.tz_convert(None)
+        if end_ts.tzinfo is not None:
+            end_ts = end_ts.tz_convert(None)
+    return frame.loc[(index >= start_ts) & (index <= end_ts)].copy()
 
 
 def _marker_y(frame: pd.DataFrame, mask: pd.Series, region: str, extra_scale: float = 1.0) -> pd.Series:
