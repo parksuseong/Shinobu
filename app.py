@@ -1852,10 +1852,9 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 elapsed_text = f"{elapsed_seconds}초"
             except Exception:
                 elapsed_text = "-"
-        st.info(f"백테스트 계산 실행 중 (경과: {elapsed_text}).")
-        st.caption("완료 확인을 위해 아래 버튼을 눌러 상태를 갱신하세요.")
-        if st.button("상태 새로고침", key="backtest-refresh-button"):
-            st.rerun()
+        st.info(f"백테스트 계산 실행 중 (경과: {elapsed_text}). 완료되면 자동으로 결과를 갱신합니다.")
+        time.sleep(1.2)
+        st.rerun()
         return
     if status == "failed":
         st.error(f"백테스트 실패: {job.get('error', '알 수 없는 오류')}")
