@@ -1415,9 +1415,22 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
 
     function buildFigure(data) {{
       const x = data.candles.map((_, index) => index);
-      const step = Math.max(1, Math.ceil(x.length / 8));
-      const tickvals = x.filter((_, index) => index % step === 0 || index === x.length - 1);
-      const ticktext = data.tickText.filter((_, index) => index % step === 0 || index === x.length - 1);
+      const tickSource = data.tickText || [];
+      const maxTickLabels = 6;
+      const interval = Math.max(1, Math.ceil(Math.max(1, x.length - 1) / Math.max(1, maxTickLabels - 1)));
+      const tickIndices = [];
+      for (let i = 0; i < x.length; i += interval) {{
+        tickIndices.push(i);
+      }}
+      if (x.length > 0) {{
+        const lastIndex = x.length - 1;
+        const lastSelected = tickIndices.length ? tickIndices[tickIndices.length - 1] : -1;
+        if (lastIndex - lastSelected >= Math.max(1, Math.floor(interval * 0.7))) {{
+          tickIndices.push(lastIndex);
+        }}
+      }}
+      const tickvals = tickIndices.map((idx) => x[idx]);
+      const ticktext = tickIndices.map((idx) => tickSource[idx] ?? "");
 
       return {{
         data: [
