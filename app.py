@@ -85,6 +85,7 @@ ACCOUNT_SUMMARY_REFRESH_SECONDS = 30.0
 PAIR_RECOVERY_INTERVAL_SECONDS = 60.0
 PAIR_RECOVERY_IGNORE_RECENT_MINUTES = 10
 PAIR_RECOVERY_LOCK_NAME = "pair_candle_recovery"
+BACKTEST_RESULT_STATE_KEY = "backtest_result"
 
 
 def _get_pair_recovery_ignore_recent_minutes(now: pd.Timestamp | None = None) -> int:
@@ -1726,6 +1727,305 @@ def render_live_trading_panel(pair_symbol: str | None) -> None:
     )
 
 
+def _filter_frame_by_date(frame: pd.DataFrame, start_value: date, end_value: date) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    start_ts = pd.Timestamp(start_value)
+    end_ts = pd.Timestamp(end_value) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+    return frame.loc[(frame.index >= start_ts) & (frame.index <= end_ts)].copy()
+
+
+def _simulate_backtest(
+    strategy_frame: pd.DataFrame,
+    *,
+    initial_cash: float,
+    fee_bps: float,
+) -> dict[str, object]:
+    fee_rate = max(float(fee_bps), 0.0) / 10_000.0
+    cash = float(initial_cash)
+    shares = 0
+    entry_time: pd.Timestamp | None = None
+    entry_price = 0.0
+    entry_fee = 0.0
+    trades: list[dict[str, object]] = []
+    equity_rows: list[dict[str, object]] = []
+
+    for timestamp, row in strategy_frame.iterrows():
+        close_price = float(row.get("Close", 0.0) or 0.0)
+        if close_price <= 0:
+            continue
+        buy_open = bool(row.get("buy_open", False))
+        buy_close = bool(row.get("buy_close", False))
+
+        if shares <= 0 and buy_open:
+            purchasable = int(cash // (close_price * (1 + fee_rate)))
+            if purchasable > 0:
+                gross_cost = float(purchasable) * close_price
+                entry_fee = gross_cost * fee_rate
+                cash -= gross_cost + entry_fee
+                shares = purchasable
+                entry_time = pd.Timestamp(timestamp)
+                entry_price = close_price
+        elif shares > 0 and buy_close:
+            gross_proceeds = float(shares) * close_price
+            exit_fee = gross_proceeds * fee_rate
+            cash += gross_proceeds - exit_fee
+            gross_entry_cost = float(shares) * entry_price
+            total_cost = gross_entry_cost + entry_fee + exit_fee
+            pnl = gross_proceeds - gross_entry_cost - entry_fee - exit_fee
+            trades.append(
+                {
+                    "entry_time": entry_time,
+                    "exit_time": pd.Timestamp(timestamp),
+                    "entry_price": entry_price,
+                    "exit_price": close_price,
+                    "shares": int(shares),
+                    "pnl": pnl,
+                    "return_pct": (pnl / total_cost * 100.0) if total_cost > 0 else 0.0,
+                    "forced_exit": False,
+                }
+            )
+            shares = 0
+            entry_time = None
+            entry_price = 0.0
+            entry_fee = 0.0
+
+        equity_rows.append(
+            {
+                "time": pd.Timestamp(timestamp),
+                "equity": cash + float(shares) * close_price,
+                "close": close_price,
+                "shares": int(shares),
+            }
+        )
+
+    if shares > 0 and not strategy_frame.empty:
+        last_timestamp = pd.Timestamp(strategy_frame.index[-1])
+        last_close = float(strategy_frame.iloc[-1].get("Close", 0.0) or 0.0)
+        if last_close > 0:
+            gross_proceeds = float(shares) * last_close
+            exit_fee = gross_proceeds * fee_rate
+            cash += gross_proceeds - exit_fee
+            gross_entry_cost = float(shares) * entry_price
+            total_cost = gross_entry_cost + entry_fee + exit_fee
+            pnl = gross_proceeds - gross_entry_cost - entry_fee - exit_fee
+            trades.append(
+                {
+                    "entry_time": entry_time,
+                    "exit_time": last_timestamp,
+                    "entry_price": entry_price,
+                    "exit_price": last_close,
+                    "shares": int(shares),
+                    "pnl": pnl,
+                    "return_pct": (pnl / total_cost * 100.0) if total_cost > 0 else 0.0,
+                    "forced_exit": True,
+                }
+            )
+            shares = 0
+            if equity_rows:
+                equity_rows[-1]["equity"] = cash
+                equity_rows[-1]["shares"] = 0
+
+    equity_frame = pd.DataFrame(equity_rows)
+    if equity_frame.empty:
+        final_equity = float(initial_cash)
+        max_drawdown_pct = 0.0
+    else:
+        equity_frame = equity_frame.sort_values("time")
+        rolling_peak = equity_frame["equity"].cummax()
+        drawdown = equity_frame["equity"] / rolling_peak - 1.0
+        final_equity = float(equity_frame.iloc[-1]["equity"])
+        max_drawdown_pct = float(drawdown.min() * 100.0)
+
+    trade_frame = pd.DataFrame(trades)
+    win_rate_pct = 0.0
+    if not trade_frame.empty and "pnl" in trade_frame.columns:
+        win_rate_pct = float((trade_frame["pnl"] > 0).mean() * 100.0)
+
+    return {
+        "equity_frame": equity_frame,
+        "trade_frame": trade_frame,
+        "final_equity": final_equity,
+        "total_return_pct": ((final_equity / float(initial_cash)) - 1.0) * 100.0 if initial_cash > 0 else 0.0,
+        "max_drawdown_pct": max_drawdown_pct,
+        "trade_count": int(len(trade_frame)),
+        "win_rate_pct": win_rate_pct,
+    }
+
+
+def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
+    st.markdown("#### 백테스팅")
+    st.caption("원하는 종목을 넣고 동일 전략(SRC) 신호(`buy_open`/`buy_close`)로 시뮬레이션을 실행합니다.")
+
+    today = pd.Timestamp.now().date()
+    default_end = today
+    default_start = today - pd.Timedelta(days=30)
+    col_a, col_b, col_c = st.columns([1.2, 1.0, 1.0], vertical_alignment="bottom")
+    with col_a:
+        symbol_input = st.text_input(
+            "종목",
+            value="122630",
+            key="backtest-symbol-input",
+            help="예: 122630, 252670, 005930, BTC-USD, 삼성전자",
+        )
+        timeframe = st.selectbox(
+            "타임프레임",
+            options=["5분봉", "15분봉", "30분봉", "1시간봉", "일봉"],
+            index=0,
+            key="backtest-timeframe-input",
+        )
+    with col_b:
+        start_date = st.date_input("시작일", value=default_start, key="backtest-start-date-input")
+        initial_cash = st.number_input("초기자본", min_value=100000.0, value=1_000_000.0, step=100_000.0, key="backtest-cash-input")
+    with col_c:
+        end_date = st.date_input("종료일", value=default_end, key="backtest-end-date-input")
+        fee_bps = st.number_input("수수료+슬리피지 (bp)", min_value=0.0, value=10.0, step=1.0, key="backtest-fee-input")
+
+    run_clicked = st.button("시뮬레이션 실행", type="primary", key="backtest-run-button")
+    if run_clicked:
+        start_value = pd.Timestamp(start_date).date()
+        end_value = pd.Timestamp(end_date).date()
+        if start_value > end_value:
+            start_value, end_value = end_value, start_value
+        try:
+            resolved_symbol, resolved_name = market_data.resolve_symbol(symbol_input)
+            with st.spinner("백테스트 계산 중..."):
+                source_frame = market_data.load_ui_chart_data_for_strategy(resolved_symbol, timeframe, profile_name)
+                strategy_frame = calculate_strategy_cached(
+                    source_frame,
+                    adjustments,
+                    timeframe,
+                    strategy_name=profile_name,
+                    symbol=resolved_symbol,
+                )
+                filtered_frame = _filter_frame_by_date(strategy_frame, start_value, end_value)
+                if filtered_frame.empty:
+                    raise ValueError("선택한 기간에 데이터가 없습니다.")
+                simulation = _simulate_backtest(
+                    filtered_frame,
+                    initial_cash=float(initial_cash),
+                    fee_bps=float(fee_bps),
+                )
+            st.session_state[BACKTEST_RESULT_STATE_KEY] = {
+                "symbol": resolved_symbol,
+                "name": resolved_name,
+                "timeframe": timeframe,
+                "start": start_value.isoformat(),
+                "end": end_value.isoformat(),
+                "frame": filtered_frame,
+                **simulation,
+            }
+        except Exception as exc:
+            st.session_state[BACKTEST_RESULT_STATE_KEY] = {"error": str(exc)}
+
+    result = st.session_state.get(BACKTEST_RESULT_STATE_KEY)
+    if not isinstance(result, dict):
+        st.info("입력값을 정하고 `시뮬레이션 실행`을 눌러주세요.")
+        return
+    if result.get("error"):
+        st.error(f"백테스트 실패: {result['error']}")
+        return
+
+    st.caption(
+        f"{result['name']} ({result['symbol']}) · {result['timeframe']} · {result['start']} ~ {result['end']}"
+    )
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("최종 자산", f"{float(result['final_equity']):,.0f}")
+    metric_cols[1].metric("총 수익률", f"{float(result['total_return_pct']):.2f}%")
+    metric_cols[2].metric("MDD", f"{float(result['max_drawdown_pct']):.2f}%")
+    metric_cols[3].metric("거래 횟수", f"{int(result['trade_count'])}")
+    metric_cols[4].metric("승률", f"{float(result['win_rate_pct']):.1f}%")
+
+    frame = result["frame"]
+    equity_frame = result["equity_frame"]
+    trade_frame = result["trade_frame"]
+
+    price_fig = go.Figure()
+    price_fig.add_trace(
+        go.Scatter(
+            x=frame.index,
+            y=frame["Close"],
+            mode="lines",
+            name="종가",
+            line={"color": "#60a5fa", "width": 1.8},
+        )
+    )
+    opens = frame.loc[frame["buy_open"].astype(bool)]
+    closes = frame.loc[frame["buy_close"].astype(bool)]
+    if not opens.empty:
+        price_fig.add_trace(
+            go.Scatter(
+                x=opens.index,
+                y=opens["Close"],
+                mode="markers",
+                name="buy_open",
+                marker={"color": "#22c55e", "symbol": "triangle-up", "size": 9},
+            )
+        )
+    if not closes.empty:
+        price_fig.add_trace(
+            go.Scatter(
+                x=closes.index,
+                y=closes["Close"],
+                mode="markers",
+                name="buy_close",
+                marker={"color": "#ef4444", "symbol": "triangle-down", "size": 9},
+            )
+        )
+    price_fig.update_layout(
+        height=420,
+        margin={"l": 24, "r": 24, "t": 24, "b": 24},
+        template="plotly_dark",
+        legend={"orientation": "h", "y": 1.02, "x": 0},
+    )
+
+    equity_fig = go.Figure()
+    if isinstance(equity_frame, pd.DataFrame) and not equity_frame.empty:
+        equity_fig.add_trace(
+            go.Scatter(
+                x=equity_frame["time"],
+                y=equity_frame["equity"],
+                mode="lines",
+                name="자산곡선",
+                line={"color": "#f59e0b", "width": 2},
+            )
+        )
+    equity_fig.update_layout(
+        height=320,
+        margin={"l": 24, "r": 24, "t": 24, "b": 24},
+        template="plotly_dark",
+    )
+
+    chart_left, chart_right = st.columns([1.4, 1.0], vertical_alignment="top")
+    with chart_left:
+        st.plotly_chart(price_fig, use_container_width=True)
+    with chart_right:
+        st.plotly_chart(equity_fig, use_container_width=True)
+
+    st.markdown("##### 체결 내역")
+    if isinstance(trade_frame, pd.DataFrame) and not trade_frame.empty:
+        display_trades = trade_frame.copy()
+        display_trades["entry_time"] = pd.to_datetime(display_trades["entry_time"]).dt.strftime("%Y-%m-%d %H:%M")
+        display_trades["exit_time"] = pd.to_datetime(display_trades["exit_time"]).dt.strftime("%Y-%m-%d %H:%M")
+        st.dataframe(
+            display_trades,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "entry_time": st.column_config.TextColumn("진입 시각"),
+                "exit_time": st.column_config.TextColumn("청산 시각"),
+                "entry_price": st.column_config.NumberColumn("진입가", format="%.2f"),
+                "exit_price": st.column_config.NumberColumn("청산가", format="%.2f"),
+                "shares": st.column_config.NumberColumn("수량", format="%d"),
+                "pnl": st.column_config.NumberColumn("손익", format="%.0f"),
+                "return_pct": st.column_config.NumberColumn("수익률(%)", format="%.2f"),
+                "forced_exit": st.column_config.CheckboxColumn("강제청산"),
+            },
+        )
+    else:
+        st.caption("기간 내 체결 내역이 없습니다.")
+
+
 @st.fragment(run_every="1s")
 def render_reset_running_page() -> None:
     state = _get_reset_state()
@@ -1769,25 +2069,30 @@ def main() -> None:
 
     render_header(profile_name)
     profile_name = render_live_selector_bar()
+    live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
 
-    left, right = st.columns([2.2, 1], vertical_alignment="top")
-    with right:
-        render_live_account_panel()
-        run_live_engine(loaded_symbol, pair_symbol, adjustments, profile_name)
-        render_live_trading_panel(pair_symbol)
-    with left:
-        render_live_trade_header(loaded_symbol, pair_symbol)
-        chart_slot = st.empty()
-        emotion_slot = st.empty()
-        history_slot = st.empty()
-        with emotion_slot.container():
-            render_emotion_section()
-        with chart_slot.container():
-            render_live_trade_chart(loaded_symbol, pair_symbol, adjustments, profile_name)
-        with history_slot.container():
-            st.markdown("---")
-            render_live_trade_history_panel()
-            render_closed_live_trade_history_panel()
+    with live_tab:
+        left, right = st.columns([2.2, 1], vertical_alignment="top")
+        with right:
+            render_live_account_panel()
+            run_live_engine(loaded_symbol, pair_symbol, adjustments, profile_name)
+            render_live_trading_panel(pair_symbol)
+        with left:
+            render_live_trade_header(loaded_symbol, pair_symbol)
+            chart_slot = st.empty()
+            emotion_slot = st.empty()
+            history_slot = st.empty()
+            with emotion_slot.container():
+                render_emotion_section()
+            with chart_slot.container():
+                render_live_trade_chart(loaded_symbol, pair_symbol, adjustments, profile_name)
+            with history_slot.container():
+                st.markdown("---")
+                render_live_trade_history_panel()
+                render_closed_live_trade_history_panel()
+
+    with backtest_tab:
+        render_backtest_tab(profile_name, adjustments)
 
 
 if __name__ == "__main__":
