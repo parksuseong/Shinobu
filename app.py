@@ -1490,7 +1490,7 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
           paper_bgcolor: "#131722",
           plot_bgcolor: "#131722",
           font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
-          margin: {{ l: 24, r: 56, t: 42, b: 64 }},
+          margin: {{ l: 36, r: 56, t: 42, b: 64 }},
           height: 600,
           dragmode: false,
           hovermode: "x unified",
@@ -1525,8 +1525,8 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
           xaxis2: {{ domain: [0, 1], anchor: "y2", tickmode: "array", tickvals, ticktext, showticklabels: false, showgrid: false, range: [-0.45, Math.max(x.length - 0.55, 1)], fixedrange: true, showspikes: true, spikemode: "across", spikecolor: "#4b5563", spikethickness: 1 }},
           yaxis2: {{ domain: [0, 0.24], side: "right", range: [-1.6, 1.6], tickmode: "array", tickvals: [-1, 0, 1], ticktext: ["하단", "0", "상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)" }},
           annotations: [
-            {{ x: 0.01, y: 1.04, xref: "paper", yref: "paper", showarrow: false, text: `${{data.symbolName}} · 5분봉 · 실전`, font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }} }},
-            {{ x: 0.01, y: 0.27, xref: "paper", yref: "paper", showarrow: false, text: "보조지표 (흰색 점선: 레버리지 / 주황 점선: 곱버스)", font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }} }}
+            {{ x: 0.012, y: 1.04, xref: "paper", yref: "paper", xanchor: "left", showarrow: false, text: `${{data.symbolName}} · 5분봉 · 실전`, font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }} }},
+            {{ x: 0.012, y: 0.27, xref: "paper", yref: "paper", xanchor: "left", showarrow: false, text: "보조지표 (흰색 점선: 레버리지 / 주황 점선: 곱버스)", font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }} }}
           ]
         }}
       }};
