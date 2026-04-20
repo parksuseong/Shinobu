@@ -1024,6 +1024,14 @@ def process_live_trading_cycle(
             current_symbol = current_position["symbol"]
             current_signal_symbol = current_position.get("signal_symbol", current_symbol)
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
+            # Keep close execution paired with a currently valid buy_close signal.
+            # If close signal is no longer true, drop stale pending-close reconciliation.
+            if not bool(active_row.get("buy_close", False)):
+                _append_log("정보", f"{pending_candle or candle_key} 기준 청산 보정 해제: 현재 봉 buy_close 미충족")
+                _clear_pending_target(state)
+                _set_status(state, "idle")
+                _write_state(state)
+                return
             current_quantity = int(current_position["quantity"])
             _append_log("정보", f"{pending_candle or candle_key} 기준 미완료 청산 감지, 보정 주문을 재시도합니다.")
             _submit_live_order(
