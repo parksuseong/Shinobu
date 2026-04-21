@@ -1998,12 +1998,16 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
 
     price_fig = go.Figure()
     price_fig.add_trace(
-        go.Scatter(
+        go.Candlestick(
             x=frame.index,
-            y=frame["Close"],
-            mode="lines",
-            name="종가",
-            line={"color": "#60a5fa", "width": 1.8},
+            open=frame["Open"],
+            high=frame["High"],
+            low=frame["Low"],
+            close=frame["Close"],
+            name="price",
+            increasing={"line": {"color": "#089981"}, "fillcolor": "#089981"},
+            decreasing={"line": {"color": "#f23645"}, "fillcolor": "#f23645"},
+            showlegend=False,
         )
     )
     long_open = frame.loc[frame["long_open"]]
