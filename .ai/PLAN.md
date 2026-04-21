@@ -7,6 +7,8 @@
 ## Current Hotspots
 
 - `main.py`: seed function behavior
+- `app.py`: Streamlit tabs and chart view entrypoint
+- `shinobu/chart_component.py`: shared chart renderer for live/backtesting tabs
 - `scripts/codex_smoke.py`: quick import and core behavior check
 - `scripts/codex_report.py`: deterministic output report for review
 - `harness.py`: combined verification entry point

@@ -1,0 +1,2 @@
+"""Shinobu app package."""
+

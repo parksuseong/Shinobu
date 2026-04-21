@@ -6,6 +6,8 @@ import math
 
 import streamlit as st
 
+from shinobu.chart_component import render_shared_price_chart
+
 st.set_page_config(page_title="Shinobu Project", page_icon=":chart_with_upwards_trend:")
 
 st.markdown(
@@ -17,11 +19,20 @@ st.markdown(
 
 st.write("Deployment verification page is live.")
 
-st.subheader("Live Preview Chart")
-prices: list[float] = []
+live_prices: list[float] = []
 for i in range(120):
-    # Deterministic synthetic chart data for quick deployment verification.
     value = 100 + (i * 0.08) + (math.sin(i / 6) * 2.4) + (math.cos(i / 13) * 1.1)
-    prices.append(round(value, 4))
+    live_prices.append(round(value, 4))
 
-st.line_chart({"price": prices}, height=320)
+backtest_prices: list[float] = []
+for i in range(120):
+    value = 97 + (i * 0.05) + (math.sin(i / 8) * 1.6) + (math.cos(i / 15) * 0.9)
+    backtest_prices.append(round(value, 4))
+
+live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
+
+with live_tab:
+    render_shared_price_chart("실전 차트", live_prices)
+
+with backtest_tab:
+    render_shared_price_chart("백테스팅 차트", backtest_prices)
