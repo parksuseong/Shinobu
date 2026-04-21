@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.utils import PlotlyJSONEncoder
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
@@ -2066,7 +2068,23 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
         template="plotly_dark",
         legend={"orientation": "h", "y": 1.02, "x": 0},
     )
-    st.plotly_chart(price_fig, use_container_width=True)
+    backtest_chart_id = f"backtest-chart-{int(time.time() * 1000)}"
+    figure_json = json.dumps(price_fig.to_plotly_json(), cls=PlotlyJSONEncoder)
+    backtest_chart_html = f"""
+    <div id="{backtest_chart_id}" style="width:100%;height:560px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script>
+      const fig = {figure_json};
+      const config = {{
+        responsive: true,
+        displaylogo: false,
+        displayModeBar: false,
+        scrollZoom: false
+      }};
+      Plotly.newPlot("{backtest_chart_id}", fig.data, fig.layout, config);
+    </script>
+    """
+    components.html(backtest_chart_html, height=600)
 
     st.markdown("##### 신호 로그")
     signal_rows = frame.loc[
