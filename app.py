@@ -1,4 +1,4 @@
-"""Minimal Shinobu Streamlit app."""
+﻿"""Minimal Shinobu Streamlit app."""
 
 from __future__ import annotations
 
@@ -29,10 +29,13 @@ for i in range(120):
     value = 97 + (i * 0.05) + (math.sin(i / 8) * 1.6) + (math.cos(i / 15) * 0.9)
     backtest_prices.append(round(value, 4))
 
-live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
+live_tab, backtest_tab, ai_signal_tab = st.tabs(["실전", "백테스팅", "ai신호탐색기"])
 
 with live_tab:
     render_shared_price_chart("실전 차트", live_prices)
 
 with backtest_tab:
     render_shared_price_chart("백테스팅 차트", backtest_prices)
+
+with ai_signal_tab:
+    render_shared_price_chart("ai신호탐색기 차트", backtest_prices)
