@@ -333,6 +333,41 @@ def load_payload_cache(cache_key: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def list_payload_cache_by_prefix(prefix: str, limit: int = 365) -> list[dict[str, Any]]:
+    _initialize()
+    safe_limit = max(1, int(limit))
+    with _DB_LOCK:
+        with _connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT cache_key, payload_json, updated_at
+                FROM payload_cache
+                WHERE cache_key LIKE ?
+                ORDER BY cache_key DESC
+                LIMIT ?
+                """,
+                (f"{prefix}%", safe_limit),
+            ).fetchall()
+
+    out: list[dict[str, Any]] = []
+    for cache_key, payload_json, updated_at in rows:
+        payload: dict[str, Any] | None = None
+        try:
+            parsed = json.loads(str(payload_json))
+            if isinstance(parsed, dict):
+                payload = parsed
+        except Exception:
+            payload = None
+        out.append(
+            {
+                "cache_key": str(cache_key),
+                "payload": payload,
+                "updated_at": str(updated_at or ""),
+            }
+        )
+    return out
+
+
 def save_execution_cache(cache_key: str, frame: pd.DataFrame) -> None:
     _initialize()
     with _DB_LOCK:
@@ -760,3 +795,20 @@ def acquire_named_lock(lock_name: str, stale_after_seconds: int = 180) -> bool:
 
 def release_named_lock(lock_name: str) -> None:
     set_meta_value(f"lock:{lock_name}", "0")
+
+
+def is_named_lock_locked(lock_name: str, stale_after_seconds: int = 180) -> bool:
+    _initialize()
+    key = f"lock:{lock_name}"
+    with _DB_LOCK:
+        with _connect() as connection:
+            row = connection.execute(
+                "SELECT value, updated_at FROM app_meta WHERE key = ?",
+                (key,),
+            ).fetchone()
+    if row is None:
+        return False
+    locked = str(row[0] or "") == "1"
+    if not locked:
+        return False
+    return _meta_updated_within(row[1], stale_after_seconds)
