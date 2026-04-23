@@ -666,13 +666,13 @@ def _cancel_pending_orders_after_regular_close(state: dict[str, Any], now: pd.Ti
             order["canceled"] = True
             order["cancel_message"] = _format_order_response(cancel_output)
             canceled_any = True
-            _append_log("??", f"{display_name(symbol)} ??? ??? ??? ? ??????. ({order['cancel_message']})")
+            _append_log("정보", f"{display_name(symbol)} 미체결 주문을 장 종료 후 취소했습니다. ({order['cancel_message']})")
         except Exception as exc:
             order["cancel_message"] = str(exc)
-            _append_log("??", f"{display_name(symbol)} ??? ? ?? ??? ??????: {exc}")
+            _append_log("경고", f"{display_name(symbol)} 미체결 주문 취소 실패: {exc}")
 
     if state.get("pending_target_mode", "none") != "none":
-        _append_log("??", "??? ?? ? ?? ??? ??/?? ??? ??????.")
+        _append_log("정보", "미체결 정리 이후 보정 목표를 초기화했습니다.")
         _clear_pending_target(state)
 
     state["last_regular_close_cleanup_date"] = current_date
@@ -736,10 +736,10 @@ def _submit_live_order(
                 working_quantity = affordable_quantity
             if working_quantity <= 0:
                 if round_count == 0:
-                    _set_status(state, "waiting_cash", "?? ?? ??? ?????.")
-                    _append_log("??", f"{display_name(symbol)} ?? ?? ??? ?? ??? ?????.")
+                    _set_status(state, "waiting_cash", "주문 가능 금액 부족")
+                    _append_log("경고", f"{display_name(symbol)} 주문 가능 수량이 없어 대기합니다.")
                     _write_state(state)
-                    raise KisApiError("?? ?? ?? ?? ?? ??? ????.")
+                    raise KisApiError("주문 가능 수량이 없습니다.")
                 return
             baseline_for_fill = current_baseline
         else:
@@ -749,8 +749,8 @@ def _submit_live_order(
             baseline_for_fill = current_quantity
 
         if round_count > 0:
-            action_text = "?? ??" if side == "buy" else "?? ??"
-            _append_log("??", f"{display_name(symbol)} {action_text} {working_quantity}?? ?? ??????.")
+            action_text = "추가 매수" if side == "buy" else "추가 매도"
+            _append_log("정보", f"{display_name(symbol)} {action_text} {working_quantity}주를 재시도합니다.")
 
         used_cash_fallback = _submit_live_order_once(
             state=state,
@@ -777,7 +777,7 @@ def _submit_live_order(
         if side == "buy":
             latest_cash = float(latest_summary.get("orderable_cash", 0) or 0)
             if updated_quantity <= current_baseline:
-                _append_log("??", f"{display_name(symbol)} ?? ? ????? ?? ?? ?? ??? ?????.")
+                _append_log("경고", f"{display_name(symbol)} 매수 후 보유수량 증가가 확인되지 않아 추가 매수를 중단합니다.")
                 return
             current_baseline = updated_quantity
             round_count += 1
@@ -787,7 +787,7 @@ def _submit_live_order(
             continue
 
         if updated_quantity >= current_quantity:
-            _append_log("??", f"{display_name(symbol)} ?? ? ??? ?? ?? ?? ??? ?????.")
+            _append_log("경고", f"{display_name(symbol)} 매도 후 보유수량 감소가 확인되지 않아 추가 매도를 중단합니다.")
             return
         round_count += 1
         if updated_quantity <= 0:
@@ -1054,6 +1054,44 @@ def process_live_trading_cycle(
             return
 
         if pending_mode == "symbol" and pending_symbol:
+            if current_position is None:
+                target_signal_symbol = TRADE_TO_SIGNAL_SYMBOL.get(pending_symbol, pending_symbol)
+                target_row = primary_row if target_signal_symbol == primary_symbol else secondary_row
+                buy_price = float(target_row["Close"])
+                buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
+                if buy_quantity <= 0:
+                    _set_status(state, "waiting_cash")
+                    _append_log(
+                        "경고",
+                        f"{display_name(pending_symbol)} 진입 가능 수량이 없어 다음 주기에 다시 확인합니다.",
+                    )
+                    _write_state(state)
+                    return
+
+                _append_log(
+                    "정보",
+                    f"{pending_candle or candle_key} 기준 목표 포지션 미달성 감지, 진입 주문을 재시도합니다.",
+                )
+                _submit_live_order(
+                    state,
+                    pending_symbol,
+                    "buy",
+                    buy_quantity,
+                    buy_price,
+                    pending_reason or "buy open 진입",
+                    target_time,
+                    baseline_quantity=0,
+                    execution_tag="reconcile_open",
+                )
+                fetch_domestic_balance.clear()
+                positions, _ = fetch_domestic_balance()
+                current_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+                if current_position is not None and current_position["symbol"] == pending_symbol:
+                    _clear_pending_target(state)
+                _set_status(state, "ordered")
+                _write_state(state)
+                return
+
             if current_position is not None and current_position["symbol"] == pending_symbol:
                 _clear_pending_target(state)
                 if chosen_open is not None and _trade_symbol(chosen_open[0], execution_mode) == pending_symbol:

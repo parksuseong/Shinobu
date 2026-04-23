@@ -345,8 +345,8 @@ def _load_live_chart_data_impl(
         if timeframe_label in INTRADAY_RESAMPLE_MINUTES:
             minute_frame = _load_persisted_intraday_frame(short_code, timeframe_label, lookback_days)
             return _resample_domestic_intraday(minute_frame, INTRADAY_RESAMPLE_MINUTES[timeframe_label])
-        if timeframe_label in {"ì¼ë´", "ì£¼ë´", "ìë´"}:
-            period_code = {"ì¼ë´": "D", "ì£¼ë´": "W", "ìë´": "M"}[timeframe_label]
+        if timeframe_label in {"일봉", "주봉", "월봉"}:
+            period_code = {"일봉": "D", "주봉": "W", "월봉": "M"}[timeframe_label]
             return fetch_domestic_daily(short_code, period_code)
         raise KisApiError("unsupported live timeframe")
 

@@ -7,6 +7,7 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -27,10 +28,17 @@ BACKTEST_TIMEFRAME_SPECS: dict[str, BacktestTimeframeSpec] = {
     "5m": BacktestTimeframeSpec("5m", "5m", 60),
     "15m": BacktestTimeframeSpec("15m", "15m", 60),
     "30m": BacktestTimeframeSpec("30m", "30m", 60),
-    "60m": BacktestTimeframeSpec("60m", "60m", 60),
     "1h": BacktestTimeframeSpec("1h", "1h", 60),
     "4h": BacktestTimeframeSpec("4h", "60m", 60, resample_rule="4h"),
     "1d": BacktestTimeframeSpec("1d", "1d", None),
+    "1w": BacktestTimeframeSpec("1w", "1wk", None),
+}
+_BACKTEST_EXPECTED_STEP_MINUTES: dict[str, int] = {
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "4h": 240,
 }
 
 _BACKTEST_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="shinobu-backtest")
@@ -38,6 +46,7 @@ _BACKTEST_LOCK = threading.RLock()
 _BACKTEST_JOBS: dict[str, dict[str, Any]] = {}
 BACKTEST_FETCH_TIMEOUT_SECONDS = 25.0
 BACKTEST_CALC_TIMEOUT_SECONDS = 25.0
+_KST = ZoneInfo("Asia/Seoul")
 
 
 def _now_iso() -> str:
@@ -59,6 +68,19 @@ def _timeframe_period(spec: BacktestTimeframeSpec) -> str:
     return f"{int(spec.max_days)}d"
 
 
+def _download_ohlcv(symbol: str, *, interval: str, period: str) -> pd.DataFrame:
+    raw = yf.download(
+        symbol,
+        interval=interval,
+        period=period,
+        auto_adjust=False,
+        progress=False,
+        prepost=False,
+        threads=False,
+    )
+    return _normalize_ohlcv_frame(raw)
+
+
 def _normalize_ohlcv_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
@@ -78,6 +100,11 @@ def _normalize_ohlcv_frame(frame: pd.DataFrame) -> pd.DataFrame:
     out = normalized.loc[:, required_columns].copy()
     out.index = pd.to_datetime(out.index, errors="coerce")
     out = out[~out.index.isna()]
+    idx = pd.DatetimeIndex(out.index)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    idx = idx.tz_convert(_KST).tz_localize(None)
+    out.index = idx
     out = out.sort_index()
     return out.dropna(subset=["Open", "High", "Low", "Close"])
 
@@ -85,7 +112,8 @@ def _normalize_ohlcv_frame(frame: pd.DataFrame) -> pd.DataFrame:
 def _resample_ohlcv(frame: pd.DataFrame, rule: str) -> pd.DataFrame:
     if frame.empty:
         return frame
-    resampled = frame.resample(rule).agg(
+    # Align intraday buckets to KRX market-open clock (09:00 KST).
+    resampled = frame.resample(rule, origin="start_day", offset="9h").agg(
         {
             "Open": "first",
             "High": "max",
@@ -97,25 +125,56 @@ def _resample_ohlcv(frame: pd.DataFrame, rule: str) -> pd.DataFrame:
     return resampled.dropna(subset=["Open", "High", "Low", "Close"])
 
 
+def _matches_timeframe_granularity(frame: pd.DataFrame, timeframe_label: str) -> bool:
+    expected_minutes = _BACKTEST_EXPECTED_STEP_MINUTES.get(str(timeframe_label))
+    if expected_minutes is None:
+        return True
+    if frame.empty or len(frame.index) < 3:
+        return False
+
+    index = pd.DatetimeIndex(frame.index).sort_values()
+    deltas = index.to_series().diff().dropna()
+    intraday_deltas = deltas[deltas < pd.Timedelta(days=1)]
+    if intraday_deltas.empty:
+        return False
+
+    median_step = intraday_deltas.median()
+    expected_step = pd.Timedelta(minutes=int(expected_minutes))
+    min_allowed = expected_step * 0.5
+    max_allowed = expected_step * 1.5
+    return bool(min_allowed <= median_step <= max_allowed)
+
+
 def _load_backtest_frame_from_yfinance(symbol: str, timeframe_label: str) -> pd.DataFrame:
     spec = BACKTEST_TIMEFRAME_SPECS.get(timeframe_label)
     if spec is None:
         allowed = ", ".join(get_backtest_timeframe_labels())
         raise ValueError(f"Unsupported backtest timeframe: {timeframe_label} (allowed: {allowed})")
 
-    raw = yf.download(
-        symbol,
-        interval=spec.interval,
-        period=_timeframe_period(spec),
-        auto_adjust=False,
-        progress=False,
-        prepost=False,
-        threads=False,
-    )
-    frame = _normalize_ohlcv_frame(raw)
+    period = _timeframe_period(spec)
+    frame = _download_ohlcv(symbol, interval=spec.interval, period=period)
     if spec.resample_rule:
         frame = _resample_ohlcv(frame, spec.resample_rule)
-    return frame
+    if _matches_timeframe_granularity(frame, timeframe_label):
+        return frame
+
+    fallback_specs: dict[str, list[tuple[str, str | None]]] = {
+        "15m": [("5m", "15min")],
+        "30m": [("15m", "30min")],
+        "1h": [("30m", "1h"), ("15m", "1h")],
+        "4h": [("30m", "4h"), ("15m", "4h"), ("5m", "4h")],
+    }
+    for fallback_interval, fallback_rule in fallback_specs.get(timeframe_label, []):
+        fallback_frame = _download_ohlcv(symbol, interval=fallback_interval, period=period)
+        if fallback_rule:
+            fallback_frame = _resample_ohlcv(fallback_frame, fallback_rule)
+        if _matches_timeframe_granularity(fallback_frame, timeframe_label):
+            return fallback_frame
+
+    raise ValueError(
+        f"yfinance returned mismatched granularity for {symbol} ({timeframe_label}); "
+        "requested intraday bars but received non-intraday spacing."
+    )
 
 
 def _backtest_symbol_candidates(symbol: str) -> list[str]:
