@@ -2158,6 +2158,64 @@ def _call_saju_codex_analysis(prompt_text: str) -> str:
                 pass
 
 
+def _render_reference_sources(sources: object) -> None:
+    if not isinstance(sources, list) or not sources:
+        return
+    st.markdown("**참고 출처**")
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        title = str(source.get("title", "") or "").strip()
+        url = str(source.get("url", "") or "").strip()
+        note = str(source.get("note", "") or "").strip()
+        if title and url:
+            st.markdown(f"- [{title}]({url}) : {note}")
+
+
+def _run_saju_analysis_once(symbol_input: str) -> dict[str, object]:
+    resolved_symbol, resolved_name = market_data.resolve_symbol(symbol_input)
+    rows: list[dict[str, object]] = []
+    with st.spinner("종목 사주보기 계산 중입니다..."):
+        for tf, interval, period in SAJU_TIMEFRAME_WINDOWS:
+            try:
+                price_frame = _load_saju_price_frame(resolved_symbol, interval=interval, period=period)
+                rows.append(
+                    _summarize_saju_ohlcv(
+                        price_frame,
+                        timeframe=tf,
+                        interval=interval,
+                        period=period,
+                    )
+                )
+            except Exception as tf_exc:
+                rows.append(
+                    {
+                        "timeframe": tf,
+                        "interval": interval,
+                        "period": period,
+                        "status": "failed",
+                        "error": str(tf_exc),
+                    }
+                )
+
+        prompt = _build_saju_codex_prompt(
+            symbol_name=resolved_name,
+            symbol_code=resolved_symbol,
+            summaries=rows,
+        )
+        analysis_text = _call_saju_codex_analysis(prompt)
+
+    return {
+        "ok": True,
+        "symbol": resolved_symbol,
+        "name": resolved_name,
+        "rows": rows,
+        "analysis": analysis_text,
+        "generated_at": pd.Timestamp.now(tz="Asia/Seoul").strftime("%Y-%m-%d %H:%M:%S"),
+        "sources": SAJU_REFERENCE_SOURCES,
+    }
+
+
 def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> None:
     st.markdown("#### 백테스팅")
     st.caption("yfinance 기반 `5m/15m/30m/60m/1h/4h/1d`로 SRC 신호를 계산하고 long/short open·close를 표시합니다.")
@@ -2284,47 +2342,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                     if not has_global_lock:
                         raise RuntimeError("종목 사주보기 글로벌 락 획득에 실패했습니다. 다시 시도해주세요.")
 
-                resolved_symbol, resolved_name = market_data.resolve_symbol(symbol_input)
-                rows: list[dict[str, object]] = []
-                with st.spinner("종목 사주보기 계산 중입니다..."):
-                    for tf, interval, period in SAJU_TIMEFRAME_WINDOWS:
-                        try:
-                            price_frame = _load_saju_price_frame(resolved_symbol, interval=interval, period=period)
-                            rows.append(
-                                _summarize_saju_ohlcv(
-                                    price_frame,
-                                    timeframe=tf,
-                                    interval=interval,
-                                    period=period,
-                                )
-                            )
-                        except Exception as tf_exc:
-                            rows.append(
-                                {
-                                    "timeframe": tf,
-                                    "interval": interval,
-                                    "period": period,
-                                    "status": "failed",
-                                    "error": str(tf_exc),
-                                }
-                            )
-
-                    prompt = _build_saju_codex_prompt(
-                        symbol_name=resolved_name,
-                        symbol_code=resolved_symbol,
-                        summaries=rows,
-                    )
-                    analysis_text = _call_saju_codex_analysis(prompt)
-
-                st.session_state[BACKTEST_SAJU_RESULT_STATE_KEY] = {
-                    "ok": True,
-                    "symbol": resolved_symbol,
-                    "name": resolved_name,
-                    "rows": rows,
-                    "analysis": analysis_text,
-                    "generated_at": pd.Timestamp.now(tz="Asia/Seoul").strftime("%Y-%m-%d %H:%M:%S"),
-                    "sources": SAJU_REFERENCE_SOURCES,
-                }
+                st.session_state[BACKTEST_SAJU_RESULT_STATE_KEY] = _run_saju_analysis_once(symbol_input)
             except Exception as exc:
                 st.session_state[BACKTEST_SAJU_RESULT_STATE_KEY] = {"ok": False, "error": str(exc)}
             finally:
@@ -2349,17 +2367,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                     st.caption("요약 데이터가 없습니다.")
                 else:
                     st.dataframe(rows_df, use_container_width=True, hide_index=True)
-            sources = saju_result.get("sources", [])
-            if isinstance(sources, list) and sources:
-                st.markdown("**참고 출처**")
-                for source in sources:
-                    if not isinstance(source, dict):
-                        continue
-                    title = str(source.get("title", "") or "").strip()
-                    url = str(source.get("url", "") or "").strip()
-                    note = str(source.get("note", "") or "").strip()
-                    if title and url:
-                        st.markdown(f"- [{title}]({url}) : {note}")
+            _render_reference_sources(saju_result.get("sources"))
         # 질문 1회당 세션 1개 원칙: 출력 직후 결과 세션 제거
         st.session_state.pop(BACKTEST_SAJU_RESULT_STATE_KEY, None)
 
