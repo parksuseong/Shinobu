@@ -57,6 +57,7 @@ REGULAR_MARKET_OPEN_HOUR = 9
 REGULAR_MARKET_CLOSE_HOUR = 15
 REGULAR_MARKET_CLOSE_MINUTE = 30
 AFTER_HOURS_CLOSE_HOUR = 18
+PRE_CLOSE_FORCE_EXIT_MINUTES = 10
 LIVE_SWITCH_CONFIRM_BARS = 2
 LIVE_MAX_HOLD_BARS = 180
 
@@ -88,6 +89,11 @@ def _default_state() -> dict[str, Any]:
         "position_entry_symbol": "",
         "position_entry_candle": "",
         "last_regular_close_cleanup_date": "",
+        "last_forced_exit_date": "",
+        "deferred_open_signal_symbol": "",
+        "deferred_open_trade_symbol": "",
+        "deferred_open_candle": "",
+        "deferred_open_set_date": "",
         "orders": [],
         "asset_history": [],
     }
@@ -198,6 +204,27 @@ def _set_pending_target(
 
 def _clear_pending_target(state: dict[str, Any]) -> None:
     _set_pending_target(state, "none")
+
+
+def _set_deferred_open(
+    state: dict[str, Any],
+    signal_symbol: str,
+    trade_symbol: str,
+    candle_time: pd.Timestamp,
+    now: pd.Timestamp | None = None,
+) -> None:
+    current = pd.Timestamp(now) if now is not None else _now_kst_naive()
+    state["deferred_open_signal_symbol"] = str(signal_symbol or "")
+    state["deferred_open_trade_symbol"] = str(trade_symbol or "")
+    state["deferred_open_candle"] = candle_time.strftime("%Y-%m-%d %H:%M")
+    state["deferred_open_set_date"] = current.strftime("%Y-%m-%d")
+
+
+def _clear_deferred_open(state: dict[str, Any]) -> None:
+    state["deferred_open_signal_symbol"] = ""
+    state["deferred_open_trade_symbol"] = ""
+    state["deferred_open_candle"] = ""
+    state["deferred_open_set_date"] = ""
 
 
 def _clear_switch_confirm_state(state: dict[str, Any]) -> None:
@@ -454,6 +481,15 @@ def _market_phase(now: pd.Timestamp | None = None) -> str:
     if regular_close_minutes <= current_minutes < after_hours_close_minutes:
         return "after_hours"
     return "closed"
+
+
+def _is_pre_close_window(now: pd.Timestamp | None = None) -> bool:
+    current = pd.Timestamp(now) if now is not None else _now_kst_naive()
+    if _market_phase(current) != "regular":
+        return False
+    current_minutes = current.hour * 60 + current.minute
+    regular_close_minutes = REGULAR_MARKET_CLOSE_HOUR * 60 + REGULAR_MARKET_CLOSE_MINUTE
+    return current_minutes >= (regular_close_minutes - PRE_CLOSE_FORCE_EXIT_MINUTES)
 
 
 def _is_closed_5m_candle(candle_start: pd.Timestamp, now: pd.Timestamp | None = None) -> bool:
@@ -907,8 +943,9 @@ def process_live_trading_cycle(
         if not state["enabled"]:
             return
         execution_mode = normalize_execution_mode(state.get("execution_mode", DEFAULT_EXECUTION_MODE))
+        now_kst = _now_kst_naive()
 
-        phase = _market_phase()
+        phase = _market_phase(now_kst)
         if phase != "regular":
             if phase == "premarket":
                 _mark_pending_orders_for_monitor(state)
@@ -973,6 +1010,73 @@ def process_live_trading_cycle(
                 secondary_row,
                 allow_raw_open=False,
             )
+
+        # Execute deferred open only on next business day and only if open signal still valid.
+        deferred_signal_symbol = str(state.get("deferred_open_signal_symbol", "") or "")
+        deferred_trade_symbol = str(state.get("deferred_open_trade_symbol", "") or "")
+        deferred_set_date = str(state.get("deferred_open_set_date", "") or "")
+        today_text = now_kst.strftime("%Y-%m-%d")
+        if deferred_signal_symbol:
+            if today_text <= deferred_set_date:
+                pass
+            elif current_position is not None:
+                _append_log("정보", "이월 진입 대기 신호를 해제합니다. 이미 보유 포지션이 있습니다.")
+                _clear_deferred_open(state)
+            else:
+                deferred_row = primary_row if deferred_signal_symbol == primary_symbol else secondary_row
+                deferred_open_valid = bool(deferred_row.get("buy_open", False))
+                deferred_close_active = bool(deferred_row.get("buy_close", False))
+                if deferred_open_valid and not deferred_close_active:
+                    _set_pending_target(
+                        state,
+                        "symbol",
+                        deferred_trade_symbol or _trade_symbol(deferred_signal_symbol, execution_mode),
+                        "장마감 이월 진입",
+                        target_time,
+                    )
+                    _append_log("정보", f"{candle_key} 기준 이월 신호가 유지되어 다음날 진입을 진행합니다.")
+                else:
+                    _append_log("정보", f"{candle_key} 기준 이월 신호가 유지되지 않아 다음날 진입을 취소합니다.")
+                _clear_deferred_open(state)
+
+        # Pre-close risk rule:
+        # 1) If holding position in last 10 minutes, force close to avoid overnight gap risk.
+        # 2) If flat and new open signal appears in last 10 minutes, defer to next business day.
+        if _is_pre_close_window(now_kst):
+            forced_exit_date = str(state.get("last_forced_exit_date", "") or "")
+            if current_position is not None and forced_exit_date != today_text:
+                current_symbol = current_position["symbol"]
+                current_signal_symbol = current_position.get("signal_symbol", current_symbol)
+                active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
+                current_quantity = int(current_position["quantity"])
+                _append_log("정보", f"{candle_key} 기준 장마감 10분 전 리스크 관리 청산을 실행합니다.")
+                _submit_live_order(
+                    state,
+                    current_symbol,
+                    "sell",
+                    current_quantity,
+                    float(active_row["Close"]),
+                    "장마감 10분 전 강제 청산",
+                    target_time,
+                    baseline_quantity=current_quantity,
+                    execution_tag="eod_force_exit",
+                )
+                state["last_forced_exit_date"] = today_text
+                _clear_pending_target(state)
+                _clear_deferred_open(state)
+                _set_status(state, "ordered")
+                _write_state(state)
+                return
+
+            if current_position is None and chosen_open is not None:
+                deferred_signal = chosen_open[0]
+                deferred_trade = _trade_symbol(deferred_signal, execution_mode)
+                _set_deferred_open(state, deferred_signal, deferred_trade, target_time, now_kst)
+                _clear_pending_target(state)
+                _set_status(state, "idle")
+                _append_log("정보", f"{candle_key} 기준 장마감 10분 전 신규 진입은 다음 영업일로 이월합니다.")
+                _write_state(state)
+                return
         pending_mode = str(state.get("pending_target_mode", "none") or "none")
         pending_symbol = str(state.get("pending_target_symbol", "") or "")
         pending_reason = str(state.get("pending_target_reason", "") or "")
