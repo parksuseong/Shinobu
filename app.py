@@ -47,7 +47,7 @@ from shinobu.backtest_engine import (
     get_backtest_timeframe_max_days,
     submit_backtest_job,
 )
-from shinobu.recommendation_engine import ensure_recommendations_for_today, load_recommendation_history, load_recommendations_for
+from shinobu.recommendation_engine import load_recommendation_history, load_recommendations_for
 from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_daily_ccld
 from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
@@ -72,6 +72,7 @@ from shinobu.live_trading import (
 from shinobu.strategy import (
     DEFAULT_STRATEGY_NAME,
     StrategyAdjustments,
+    calculate_strategy,
     get_strategy_help_text,
     get_strategy_label,
     get_strategy_title,
@@ -109,8 +110,6 @@ LIVE_CHART_COMPONENT_VERSION = 1
 SAJU_ANALYSIS_LOCK = threading.Lock()
 SAJU_GLOBAL_LOCK_NAME = "backtest_saju_analysis"
 SAJU_GLOBAL_LOCK_STALE_SECONDS = 900
-STOCK_RECO_DAILY_LOCK_NAME = "stock_recommendation_daily"
-STOCK_RECO_DAILY_LOCK_STALE_SECONDS = 7200
 SAJU_TIMEFRAME_WINDOWS: list[tuple[str, str, str]] = [
     ("1h", "60m", "60d"),
     ("1d", "1d", "1y"),
@@ -320,7 +319,7 @@ def render_live_selector_bar() -> str:
         f"\uD604\uC7AC \uC804\uB7B5: {active_option.label} | \uCC28\uD2B8 \uD45C\uC2DC: {chart_start_date.isoformat()} ~ {chart_end_date.isoformat()} | \uC2E4\uC81C \uC8FC\uBB38: {mode_label}"
     )
     st.caption("\uB9C8\uCEE4 \uD45C\uC2DC \uD544\uD130\uB294 \uCC28\uD2B8 \uC0C1\uB2E8\uC5D0\uC11C \uBC14\uB85C \uD1A0\uAE00\uD569\uB2C8\uB2E4.")
-    st.caption(get_strategy_help_text(active_option.key).replace("\n", " | "))
+    st.caption("매매법 : 心を燃やせ")
     return get_current_strategy_profile()
 def _get_reset_state() -> dict[str, object]:
     with _RESET_LOCK:
@@ -2001,6 +2000,52 @@ def _summarize_saju_ohlcv(
     first_close = float(frame["Close"].iloc[0] or 0.0)
     last_close = float(frame["Close"].iloc[-1] or 0.0)
     return_pct = ((last_close / first_close) - 1.0) * 100.0 if first_close > 0 else 0.0
+    scr_latest = None
+    scr_mean_20 = None
+    scr_delta_5 = None
+    try:
+        strategy_frame = calculate_strategy(
+            frame.copy(),
+            adjustments=None,
+            timeframe_label=timeframe,
+            strategy_name=DEFAULT_STRATEGY_NAME,
+            initial_state=None,
+        )
+        if isinstance(strategy_frame, pd.DataFrame) and "scr_line" in strategy_frame.columns:
+            scr_series = pd.to_numeric(strategy_frame["scr_line"], errors="coerce").dropna()
+            if not scr_series.empty:
+                scr_latest = float(scr_series.iloc[-1])
+                scr_mean_20 = float(scr_series.tail(min(20, len(scr_series))).mean())
+                if len(scr_series) >= 6:
+                    scr_delta_5 = float(scr_series.iloc[-1] - scr_series.iloc[-6])
+                elif len(scr_series) >= 2:
+                    scr_delta_5 = float(scr_series.iloc[-1] - scr_series.iloc[0])
+    except Exception:
+        pass
+
+    high = frame["High"].astype(float)
+    low = frame["Low"].astype(float)
+    tenkan = (high.rolling(9).max() + low.rolling(9).min()) / 2.0
+    kijun = (high.rolling(26).max() + low.rolling(26).min()) / 2.0
+    senkou_a = (tenkan + kijun) / 2.0
+    senkou_b = (high.rolling(52).max() + low.rolling(52).min()) / 2.0
+    senkou_a_now = senkou_a.shift(26)
+    senkou_b_now = senkou_b.shift(26)
+    cloud_top = float(pd.concat([senkou_a_now, senkou_b_now], axis=1).max(axis=1).iloc[-1])
+    cloud_bottom = float(pd.concat([senkou_a_now, senkou_b_now], axis=1).min(axis=1).iloc[-1])
+    if pd.isna(cloud_top) or pd.isna(cloud_bottom):
+        cloud_top = float(pd.concat([senkou_a, senkou_b], axis=1).max(axis=1).iloc[-1])
+        cloud_bottom = float(pd.concat([senkou_a, senkou_b], axis=1).min(axis=1).iloc[-1])
+    bull_cloud = bool(
+        pd.notna(senkou_a_now.iloc[-1]) and pd.notna(senkou_b_now.iloc[-1]) and (senkou_a_now.iloc[-1] > senkou_b_now.iloc[-1])
+    )
+    if last_close > cloud_top:
+        cloud_position = "above"
+    elif last_close < cloud_bottom:
+        cloud_position = "below"
+    else:
+        cloud_position = "inside"
+
     return {
         "timeframe": timeframe,
         "interval": interval,
@@ -2015,6 +2060,13 @@ def _summarize_saju_ohlcv(
         "avg_volume": float(frame["Volume"].mean() or 0.0),
         "latest_volume": float(frame["Volume"].iloc[-1] or 0.0),
         "recent_return_pct": float(return_pct),
+        "scr_latest": scr_latest,
+        "scr_mean_20": scr_mean_20,
+        "scr_delta_5": scr_delta_5,
+        "cloud_top": float(cloud_top) if pd.notna(cloud_top) else None,
+        "cloud_bottom": float(cloud_bottom) if pd.notna(cloud_bottom) else None,
+        "cloud_bull": bull_cloud,
+        "cloud_position": cloud_position,
         "recent_candles": recent_candles,
     }
 
@@ -2043,9 +2095,27 @@ def _build_saju_codex_prompt(
         if str(row.get("status", "failed")) != "ok":
             lines.append(f"- {timeframe}: 실패 ({row.get('error', 'unknown')})")
             continue
+        scr_latest = row.get("scr_latest")
+        scr_mean_20 = row.get("scr_mean_20")
+        scr_delta_5 = row.get("scr_delta_5")
+        cloud_top = row.get("cloud_top")
+        cloud_bottom = row.get("cloud_bottom")
+        cloud_bull = bool(row.get("cloud_bull", False))
+        cloud_position = str(row.get("cloud_position", "unknown"))
+        scr_text = (
+            f"SCR latest={float(scr_latest):.2f}, mean20={float(scr_mean_20):.2f}, delta5={float(scr_delta_5):+.2f}"
+            if scr_latest is not None and scr_mean_20 is not None and scr_delta_5 is not None
+            else "SCR n/a"
+        )
+        cloud_text = (
+            f"Cloud top/bottom={float(cloud_top):.1f}/{float(cloud_bottom):.1f}, "
+            f"state={'bull' if cloud_bull else 'bear'}, price_pos={cloud_position}"
+            if cloud_top is not None and cloud_bottom is not None
+            else "Cloud n/a"
+        )
         lines.append(
             "- {tf}({interval}/{period}): bars={bars}, 구간={first}~{last}, 최신종가={last_close:.4f}, "
-            "수익률={ret:.2f}%, 고가최대={high:.4f}, 저가최소={low:.4f}, 평균거래량={avg_vol:.0f}, 최신거래량={last_vol:.0f}".format(
+            "수익률={ret:.2f}%, 고가최대={high:.4f}, 저가최소={low:.4f}, 평균거래량={avg_vol:.0f}, 최신거래량={last_vol:.0f}, {scr_text}, {cloud_text}".format(
                 tf=timeframe,
                 interval=str(row.get("interval", "")),
                 period=str(row.get("period", "")),
@@ -2058,6 +2128,8 @@ def _build_saju_codex_prompt(
                 low=float(row.get("period_low", 0.0) or 0.0),
                 avg_vol=float(row.get("avg_volume", 0.0) or 0.0),
                 last_vol=float(row.get("latest_volume", 0.0) or 0.0),
+                scr_text=scr_text,
+                cloud_text=cloud_text,
             )
         )
         recent_candles = row.get("recent_candles", [])
@@ -2072,8 +2144,8 @@ def _build_saju_codex_prompt(
         [
             "",
             "[요청사항]",
-            "인터넷에서 널리 쓰이는 최신 기술적 분석 접근(추세/모멘텀/거래량/변동성/파동)을 참고해, 위 OHLCV 데이터만으로 해석해줘.",
-            "SRC, 내부 시그널 계산값, 체결 정보는 사용하지 마.",
+            "인터넷에서 널리 쓰이는 최신 기술적 분석 접근(추세/모멘텀/거래량/변동성/파동)을 참고해, 위 OHLCV + SCR + 구름대(이치모쿠) 요약으로 해석해줘.",
+            "SRC 전체 시그널 카운트/체결 정보는 사용하지 마.",
             "반드시 한국어로, 숫자/가격 중심으로 간결하고 직관적으로 작성해줘.",
             "",
             "1) 단기(1h) / 중기(1d) / 장기(1w) 판단",
@@ -2651,25 +2723,15 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
 
 def render_stock_recommendation_tab() -> None:
     st.markdown("#### 종목추천")
+    st.warning("이 종목은 투자 권유가 아닙니다. 개인적으로 공부용입니다.")
     st.caption("장 열리는 평일 06:00(KST)에 하루 1회 계산하며, 당일에는 저장된 추천 결과만 표시합니다.")
 
     now_kst = pd.Timestamp.now(tz="Asia/Seoul")
     today = now_kst.date()
     payload = load_recommendations_for(today)
 
-    if payload is None and now_kst.dayofweek < 5 and int(now_kst.hour) >= 6:
-        if acquire_named_lock(STOCK_RECO_DAILY_LOCK_NAME, stale_after_seconds=STOCK_RECO_DAILY_LOCK_STALE_SECONDS):
-            try:
-                with st.spinner("종목추천을 계산 중입니다. (하루 1회)"):
-                    payload = ensure_recommendations_for_today()
-            finally:
-                release_named_lock(STOCK_RECO_DAILY_LOCK_NAME)
-        else:
-            st.info("종목추천 계산이 이미 실행 중입니다. 잠시 후 자동으로 결과가 반영됩니다.")
-            payload = load_recommendations_for(today)
-
     if payload is None:
-        st.info("오늘 추천 데이터가 아직 없습니다. 06:00 이후 자동 계산됩니다.")
+        st.info("오늘 추천 데이터가 아직 없습니다. 백엔드 스케줄러(평일 06:00 KST) 실행 후 표시됩니다.")
         return
 
     generated_at = str(payload.get("generated_at", "") or "")
