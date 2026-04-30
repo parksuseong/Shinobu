@@ -272,9 +272,27 @@ def fetch_domestic_balance() -> tuple[pd.DataFrame, dict]:
             .reset_index(drop=True)
         )
 
+    # KIS output2 has multiple cash-like fields. For live buy sizing we must prioritize
+    # the real-time orderable cash field and only fallback to legacy/next-day fields.
+    orderable_cash = 0.0
+    for candidate_key in (
+        "ord_psbl_cash",   # orderable cash (preferred)
+        "ord_psbl_amt",    # some accounts expose amount key variant
+        "prvs_rcdl_excc_amt",
+        "nxdy_excc_amt",   # next-day estimations (fallback only)
+        "dnca_tot_amt",    # deposit total (last fallback)
+    ):
+        try:
+            candidate_value = float(summary_raw.get(candidate_key) or 0)
+        except (TypeError, ValueError):
+            candidate_value = 0.0
+        if candidate_value > 0:
+            orderable_cash = candidate_value
+            break
+
     summary = {
         "cash": float(summary_raw.get("dnca_tot_amt") or 0),
-        "orderable_cash": float(summary_raw.get("nxdy_excc_amt") or 0),
+        "orderable_cash": orderable_cash,
         "purchase_amount": float(summary_raw.get("pchs_amt_smtl_amt") or 0),
         "eval_amount": float(summary_raw.get("evlu_amt_smtl_amt") or 0),
         "profit_amount": float(summary_raw.get("evlu_pfls_smtl_amt") or 0),
