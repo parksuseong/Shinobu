@@ -192,7 +192,6 @@ get_pair_symbol = market_data.get_pair_symbol
 def render_header(profile_name: str) -> None:
     st.title("Shinobu Project")
     st.caption("\uC2E4\uC804 5\uBD84\uBD09 \uC790\uB3D9\uB9E4\uB9E4")
-    st.markdown("\uD604\uC7AC \uC804\uB7B5: **\uBE44\uACF5\uAC1C**")
 
 
 def init_strategy_profile_state() -> None:
