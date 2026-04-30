@@ -192,7 +192,7 @@ get_pair_symbol = market_data.get_pair_symbol
 def render_header(profile_name: str) -> None:
     st.title("Shinobu Project")
     st.caption("\uC2E4\uC804 5\uBD84\uBD09 \uC790\uB3D9\uB9E4\uB9E4")
-    st.markdown(f"\uD604\uC7AC \uC804\uB7B5: **{get_strategy_label(profile_name)}**")
+    st.markdown("\uD604\uC7AC \uC804\uB7B5: **\uBE44\uACF5\uAC1C**")
 
 
 def init_strategy_profile_state() -> None:
@@ -274,8 +274,6 @@ def render_live_selector_bar() -> str:
     _set_strategy_profile(current_profile)
     current_start_date, current_end_date = get_current_chart_date_range()
     current_execution_mode = get_current_execution_mode()
-    option_map = {option.key: option for option in list_strategy_options()}
-
     range_col, execution_col, _ = st.columns([1.3, 0.9, 2.8], vertical_alignment="top")
     with range_col:
         st.caption("\uCC28\uD2B8 \uAE30\uAC04")
@@ -312,11 +310,10 @@ def render_live_selector_bar() -> str:
     if selected_execution_mode != current_execution_mode:
         _set_execution_mode(selected_execution_mode)
 
-    active_option = option_map[get_current_strategy_profile()]
     mode_label = "x1 ETF" if get_current_execution_mode() == EXECUTION_MODE_X1 else "\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4"
     chart_start_date, chart_end_date = get_current_chart_date_range()
     st.caption(
-        f"\uD604\uC7AC \uC804\uB7B5: {active_option.label} | \uCC28\uD2B8 \uD45C\uC2DC: {chart_start_date.isoformat()} ~ {chart_end_date.isoformat()} | \uC2E4\uC81C \uC8FC\uBB38: {mode_label}"
+        f"\uCC28\uD2B8 \uD45C\uC2DC: {chart_start_date.isoformat()} ~ {chart_end_date.isoformat()} | \uC2E4\uC81C \uC8FC\uBB38: {mode_label}"
     )
     st.caption("\uB9C8\uCEE4 \uD45C\uC2DC \uD544\uD130\uB294 \uCC28\uD2B8 \uC0C1\uB2E8\uC5D0\uC11C \uBC14\uB85C \uD1A0\uAE00\uD569\uB2C8\uB2E4.")
     st.caption("매매법 : 心を燃やせ")
@@ -1426,12 +1423,12 @@ def render_emotion_section() -> None:
     render_emotion_panel(positions, summary)
 def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: StrategyAdjustments, profile_name: str) -> None:
     init_live_chart_state()
-    strategy_label = get_strategy_label(profile_name)
+    strategy_label = "비공개"
     visible_start_date, visible_end_date = get_current_chart_date_range()
     runtime = get_live_runtime_state()
     if runtime["last_status"] in {"checking", "waiting_data"} or not runtime["last_checked_candle"]:
         st.info("엔진이 계산하고 있습니다. 차트와 시그널을 준비하는 중입니다.")
-    st.caption(f"차트 반영 전략: {strategy_label} · 표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
+    st.caption(f"표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
     components.html(
         build_live_chart_html(
             server_url="",
@@ -2671,7 +2668,7 @@ def render_backtest_tab(profile_name: str, adjustments: StrategyAdjustments) -> 
                 "yref": "paper",
                 "xanchor": "right",
                 "showarrow": False,
-                "text": get_strategy_label(profile_name),
+                "text": "비공개",
                 "font": {"size": 13, "color": "#60a5fa", "family": "Malgun Gothic"},
             },
         ],
