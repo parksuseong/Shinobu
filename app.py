@@ -1109,6 +1109,18 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
     executions = executions.copy()
     executions["timestamp"] = pd.to_datetime(executions["timestamp"], errors="coerce")
     executions = executions.dropna(subset=["timestamp"])
+    runtime_orders = get_live_runtime_state().get("orders", [])
+    sell_reason_by_order_no: dict[str, str] = {}
+    if isinstance(runtime_orders, list):
+        for item in runtime_orders:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("side", "") or "").lower() != "sell":
+                continue
+            order_no = str(item.get("order_no", "") or "").strip()
+            reason = str(item.get("reason", "") or "").strip()
+            if order_no and reason:
+                sell_reason_by_order_no[order_no] = reason
     dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in executions.columns]
     if dedupe_keys:
         executions = executions.drop_duplicates(subset=dedupe_keys, keep="first")
@@ -1156,6 +1168,9 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
         exit_amount = matched_qty * price
         pnl_amount = exit_amount - (matched_qty * entry_avg)
         pnl_rate = (pnl_amount / (matched_qty * entry_avg) * 100.0) if entry_avg > 0 else 0.0
+        execution_reason = str(getattr(execution, "reason", "") or "").strip()
+        execution_order_no = str(getattr(execution, "order_no", "") or "").strip()
+        exit_reason = sell_reason_by_order_no.get(execution_order_no, execution_reason)
         trades.append(
             {
                 "symbol": symbol,
@@ -1168,6 +1183,7 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
                 "pnl_amount": pnl_amount,
                 "pnl_rate": pnl_rate,
                 "result": "승" if pnl_amount > 0 else "패" if pnl_amount < 0 else "보합",
+                "exit_reason": exit_reason,
             }
         )
 
@@ -1284,6 +1300,9 @@ def _render_closed_live_trades() -> None:
         view["exit_price"] = view["exit_price"].map(lambda value: f"{float(value):,.0f}")
         view["pnl_amount"] = view["pnl_amount"].map(lambda value: f"{float(value):+,.0f}")
         view["pnl_rate"] = view["pnl_rate"].map(lambda value: f"{float(value):+.2f}%")
+        if "exit_reason" not in view.columns:
+            view["exit_reason"] = ""
+        view["exit_reason"] = view["exit_reason"].fillna("").astype(str).str.strip().replace("", "-")
         view = view.rename(
             columns={
                 "name": "종목",
@@ -1295,10 +1314,11 @@ def _render_closed_live_trades() -> None:
                 "pnl_amount": "손익",
                 "pnl_rate": "수익률",
                 "result": "결과",
+                "exit_reason": "청산사유",
             }
         )
         st.dataframe(
-            view[["종목", "진입구간", "청산구간", "수량", "진입가", "청산가", "손익", "수익률", "결과"]].head(20),
+            view[["종목", "진입구간", "청산구간", "수량", "진입가", "청산가", "손익", "수익률", "결과", "청산사유"]].head(20),
             width="stretch",
             hide_index=True,
         )
