@@ -9,6 +9,7 @@ import urllib.request
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -24,10 +25,16 @@ KIS_MAX_RETRIES = 3
 _KIS_REQUEST_LOCK = threading.RLock()
 _KIS_REQUEST_TIMES: deque[float] = deque()
 KIS_TOKEN_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "kis_token.json"
+KST = ZoneInfo("Asia/Seoul")
+KIS_DAILY_FORCE_REFRESH_HOUR = 16
 
 
 class KisApiError(RuntimeError):
     pass
+
+
+def _now_kst() -> datetime:
+    return datetime.now(tz=KST)
 
 
 def _read_cached_token() -> str | None:
@@ -46,17 +53,28 @@ def _read_cached_token() -> str | None:
     except ValueError:
         return None
 
-    if expires_ts <= datetime.now() + timedelta(minutes=5):
+    if expires_ts.tzinfo is None:
+        expires_ts = expires_ts.replace(tzinfo=KST)
+
+    now_kst = _now_kst()
+    daily_refresh_date = str(payload.get("daily_refresh_date") or "").strip()
+    if now_kst.hour >= KIS_DAILY_FORCE_REFRESH_HOUR and daily_refresh_date != now_kst.strftime("%Y-%m-%d"):
+        return None
+
+    if expires_ts <= now_kst + timedelta(minutes=5):
         return None
     return token
 
 
 def _write_cached_token(token: str, expires_in_seconds: int) -> None:
     KIS_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    expires_at = datetime.now() + timedelta(seconds=max(expires_in_seconds - 300, 0))
+    now_kst = _now_kst()
+    expires_at = now_kst + timedelta(seconds=max(expires_in_seconds - 300, 0))
+    daily_refresh_date = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= KIS_DAILY_FORCE_REFRESH_HOUR else ""
     payload = {
         "access_token": token,
         "expires_at": expires_at.isoformat(timespec="seconds"),
+        "daily_refresh_date": daily_refresh_date,
     }
     KIS_TOKEN_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -16,16 +16,23 @@ NGINX_CERT_KEY_PATH="${NGINX_CERT_KEY_PATH:-/etc/letsencrypt/live/$NGINX_DOMAIN/
 
 STREAMLIT_PID_FILE="$LOG_DIR/streamlit.pid"
 SIGNAL_PID_FILE="$LOG_DIR/signal_api.pid"
+LIVE_ENGINE_PID_FILE="$LOG_DIR/live_engine.pid"
+DAILY_RECO_CRON_TAG="# shinobu-daily-recommendation"
+DAILY_RECO_CRON_SCHEDULE="${DAILY_RECO_CRON_SCHEDULE:-0 6 * * 1-5}"
+DAILY_RECO_CRON_TZ="${DAILY_RECO_CRON_TZ:-Asia/Seoul}"
 
 usage() {
   cat <<'EOF'
 Usage:
   bash scripts/ec2_service.sh bootstrap   # install deps + create venv + pip install
-  bash scripts/ec2_service.sh start       # start streamlit + signal api
+  bash scripts/ec2_service.sh start       # start streamlit + signal api + live engine
   bash scripts/ec2_service.sh stop        # stop both processes
   bash scripts/ec2_service.sh restart     # stop then start
   bash scripts/ec2_service.sh reset       # stop -> clear sqlite caches -> force startup re-init -> start
   bash scripts/ec2_service.sh status      # show process status
+  bash scripts/ec2_service.sh reco-cron-install # install/update daily recommendation cron (06:00 KST weekdays)
+  bash scripts/ec2_service.sh reco-cron-status  # show daily recommendation cron status
+  bash scripts/ec2_service.sh reco-run-now      # run daily recommendation job immediately
   bash scripts/ec2_service.sh nginx-apply # write nginx conf (/ + /chart) and reload nginx
   bash scripts/ec2_service.sh nginx-check # verify /chart and /v1/chart return JSON
 EOF
@@ -127,12 +134,26 @@ start_streamlit() {
 
   clear_port_conflicts "$STREAMLIT_PORT" "Streamlit" "$STREAMLIT_PID_FILE"
 
-  nohup "$VENV_DIR/bin/python" -m streamlit run "$ROOT_DIR/app.py" \
+  SHINOBU_EXTERNAL_ENGINE=1 nohup "$VENV_DIR/bin/python" -m streamlit run "$ROOT_DIR/app.py" \
     --server.address "$STREAMLIT_HOST" \
     --server.port "$STREAMLIT_PORT" \
     >/dev/null 2>"$LOG_DIR/streamlit.err.log" &
   echo $! >"$STREAMLIT_PID_FILE"
   echo "Streamlit started (pid=$(cat "$STREAMLIT_PID_FILE"))"
+}
+
+start_live_engine() {
+  ensure_log_dir
+  local current_pid=""
+  if current_pid="$(read_pid "$LIVE_ENGINE_PID_FILE" 2>/dev/null)" && is_pid_running "$current_pid"; then
+    echo "Live engine already running (pid=$current_pid)"
+    return
+  fi
+
+  nohup "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/run_live_engine.py" \
+    >/dev/null 2>"$LOG_DIR/live_engine.err.log" &
+  echo $! >"$LIVE_ENGINE_PID_FILE"
+  echo "Live engine started (pid=$(cat "$LIVE_ENGINE_PID_FILE"))"
 }
 
 start_signal_api() {
@@ -198,9 +219,11 @@ start_all() {
   fi
   start_streamlit
   start_signal_api
+  start_live_engine
 }
 
 stop_all() {
+  stop_one "Live engine" "$LIVE_ENGINE_PID_FILE"
   stop_one "Signal API" "$SIGNAL_PID_FILE"
   stop_one "Streamlit" "$STREAMLIT_PID_FILE"
 }
@@ -208,9 +231,11 @@ stop_all() {
 status_all() {
   status_one "Streamlit" "$STREAMLIT_PID_FILE"
   status_one "Signal API" "$SIGNAL_PID_FILE"
+  status_one "Live engine" "$LIVE_ENGINE_PID_FILE"
   echo "Logs:"
   echo "  $LOG_DIR/streamlit.err.log"
   echo "  $LOG_DIR/signal_api.err.log"
+  echo "  $LOG_DIR/live_engine.err.log"
 }
 
 reset_data() {
@@ -354,6 +379,53 @@ check_nginx_routes() {
   fi
 }
 
+daily_reco_cron_entry() {
+  local py="$VENV_DIR/bin/python"
+  local script="$ROOT_DIR/scripts/run_daily_recommendation.py"
+  local log_file="$LOG_DIR/recommendation_cron.log"
+  echo "CRON_TZ=$DAILY_RECO_CRON_TZ $DAILY_RECO_CRON_SCHEDULE cd $ROOT_DIR && $py $script >> $log_file 2>&1 $DAILY_RECO_CRON_TAG"
+}
+
+install_daily_reco_cron() {
+  local current filtered entry tmp
+  current="$(crontab -l 2>/dev/null || true)"
+  filtered="$(printf '%s\n' "$current" | grep -vF "$DAILY_RECO_CRON_TAG" || true)"
+  entry="$(daily_reco_cron_entry)"
+  tmp="$(mktemp)"
+  {
+    printf '%s\n' "$filtered"
+    printf '%s\n' "$entry"
+  } | awk 'NF{print}' >"$tmp"
+  crontab "$tmp"
+  rm -f "$tmp"
+  echo "Installed cron entry:"
+  echo "  $entry"
+  reco_cron_status
+}
+
+reco_cron_status() {
+  local current line
+  current="$(crontab -l 2>/dev/null || true)"
+  line="$(printf '%s\n' "$current" | grep -F "$DAILY_RECO_CRON_TAG" || true)"
+  if [[ -z "$line" ]]; then
+    echo "Daily recommendation cron: not installed"
+  else
+    echo "Daily recommendation cron: installed"
+    echo "  $line"
+  fi
+}
+
+run_daily_reco_now() {
+  if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+    echo "Virtualenv not found at $VENV_DIR. Run bootstrap first."
+    exit 1
+  fi
+  ensure_log_dir
+  echo "Running daily recommendation job now..."
+  cd "$ROOT_DIR"
+  "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/run_daily_recommendation.py" | tee -a "$LOG_DIR/recommendation_cron.log"
+}
+
 main() {
   local cmd="${1:-}"
   case "$cmd" in
@@ -363,6 +435,9 @@ main() {
     restart) stop_all; start_all ;;
     reset) reset_data ;;
     status) status_all ;;
+    reco-cron-install) install_daily_reco_cron ;;
+    reco-cron-status) reco_cron_status ;;
+    reco-run-now) run_daily_reco_now ;;
     nginx-apply) apply_nginx_conf ;;
     nginx-check) check_nginx_routes ;;
     *) usage; exit 1 ;;
