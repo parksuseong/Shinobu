@@ -2915,7 +2915,7 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    live_tab, backtest_tab, recommendation_tab = st.tabs(["실전", "백테스팅", "종목추천"])
+    live_tab, backtest_tab = st.tabs(["실전", "백테스팅"])
 
     with live_tab:
         render_header(base_profile_name)
@@ -2942,8 +2942,6 @@ def main() -> None:
     with backtest_tab:
         render_backtest_tab(get_current_strategy_profile(), adjustments)
 
-    with recommendation_tab:
-        render_stock_recommendation_tab()
 
 
 if __name__ == "__main__":
