@@ -26,8 +26,8 @@ _KIS_REQUEST_LOCK = threading.RLock()
 _KIS_REQUEST_TIMES: deque[float] = deque()
 KIS_TOKEN_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "kis_token.json"
 KST = ZoneInfo("Asia/Seoul")
-KIS_DAILY_FORCE_REFRESH_HOUR = 16
-KIS_DAILY_FORCE_REFRESH_MINUTE = 11
+KIS_DAILY_FORCE_REFRESH_HOUR = 18
+KIS_DAILY_FORCE_REFRESH_MINUTE = 0
 
 
 class KisApiError(RuntimeError):
