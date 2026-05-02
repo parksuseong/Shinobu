@@ -1061,7 +1061,13 @@ def process_live_trading_cycle(
                     baseline_quantity=current_quantity,
                     execution_tag="eod_force_exit",
                 )
-                state["last_forced_exit_date"] = today_text
+                fetch_domestic_balance.clear()
+                positions, _ = fetch_domestic_balance()
+                remaining_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+                if remaining_position is None:
+                    state["last_forced_exit_date"] = today_text
+                else:
+                    _append_log("경고", "장마감 강제 청산 후 보유가 남아 있어 같은 날 재시도 대상으로 유지합니다.")
                 _clear_pending_target(state)
                 _clear_deferred_open(state)
                 _set_status(state, "ordered")
