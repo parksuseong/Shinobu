@@ -150,7 +150,8 @@ start_live_engine() {
     return
   fi
 
-  nohup "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/run_live_engine.py" \
+  PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+    nohup "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/run_live_engine.py" \
     >/dev/null 2>"$LOG_DIR/live_engine.err.log" &
   echo $! >"$LIVE_ENGINE_PID_FILE"
   echo "Live engine started (pid=$(cat "$LIVE_ENGINE_PID_FILE"))"
