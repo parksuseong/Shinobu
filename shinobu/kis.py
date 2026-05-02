@@ -27,6 +27,7 @@ _KIS_REQUEST_TIMES: deque[float] = deque()
 KIS_TOKEN_FILE = Path(__file__).resolve().parent.parent / ".streamlit" / "kis_token.json"
 KST = ZoneInfo("Asia/Seoul")
 KIS_DAILY_FORCE_REFRESH_HOUR = 16
+KIS_DAILY_FORCE_REFRESH_MINUTE = 5
 
 
 class KisApiError(RuntimeError):
@@ -58,7 +59,11 @@ def _read_cached_token() -> str | None:
 
     now_kst = _now_kst()
     daily_refresh_date = str(payload.get("daily_refresh_date") or "").strip()
-    if now_kst.hour >= KIS_DAILY_FORCE_REFRESH_HOUR and daily_refresh_date != now_kst.strftime("%Y-%m-%d"):
+    refresh_triggered = (now_kst.hour, now_kst.minute) >= (
+        KIS_DAILY_FORCE_REFRESH_HOUR,
+        KIS_DAILY_FORCE_REFRESH_MINUTE,
+    )
+    if refresh_triggered and daily_refresh_date != now_kst.strftime("%Y-%m-%d"):
         return None
 
     if expires_ts <= now_kst + timedelta(minutes=5):
@@ -70,7 +75,11 @@ def _write_cached_token(token: str, expires_in_seconds: int) -> None:
     KIS_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     now_kst = _now_kst()
     expires_at = now_kst + timedelta(seconds=max(expires_in_seconds - 300, 0))
-    daily_refresh_date = now_kst.strftime("%Y-%m-%d") if now_kst.hour >= KIS_DAILY_FORCE_REFRESH_HOUR else ""
+    refresh_triggered = (now_kst.hour, now_kst.minute) >= (
+        KIS_DAILY_FORCE_REFRESH_HOUR,
+        KIS_DAILY_FORCE_REFRESH_MINUTE,
+    )
+    daily_refresh_date = now_kst.strftime("%Y-%m-%d") if refresh_triggered else ""
     payload = {
         "access_token": token,
         "expires_at": expires_at.isoformat(timespec="seconds"),
