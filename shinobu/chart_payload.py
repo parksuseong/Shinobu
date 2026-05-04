@@ -207,8 +207,7 @@ def _is_cached_payload_stale(cached_payload: dict[str, Any]) -> bool:
     if not _is_regular_market_kst(now_kst):
         return False
     latest_closed_candle = now_kst.floor("5min") - pd.Timedelta(minutes=5)
-    stale_cutoff = latest_closed_candle - pd.Timedelta(minutes=10)
-    return last_ts < stale_cutoff
+    return last_ts < latest_closed_candle
 
 
 def _write_cached_payload(cache_key: str, payload: dict[str, Any]) -> None:
