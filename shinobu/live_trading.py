@@ -444,7 +444,8 @@ def _load_strategy(symbol: str, adjustments: StrategyAdjustments, strategy_name:
         frame = load_live_chart_data_cached_only(symbol, "5분봉", lookback_days=lookback_days)
         now_kst = _now_kst_naive()
         needs_refresh = frame.empty
-        if not frame.empty and _market_phase(now_kst) == "regular":
+        phase = _market_phase(now_kst)
+        if not frame.empty and phase in {"regular", "pre_close"}:
             latest_ts = pd.Timestamp(frame.index.max())
             # During market hours, treat same-day but lagging intraday cache as stale.
             # We allow a small lag window and force refresh when cache falls behind.
