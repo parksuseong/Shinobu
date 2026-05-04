@@ -442,7 +442,12 @@ def _load_strategy(symbol: str, adjustments: StrategyAdjustments, strategy_name:
 
         lookback_days = _business_days_to_lookback_days(get_strategy_history_business_days(strategy_name))
         frame = load_live_chart_data_cached_only(symbol, "5분봉", lookback_days=lookback_days)
-        if frame.empty:
+        now_kst = _now_kst_naive()
+        needs_refresh = frame.empty
+        if not frame.empty and _market_phase(now_kst) == "regular":
+            latest_ts = pd.Timestamp(frame.index.max())
+            needs_refresh = latest_ts.date() < now_kst.date()
+        if needs_refresh:
             frame = load_live_chart_data_for_strategy(symbol, "5분봉", strategy_name)
     except Exception:
         frame = load_live_chart_data(symbol, "5분봉")
