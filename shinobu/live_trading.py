@@ -446,7 +446,11 @@ def _load_strategy(symbol: str, adjustments: StrategyAdjustments, strategy_name:
         needs_refresh = frame.empty
         if not frame.empty and _market_phase(now_kst) == "regular":
             latest_ts = pd.Timestamp(frame.index.max())
-            needs_refresh = latest_ts.date() < now_kst.date()
+            # During market hours, treat same-day but lagging intraday cache as stale.
+            # We allow a small lag window and force refresh when cache falls behind.
+            latest_closed_candle = now_kst.floor("5min") - pd.Timedelta(minutes=5)
+            stale_cutoff = latest_closed_candle - pd.Timedelta(minutes=10)
+            needs_refresh = (latest_ts.date() < now_kst.date()) or (latest_ts < stale_cutoff)
         if needs_refresh:
             frame = load_live_chart_data_for_strategy(symbol, "5분봉", strategy_name)
     except Exception:
