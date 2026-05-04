@@ -37,19 +37,23 @@ const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
 const markerFilterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
 const hostName = hostWindow.location.hostname || "";
-const hostPort = hostWindow.location.port || "";
 const isLocalHost = ["localhost", "127.0.0.1"].includes(hostName);
-const isIpv4Host = /^(\\d{1,3}\\.){3}\\d{1,3}$/.test(hostName);
-const isDirectStreamlit = hostPort === "8501";
-const isDirectApi = isLocalHost || isIpv4Host || isDirectStreamlit;
-const chartEndpointBases = isDirectApi
-  ? [
-      `${{hostWindow.location.protocol}}//${{hostName}}:8766/v1/chart`,
-      `${{hostWindow.location.protocol}}//${{hostName}}:8766/chart`
-    ]
-  : [
-      "https://shinobu-chart.ukin.dev/v1/chart"
-    ];
+const preferredHost = hostName || "127.0.0.1";
+const chartEndpointBases = [];
+
+// 1) Try direct Signal API on EC2 host first (most reliable on http://IP:8501 access)
+chartEndpointBases.push(`http://${preferredHost}:8766/v1/chart`);
+chartEndpointBases.push(`http://${preferredHost}:8766/chart`);
+
+// 2) If reverse proxy is configured, same-origin paths may work on https domains
+chartEndpointBases.push(`${hostWindow.location.protocol}//${preferredHost}/v1/chart`);
+chartEndpointBases.push(`${hostWindow.location.protocol}//${preferredHost}/chart`);
+
+// 3) Local-only fallback (useful when app is opened on localhost directly)
+if (isLocalHost) {{
+  chartEndpointBases.push("http://127.0.0.1:8766/v1/chart");
+  chartEndpointBases.push("http://127.0.0.1:8766/chart");
+}}
 const refreshTimerKey = "__shinobu_chart_refresh_{root_suffix}";
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
