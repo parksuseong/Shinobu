@@ -57,17 +57,19 @@ if (isLocalHost) {{
 const refreshTimerKey = "__shinobu_chart_refresh_{root_suffix}";
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
-  {{ key: "primary_open", label: "??덉쒔?귐? Open" }},
-  {{ key: "primary_close", label: "??덉쒔?귐? Close" }},
-  {{ key: "pair_open", label: "?④퉭苡??Open" }},
-  {{ key: "pair_close", label: "?④퉭苡??Close" }},  {{ key: "order_buy", label: "??삘꼻?? }},
-  {{ key: "order_sell", label: "??삘꼻?? }}
+  {{ key: "primary_open", label: "Leverage Open" }},
+  {{ key: "primary_close", label: "Leverage Close" }},
+  {{ key: "pair_open", label: "Inverse Open" }},
+  {{ key: "pair_close", label: "Inverse Close" }},
+  {{ key: "order_buy", label: "Order Buy" }},
+  {{ key: "order_sell", label: "Order Sell" }}
 ];
 const markerFilters = {{
   primary_open: true,
   primary_close: true,
   pair_open: true,
-  pair_close: true,  order_buy: true,
+  pair_close: true,
+  order_buy: true,
   order_sell: true
 }};
 
@@ -108,9 +110,9 @@ function detailHover(items) {{
   return items.map((item) =>
     [
       item.label || "",
-      item.time ? `??볦퍢: ${{item.time}}` : "",
-      item.price ? `揶쎛野? ${{Number(item.price).toLocaleString()}}` : "",
-      item.reason ? `???: ${{item.reason}}` : "",
+      item.time ? `??蹂?뜟: ${{item.time}}` : "",
+      item.price ? `?띠럾??? ${{Number(item.price).toLocaleString()}}` : "",
+      item.reason ? `????: ${{item.reason}}` : "",
       item.scr !== undefined ? `SCR: ${{Number(item.scr).toFixed(2)}}` : ""
     ].filter(Boolean).join("<br>")
   );
@@ -124,8 +126,8 @@ function isStopMarker(item) {{
   const label = normalizeMarkerText(item?.label);
   const reason = normalizeMarkerText(item?.reason);
   return (
-    label.includes("?癒?쟿") ||
-    reason.includes("?癒?쟿") ||
+    label.includes("?????) ||
+    reason.includes("?????) ||
     label.includes("stop") ||
     reason.includes("stop") ||
     label.includes("trailing") ||
@@ -208,7 +210,7 @@ function renderMarkerFilterControls() {{
   if (!markerFilterRoot) return;
   markerFilterRoot.innerHTML = "";
   const title = document.createElement("span");
-  title.textContent = "筌띾뜆鍮???뽯뻻:";
+  title.textContent = "嶺뚮씭?녽뜮???戮?뻣:";
   title.style.color = "#94a3b8";
   title.style.fontSize = "12px";
   title.style.marginRight = "4px";
@@ -254,7 +256,7 @@ function renderCurrentCandleStatus(payload) {{
   chartStatusRoot.innerHTML =
     `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
     `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
-    `<span style="color:#64748b;">疫꿸퀣? ??${{
+    `<span style="color:#64748b;">?リ옇?? ??${{
       current.candleTime || "-"
     }}</span>` +
     `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
@@ -270,7 +272,7 @@ function renderCurrentCandleStatusFromState(current) {{
   chartStatusRoot.innerHTML =
     `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
     `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
-    `<span style="color:#64748b;">疫꿸퀣? ??${{
+    `<span style="color:#64748b;">?リ옇?? ??${{
       current.candleTime || "-"
     }}</span>` +
     `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
@@ -311,11 +313,11 @@ function startCurrentCandleCountdown(payload) {{
     liveCountdownState.progressPct = nextProgress;
     if (nextRemaining <= 0) {{
       liveCountdownState.isUnconfirmed = false;
-      liveCountdownState.statusText = "筌ㅼ뮄?????類ㅼ젟";
+      liveCountdownState.statusText = "嶺뚣끉裕?????筌먦끉??;
       clearInterval(countdownTimer);
       countdownTimer = null;
     }} else {{
-      liveCountdownState.statusText = `?袁⑹삺 ??沃섎챸???夷?筌띾뜃而㎪틦?? ${{liveCountdownState.remainingText}}`;
+      liveCountdownState.statusText = `?熬곣뫗????亦껋꼶梨???鸚?嶺뚮씭?껇뚣렕??? ${{liveCountdownState.remainingText}}`;
     }}
     renderCurrentCandleStatusFromState(liveCountdownState);
   }}, 1000);
@@ -424,7 +426,7 @@ function buildMainFigure(payload) {{
   const markers = markerSeries(payload).main;
   const candleHoverText = payload.candles.map((item) => {{
     const timeText = (item.t || "").replace("T", " ").slice(0, 16);
-    return `??볦퍢 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>?⑥쥒? ${{Number(item.h).toLocaleString()}}<br>??揶쎛 ${{Number(item.l).toLocaleString()}}<br>?ル굛? ${{Number(item.c).toLocaleString()}}`;
+    return `??蹂?뜟 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>??μ쪙? ${{Number(item.h).toLocaleString()}}<br>???띠럾? ${{Number(item.l).toLocaleString()}}<br>??リ탿? ${{Number(item.c).toLocaleString()}}`;
   }});
   return {{
     data: [
@@ -483,7 +485,7 @@ function buildMainFigure(payload) {{
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          text: `${{payload.symbolName}} 夷?5?브쑬??夷???쇱읈 揶쎛野?,
+          text: `${{payload.symbolName}} 鸚?5?釉뚯뫊??鸚????깆쓧 ?띠럾???,
           font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }}
         }},
         {{
@@ -525,7 +527,7 @@ function buildIndicatorFigure(payload) {{
         y: payload.scr || [],
         customdata: indicatorTimes,
         line: {{ color: "#ffffff", width: 4.2, dash: "solid" }},
-        hovertemplate: `??볦퍢 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
+        hovertemplate: `??蹂?뜟 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
         showlegend: false
       }},
       {{
@@ -535,7 +537,7 @@ function buildIndicatorFigure(payload) {{
         y: payload.pairScr || [],
         customdata: indicatorTimes,
         line: {{ color: "#f59e0b", width: 3.5, dash: "dot" }},
-        hovertemplate: `??볦퍢 %{{customdata}}<br>${{payload.pairName || "?④퉭苡??}} SCR %{{y:.2f}}<extra></extra>`,
+        hovertemplate: `??蹂?뜟 %{{customdata}}<br>${{payload.pairName || "??ｍ돪???}} SCR %{{y:.2f}}<extra></extra>`,
         showlegend: false
       }}
     ],
@@ -569,7 +571,7 @@ function buildIndicatorFigure(payload) {{
         range: [-1.9, 1.9],
         tickmode: "array",
         tickvals: [-1, 0, 1],
-        ticktext: ["??롫뼊", "0", "?怨룸뼊"],
+        ticktext: ["??濡ル펺", "0", "??⑤８堉?],
         showgrid: true,
         gridcolor: "rgba(42,46,57,0.35)",
         fixedrange: true
@@ -581,7 +583,7 @@ function buildIndicatorFigure(payload) {{
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          text: "癰귣똻?쒙쭪???(????쇨퐨: ??덉쒔?귐? / 雅뚯눛???癒?퐨: ?④퉭苡??",
+          text: "?곌랜???숈????(?????⑦맖: ???됱뮅?洹? / ?낅슣???????? ??ｍ돪???",
           font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }}
         }}
       ]
@@ -628,7 +630,7 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
   }} else {{
     const candleHoverText = nextPayload.candles.map((item) => {{
       const timeText = (item.t || "").replace("T", " ").slice(0, 16);
-      return `??볦퍢 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>?⑥쥒? ${{Number(item.h).toLocaleString()}}<br>??揶쎛 ${{Number(item.l).toLocaleString()}}<br>?ル굛? ${{Number(item.c).toLocaleString()}}`;
+      return `??蹂?뜟 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>??μ쪙? ${{Number(item.h).toLocaleString()}}<br>???띠럾? ${{Number(item.l).toLocaleString()}}<br>??リ탿? ${{Number(item.c).toLocaleString()}}`;
     }});
     await Plotly.restyle(
       mainRoot,
