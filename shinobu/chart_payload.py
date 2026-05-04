@@ -187,6 +187,30 @@ def _read_cached_payload(cache_key: str) -> dict[str, Any] | None:
     return payload
 
 
+def _is_regular_market_kst(now: pd.Timestamp) -> bool:
+    if now.dayofweek >= 5:
+        return False
+    market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    return market_open <= now <= market_close
+
+
+def _is_cached_payload_stale(cached_payload: dict[str, Any]) -> bool:
+    candles = cached_payload.get("candles") or []
+    if not candles:
+        return True
+    try:
+        last_ts = pd.Timestamp(candles[-1].get("t"))
+    except Exception:
+        return True
+    now_kst = pd.Timestamp.now(tz=CHART_KST).tz_localize(None)
+    if not _is_regular_market_kst(now_kst):
+        return False
+    latest_closed_candle = now_kst.floor("5min") - pd.Timedelta(minutes=5)
+    stale_cutoff = latest_closed_candle - pd.Timedelta(minutes=10)
+    return last_ts < stale_cutoff
+
+
 def _write_cached_payload(cache_key: str, payload: dict[str, Any]) -> None:
     save_payload_cache(cache_key, payload)
 
@@ -900,7 +924,7 @@ def build_chart_payload(
         end_date=end_date,
         include_markers=include_markers,
     )
-    if cached_payload is not None:
+    if cached_payload is not None and not _is_cached_payload_stale(cached_payload):
         return cached_payload
 
     try:
