@@ -42,12 +42,12 @@ const preferredHost = hostName || "127.0.0.1";
 const chartEndpointBases = [];
 
 // 1) Try direct Signal API on EC2 host first (most reliable on http://IP:8501 access)
-chartEndpointBases.push(`http://${preferredHost}:8766/v1/chart`);
-chartEndpointBases.push(`http://${preferredHost}:8766/chart`);
+chartEndpointBases.push(`http://${{preferredHost}}:8766/v1/chart`);
+chartEndpointBases.push(`http://${{preferredHost}}:8766/chart`);
 
 // 2) If reverse proxy is configured, same-origin paths may work on https domains
-chartEndpointBases.push(`${hostWindow.location.protocol}//${preferredHost}/v1/chart`);
-chartEndpointBases.push(`${hostWindow.location.protocol}//${preferredHost}/chart`);
+chartEndpointBases.push(`${{hostWindow.location.protocol}}//${{preferredHost}}/v1/chart`);
+chartEndpointBases.push(`${{hostWindow.location.protocol}}//${{preferredHost}}/chart`);
 
 // 3) Local-only fallback (useful when app is opened on localhost directly)
 if (isLocalHost) {{
