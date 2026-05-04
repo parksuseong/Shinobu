@@ -770,45 +770,59 @@ async function fetchPayload(includeMarkers) {{
 }}
 
 async function refreshCharts() {{
-  const nextPayload = await fetchPayload(true);
-  startCurrentCandleCountdown(nextPayload);
-  const config = {{
-    responsive: true,
-    displaylogo: false,
-    displayModeBar: false,
-    scrollZoom: true,
-    modeBarButtonsToRemove: ["zoom2d", "pan2d", "lasso2d", "select2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"]
-  }};
+  try {{
+    const nextPayload = await fetchPayload(true);
+    startCurrentCandleCountdown(nextPayload);
+    const config = {{
+      responsive: true,
+      displaylogo: false,
+      displayModeBar: false,
+      scrollZoom: true,
+      modeBarButtonsToRemove: ["zoom2d", "pan2d", "lasso2d", "select2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"]
+    }};
 
-  if (!initializedMain) {{
-    const mainFigure = buildMainFigure(nextPayload);
-    await Plotly.newPlot(mainRoot, mainFigure.data, mainFigure.layout, config);
-    initializedMain = true;
-    mainRoot.on("plotly_relayout", (eventData) => {{
-      if (syncingRange) return;
-      const x0 = eventData["xaxis.range[0]"];
-      const x1 = eventData["xaxis.range[1]"];
-      if (x0 === undefined || x1 === undefined) return;
-      syncingRange = true;
-      Plotly.relayout(indicatorRoot, {{ "xaxis.range": [x0, x1] }}).finally(() => {{
-        syncingRange = false;
+    if (!initializedMain) {{
+      const mainFigure = buildMainFigure(nextPayload);
+      await Plotly.newPlot(mainRoot, mainFigure.data, mainFigure.layout, config);
+      initializedMain = true;
+      mainRoot.on("plotly_relayout", (eventData) => {{
+        if (syncingRange) return;
+        const x0 = eventData["xaxis.range[0]"];
+        const x1 = eventData["xaxis.range[1]"];
+        if (x0 === undefined || x1 === undefined) return;
+        syncingRange = true;
+        Plotly.relayout(indicatorRoot, {{ "xaxis.range": [x0, x1] }}).finally(() => {{
+          syncingRange = false;
+        }});
       }});
-    }});
-  }} else {{
-    await applyMainIncremental(previousPayload, nextPayload);
-  }}
+    }} else {{
+      try {{
+        await applyMainIncremental(previousPayload, nextPayload);
+      }} catch (mainIncrementalError) {{
+        const mainFigure = buildMainFigure(nextPayload);
+        await Plotly.react(mainRoot, mainFigure.data, mainFigure.layout, config);
+      }}
+    }}
 
-  if (!initializedIndicator) {{
-    const indicatorFigure = buildIndicatorFigure(nextPayload);
-    await Plotly.newPlot(indicatorRoot, indicatorFigure.data, indicatorFigure.layout, config);
-    initializedIndicator = true;
-  }} else {{
-    await applyIndicatorIncremental(previousPayload, nextPayload);
-  }}
+    if (!initializedIndicator) {{
+      const indicatorFigure = buildIndicatorFigure(nextPayload);
+      await Plotly.newPlot(indicatorRoot, indicatorFigure.data, indicatorFigure.layout, config);
+      initializedIndicator = true;
+    }} else {{
+      try {{
+        await applyIndicatorIncremental(previousPayload, nextPayload);
+      }} catch (indicatorIncrementalError) {{
+        const indicatorFigure = buildIndicatorFigure(nextPayload);
+        await Plotly.react(indicatorRoot, indicatorFigure.data, indicatorFigure.layout, config);
+      }}
+    }}
 
-  await syncIndicatorRangeFromMain();
-  await applyMarkerPayload(nextPayload, nextPayload);
-  previousPayload = nextPayload;
+    await syncIndicatorRangeFromMain();
+    await applyMarkerPayload(nextPayload, nextPayload);
+    previousPayload = nextPayload;
+  }} catch (error) {{
+    console.error("refreshCharts failed", error);
+  }}
 }}
 
 loadMarkerFilters();
