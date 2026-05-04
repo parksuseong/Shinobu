@@ -57,12 +57,12 @@ if (isLocalHost) {{
 const refreshTimerKey = "__shinobu_chart_refresh_{root_suffix}";
 const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
 const markerFilterOptions = [
-  {{ key: "primary_open", label: "Leverage Open" }},
-  {{ key: "primary_close", label: "Leverage Close" }},
-  {{ key: "pair_open", label: "Inverse Open" }},
-  {{ key: "pair_close", label: "Inverse Close" }},
-  {{ key: "order_buy", label: "Order Buy" }},
-  {{ key: "order_sell", label: "Order Sell" }}
+  {{ key: "primary_open", label: "레버리지 Open" }},
+  {{ key: "primary_close", label: "레버리지 Close" }},
+  {{ key: "pair_open", label: "곱버스 Open" }},
+  {{ key: "pair_close", label: "곱버스 Close" }},
+  {{ key: "order_buy", label: "실매수" }},
+  {{ key: "order_sell", label: "실매도" }}
 ];
 const markerFilters = {{
   primary_open: true,
@@ -110,9 +110,9 @@ function detailHover(items) {{
   return items.map((item) =>
     [
       item.label || "",
-      item.time ? `??蹂?뜟: ${{item.time}}` : "",
-      item.price ? `?띠럾??? ${{Number(item.price).toLocaleString()}}` : "",
-      item.reason ? `????: ${{item.reason}}` : "",
+      item.time ? `시간: ${{item.time}}` : "",
+      item.price ? `가격: ${{Number(item.price).toLocaleString()}}` : "",
+      item.reason ? `사유: ${{item.reason}}` : "",
       item.scr !== undefined ? `SCR: ${{Number(item.scr).toFixed(2)}}` : ""
     ].filter(Boolean).join("<br>")
   );
@@ -126,8 +126,8 @@ function isStopMarker(item) {{
   const label = normalizeMarkerText(item?.label);
   const reason = normalizeMarkerText(item?.reason);
   return (
-    label.includes("?????) ||
-    reason.includes("?????) ||
+    label.includes("손절") ||
+    reason.includes("손절") ||
     label.includes("stop") ||
     reason.includes("stop") ||
     label.includes("trailing") ||
@@ -210,7 +210,7 @@ function renderMarkerFilterControls() {{
   if (!markerFilterRoot) return;
   markerFilterRoot.innerHTML = "";
   const title = document.createElement("span");
-  title.textContent = "嶺뚮씭?녽뜮???戮?뻣:";
+  title.textContent = "마커 표시:";
   title.style.color = "#94a3b8";
   title.style.fontSize = "12px";
   title.style.marginRight = "4px";
@@ -256,7 +256,7 @@ function renderCurrentCandleStatus(payload) {{
   chartStatusRoot.innerHTML =
     `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
     `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
-    `<span style="color:#64748b;">?リ옇?? ??${{
+    `<span style="color:#64748b;">기준 봉 ${{
       current.candleTime || "-"
     }}</span>` +
     `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
@@ -272,7 +272,7 @@ function renderCurrentCandleStatusFromState(current) {{
   chartStatusRoot.innerHTML =
     `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
     `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
-    `<span style="color:#64748b;">?リ옇?? ??${{
+    `<span style="color:#64748b;">기준 봉 ${{
       current.candleTime || "-"
     }}</span>` +
     `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
@@ -313,11 +313,11 @@ function startCurrentCandleCountdown(payload) {{
     liveCountdownState.progressPct = nextProgress;
     if (nextRemaining <= 0) {{
       liveCountdownState.isUnconfirmed = false;
-      liveCountdownState.statusText = "嶺뚣끉裕?????筌먦끉??;
+      liveCountdownState.statusText = "최근 봉 확정";
       clearInterval(countdownTimer);
       countdownTimer = null;
     }} else {{
-      liveCountdownState.statusText = `?熬곣뫗????亦껋꼶梨???鸚?嶺뚮씭?껇뚣렕??? ${{liveCountdownState.remainingText}}`;
+      liveCountdownState.statusText = `현재 봉 미확정 · 마감까지 ${{liveCountdownState.remainingText}}`;
     }}
     renderCurrentCandleStatusFromState(liveCountdownState);
   }}, 1000);
@@ -426,7 +426,7 @@ function buildMainFigure(payload) {{
   const markers = markerSeries(payload).main;
   const candleHoverText = payload.candles.map((item) => {{
     const timeText = (item.t || "").replace("T", " ").slice(0, 16);
-    return `??蹂?뜟 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>??μ쪙? ${{Number(item.h).toLocaleString()}}<br>???띠럾? ${{Number(item.l).toLocaleString()}}<br>??リ탿? ${{Number(item.c).toLocaleString()}}`;
+    return `시간 ${{timeText}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
   }});
   return {{
     data: [
@@ -485,7 +485,7 @@ function buildMainFigure(payload) {{
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          text: `${{payload.symbolName}} 鸚?5?釉뚯뫊??鸚????깆쓧 ?띠럾???,
+          text: `${{payload.symbolName}} · 5분봉 · 실전 가격`,
           font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }}
         }},
         {{
@@ -527,7 +527,7 @@ function buildIndicatorFigure(payload) {{
         y: payload.scr || [],
         customdata: indicatorTimes,
         line: {{ color: "#ffffff", width: 4.2, dash: "solid" }},
-        hovertemplate: `??蹂?뜟 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
+        hovertemplate: `시간 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
         showlegend: false
       }},
       {{
@@ -537,7 +537,7 @@ function buildIndicatorFigure(payload) {{
         y: payload.pairScr || [],
         customdata: indicatorTimes,
         line: {{ color: "#f59e0b", width: 3.5, dash: "dot" }},
-        hovertemplate: `??蹂?뜟 %{{customdata}}<br>${{payload.pairName || "??ｍ돪???}} SCR %{{y:.2f}}<extra></extra>`,
+        hovertemplate: `시간 %{{customdata}}<br>${{payload.pairName || "곱버스"}} SCR %{{y:.2f}}<extra></extra>`,
         showlegend: false
       }}
     ],
@@ -571,7 +571,7 @@ function buildIndicatorFigure(payload) {{
         range: [-1.9, 1.9],
         tickmode: "array",
         tickvals: [-1, 0, 1],
-        ticktext: ["??濡ル펺", "0", "??⑤８堉?],
+        ticktext: ["하단", "0", "상단"],
         showgrid: true,
         gridcolor: "rgba(42,46,57,0.35)",
         fixedrange: true
@@ -583,7 +583,7 @@ function buildIndicatorFigure(payload) {{
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          text: "?곌랜???숈????(?????⑦맖: ???됱뮅?洹? / ?낅슣???????? ??ｍ돪???",
+          text: "보조지표 (흰 실선: 레버리지 / 주황 점선: 곱버스)",
           font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }}
         }}
       ]
@@ -630,7 +630,7 @@ async function applyMainIncremental(prevPayload, nextPayload) {{
   }} else {{
     const candleHoverText = nextPayload.candles.map((item) => {{
       const timeText = (item.t || "").replace("T", " ").slice(0, 16);
-      return `??蹂?뜟 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>??μ쪙? ${{Number(item.h).toLocaleString()}}<br>???띠럾? ${{Number(item.l).toLocaleString()}}<br>??リ탿? ${{Number(item.c).toLocaleString()}}`;
+      return `시간 ${{timeText}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
     }});
     await Plotly.restyle(
       mainRoot,
