@@ -1,1 +1,820 @@
-牦浯张晟瑵牵彥 浩潰瑲愠湮瑯瑡潩獮਍਍浩潰瑲爠൥ഊഊ搊晥戠極摬江癩彥档牡彴瑨汭ന †⨠ബ †猠牥敶彲牵㩬猠牴ബ †猠浹潢㩬猠牴ബ †瀠楡彲祳扭汯›瑳⁲⁼潎敮ബ †猠潴档灟瑣›湩ⱴ਍††捣彩捰㩴椠瑮ബ †爠楳灟瑣›湩ⱴ਍††瑳慲整祧湟浡㩥猠牴ബ †猠牴瑡来役慬敢㩬猠牴ബ †猠慴瑲摟瑡㩥猠牴ബ †攠摮摟瑡㩥猠牴ബ †爠湥敤彲潮据㩥椠瑮ബ⤊ⴠ‾瑳㩲਍††慰物煟敵祲㴠瀠楡彲祳扭汯漠⁲∢਍††潲瑯獟晵楦⁸‽敲献扵爨嬢慞稭ⵁず㤭ⵟ⭝Ⱒ∠∭‬≦獻浹潢絬笭慰物煟敵祲漠⁲渧湯❥⵽獻牴瑡来役慮敭⵽牻湥敤彲潮据絥笭瑳捯彨捰絴笭捣彩捰絴笭獲彩捰絴⤢਍††慭湩牟潯彴摩㴠映洢楡⵮档牡⵴潲瑯笭潲瑯獟晵楦絸ഢ †椠摮捩瑡牯牟潯彴摩㴠映椢摮捩瑡牯挭慨瑲爭潯⵴牻潯彴畳晦硩≽਍††敲畴湲映∢ഢ㰊楤⁶瑳汹㵥搢獩汰祡昺敬㭸汦硥搭物捥楴湯挺汯浵㭮慧㩰〱硰∻ാ 㰠楤⁶瑳汹㵥搢獩汰祡渺湯≥搠瑡ⵡ瑳慲整祧渭浡㵥笢瑳慲整祧湟浡絥•慤慴猭牴瑡来⵹慬敢㵬笢瑳慲整祧江扡汥≽搠瑡ⵡ敲摮牥渭湯散∽牻湥敤彲潮据絥㸢⼼楤㹶਍†搼癩椠㵤挢慨瑲猭慴畴⵳牻潯彴畳晦硩≽猠祴敬∽潦瑮猭穩㩥㈱硰挻汯牯⌺愹㑡㉢活牡楧㩮‰‰瀲⁸瀶㭸㸢⼼楤㹶਍†搼癩椠㵤挢慨瑲洭牡敫⵲楦瑬牥笭潲瑯獟晵楦絸•瑳汹㵥搢獩汰祡昺敬㭸汦硥眭慲㩰牷灡朻灡㠺硰活牡楧㩮‰‰瀴⁸瀶㭸㸢⼼楤㹶਍†搼癩椠㵤笢慭湩牟潯彴摩≽猠祴敬∽楷瑤㩨〱┰栻楥桧㩴〴瀰㭸慢正牧畯摮⌺㌱㜱㈲戻牯敤㩲瀱⁸潳楬⁤㈣㉡㍥㬹潢摲牥爭摡畩㩳㈱硰∻㰾搯癩ാ 㰠楤⁶摩∽楻摮捩瑡牯牟潯彴摩≽猠祴敬∽楷瑤㩨〱┰栻楥桧㩴〳瀰㭸慢正牧畯摮⌺㌱㜱㈲戻牯敤㩲瀱⁸潳楬⁤㈣㉡㍥㬹潢摲牥爭摡畩㩳㈱硰∻㰾搯癩ാ㰊搯癩ാ㰊捳楲瑰猠捲∽瑨灴㩳⼯摣⹮汰瑯氮⽹汰瑯祬㈭㌮⸵⸲業⹮獪㸢⼼捳楲瑰ാ㰊捳楲瑰ാ挊湯瑳洠楡剮潯⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤笢慭湩牟潯彴摩≽㬩਍潣獮⁴湩楤慣潴割潯⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤笢湩楤慣潴彲潲瑯楟絤⤢഻挊湯瑳挠慨瑲瑓瑡獵潒瑯㴠搠捯浵湥⹴敧䕴敬敭瑮祂摉∨档牡⵴瑳瑡獵笭潲瑯獟晵楦絸⤢഻挊湯瑳洠牡敫䙲汩整割潯⁴‽潤畣敭瑮朮瑥汅浥湥䉴䥹⡤挢慨瑲洭牡敫⵲楦瑬牥笭潲瑯獟晵楦絸⤢഻挊湯瑳栠獯坴湩潤⁷‽楷摮睯瀮牡湥⁴☦眠湩潤⹷慰敲瑮氮捯瑡潩⁮‿楷摮睯瀮牡湥⁴›楷摮睯഻挊湯瑳栠獯乴浡⁥‽潨瑳楗摮睯氮捯瑡潩⹮潨瑳慮敭簠⁼∢਻潣獮⁴獩潌慣䡬獯⁴‽≛潬慣桬獯≴‬ㄢ㜲〮〮ㄮ崢椮据畬敤⡳潨瑳慎敭㬩挊湯瑳瀠敲敦牲摥潈瑳㴠栠獯乴浡⁥籼∠㈱⸷⸰⸰∱਻潣獮⁴档牡䕴摮潰湩䉴獡獥㴠嬠㭝ਊ⼯ㄠ 牔⁹楤敲瑣匠杩慮⁬偁⁉湯䔠㉃栠獯⁴楦獲⁴洨獯⁴敲楬扡敬漠⁮瑨灴⼺䤯㩐㔸㄰愠捣獥⥳挊慨瑲湅灤楯瑮慂敳⹳異桳怨瑨灴⼺␯筻牰晥牥敲䡤獯絴㩽㜸㘶瘯⼱档牡恴㬩挊慨瑲湅灤楯瑮慂敳⹳異桳怨瑨灴⼺␯筻牰晥牥敲䡤獯絴㩽㜸㘶振慨瑲⥠਻⼊ ⤲䤠⁦敲敶獲⁥牰硯⁹獩挠湯楦畧敲Ɽ猠浡ⵥ牯杩湩瀠瑡獨洠祡眠牯⁫湯栠瑴獰搠浯楡獮挊慨瑲湅灤楯瑮慂敳⹳異桳怨笤桻獯坴湩潤⹷潬慣楴湯瀮潲潴潣絬⽽␯筻牰晥牥敲䡤獯絴⽽ㅶ振慨瑲⥠਻档牡䕴摮潰湩䉴獡獥瀮獵⡨①筻潨瑳楗摮睯氮捯瑡潩⹮牰瑯捯汯絽⼯笤灻敲敦牲摥潈瑳絽振慨瑲⥠਻⼊ ⤳䰠捯污漭汮⁹慦汬慢正⠠獵晥汵眠敨⁮灡⁰獩漠数敮⁤湯氠捯污潨瑳搠物捥汴⥹椊⁦椨䱳捯污潈瑳 筻 挠慨瑲湅灤楯瑮慂敳⹳異桳∨瑨灴⼺ㄯ㜲〮〮ㄮ㠺㘷⼶ㅶ振慨瑲⤢਻†档牡䕴摮潰湩䉴獡獥瀮獵⡨栢瑴㩰⼯㈱⸷⸰⸰㨱㜸㘶振慨瑲⤢਻絽挊湯瑳爠晥敲桳楔敭䭲祥㴠∠彟桳湩扯彵档牡彴敲牦獥彨牻潯彴畳晦硩≽഻挊湯瑳洠牡敫䙲汩整卲潴慲敧敋⁹‽猢楨潮畢浟牡敫彲楦瑬牥彳ㅶ筟潲瑯獟晵楦絸㬢਍潣獮⁴慭歲牥楆瑬牥灏楴湯⁳‽൛ 笠⁻敫㩹∠牰浩牡役灯湥Ⱒ氠扡汥›㼢蒲ꛫ‿灏湥•絽ബ 笠⁻敫㩹∠牰浩牡役汣獯≥‬慬敢㩬∠蠿닫겦㿬䌠潬敳•絽ബ 笠⁻敫㩹∠慰物潟数≮‬慬敢㩬∠돪蒲㼿灏湥•絽ബ 笠⁻敫㩹∠慰物损潬敳Ⱒ氠扡汥›놳닫㾄䌿潬敳•絽怬恲⁮笠⁻敫㩹∠牯敤彲畢≹‬慬敢㩬∠ꐿ꟫㾤‿絽ബ 笠⁻敫㩹∠牯敤彲敳汬Ⱒ氠扡汥›㼢꒧㼿素ൽ崊഻挊湯瑳洠牡敫䙲汩整獲㴠笠ൻ 瀠楲慭祲潟数㩮琠畲ⱥ਍†牰浩牡役汣獯㩥琠畲ⱥ਍†慰物潟数㩮琠畲ⱥ਍†慰物损潬敳›牴敵怬恲⁮漠摲牥扟祵›牴敵ബ 漠摲牥獟汥㩬琠畲൥紊㭽਍਍敬⁴湩瑩慩楬敺䵤楡⁮‽慦獬㭥਍敬⁴湩瑩慩楬敺䥤摮捩瑡牯㴠映污敳഻氊瑥猠湹楣杮慒杮⁥‽慦獬㭥਍敬⁴牰癥潩獵慐汹慯⁤‽畮汬഻氊瑥氠瑡獥䵴牡敫偲祡潬摡㴠渠汵㭬਍敬⁴潣湵摴睯呮浩牥㴠渠汵㭬਍敬⁴楬敶潃湵摴睯卮慴整㴠渠汵㭬਍਍潣獮⁴䅍义呟䅒䕃㴠笠ൻ 挠湡汤㩥〠ബ 瀠楲慭祲灏湥›ⰱ਍†牰浩牡䍹潬敳›ⰲ਍†慰物灏湥›ⰳ਍†慰物汃獯㩥㐠ബ 漠摲牥畂㩹㔠ബ 漠摲牥敓汬›ശ紊㭽਍਍潣獮⁴义䥄䅃佔归剔䍁⁅‽筻਍†牰浩牡佹数䵮楡㩮〠ബ 瀠楲慭祲汃獯䵥楡㩮ㄠബ 瀠楡佲数䵮楡㩮㈠ബ 瀠楡䍲潬敳慍湩›ⰳ਍†牯敤䉲祵›ⰴ਍†牯敤卲汥㩬㔠ബ 瀠楲慭祲灏湥›ⰶ਍†牰浩牡䍹潬敳›ⰷ਍†慰物灏湥›ⰸ਍†慰物汃獯㩥㤠ബ 瀠楲慭祲捓㩲ㄠⰰ਍†慰物捓㩲ㄠറ紊㭽਍਍畦据楴湯搠瑥楡䡬癯牥椨整獭 筻਍†敲畴湲椠整獭洮灡⠨瑩浥 㸽਍††൛ ††椠整⹭慬敢⁬籼∠Ⱒ਍†††瑩浥琮浩⁥‿㽠蒰›笤楻整⹭楴敭絽⁠›∢ബ ††椠整⹭牰捩⁥‿肰닪‿笤乻浵敢⡲瑩浥瀮楲散⸩潴潌慣敬瑓楲杮⤨絽⁠›∢ബ ††椠整⹭敲獡湯㼠怠갿鳬㪠␠筻瑩浥爮慥潳絮恽㨠∠Ⱒ਍†††瑩浥献牣℠㴽甠摮晥湩摥㼠怠䍓㩒␠筻畎扭牥椨整⹭捳⥲琮䙯硩摥㈨紩恽㨠∠ഢ †崠昮汩整⡲潂汯慥⥮樮楯⡮㰢牢∾ഩ ⤠഻紊ൽഊ昊湵瑣潩⁮潮浲污穩䵥牡敫呲硥⡴慶畬⥥笠ൻ 爠瑥牵⁮瑓楲杮瘨污敵簠⁼∢⸩潴潌敷䍲獡⡥㬩਍絽਍਍畦据楴湯椠即潴䵰牡敫⡲瑩浥 筻਍†潣獮⁴慬敢⁬‽潮浲污穩䵥牡敫呲硥⡴瑩浥⸿慬敢⥬഻ 挠湯瑳爠慥潳⁮‽潮浲污穩䵥牡敫呲硥⡴瑩浥⸿敲獡湯㬩਍†敲畴湲⠠਍††慬敢⹬湩汣摵獥∨逿ꃬ⊈ 籼਍††敲獡湯椮据畬敤⡳㼢袠⤢簠ർ †氠扡汥椮据畬敤⡳猢潴≰ 籼਍††敲獡湯椮据畬敤⡳猢潴≰ 籼਍††慬敢⹬湩汣摵獥∨牴楡楬杮⤢簠ർ †爠慥潳⹮湩汣摵獥∨牴楡楬杮⤢਍†㬩਍絽਍਍畦据楴湯映汩整佲数䵮牡敫獲洨牡敫獲‬敫⥹笠ൻ 椠⁦ℨ慭歲牥楆瑬牥孳敫嵹 敲畴湲嬠㭝਍†敲畴湲洠牡敫獲഻紊ൽഊ昊湵瑣潩⁮楦瑬牥汃獯䵥牡敫獲洨牡敫獲‬汣獯䭥祥 筻牠湠†晩⠠洡牡敫䙲汩整獲捛潬敳敋嵹 敲畴湲嬠㭝牠湠†敲畴湲洠牡敫獲总恲絮恽恲恮恲普湵瑣潩⁮潬摡慍歲牥楆瑬牥⡳ 筻਍†牴⁹筻਍††潣獮⁴慲⁷‽楷摮睯献獥楳湯瑓牯条⹥敧䥴整⡭慭歲牥楆瑬牥瑓牯条䭥祥㬩਍††晩⠠爡睡 敲畴湲഻ †挠湯瑳瀠牡敳⁤‽半乏瀮牡敳爨睡㬩਍††晩⠠瀡牡敳⁤籼琠灹潥⁦慰獲摥℠㴽∠扯敪瑣⤢爠瑥牵㭮਍††慭歲牥楆瑬牥灏楴湯⹳潦䕲捡⡨漨瑰潩⥮㴠‾筻਍†††晩⠠祴数景瀠牡敳孤灯楴湯欮祥⁝㴽‽戢潯敬湡⤢笠ൻ †††洠牡敫䙲汩整獲潛瑰潩⹮敫嵹㴠瀠牡敳孤灯楴湯欮祥㭝਍†††絽਍††絽㬩਍†絽挠瑡档⠠牥潲⥲笠ൻ †⼠ 杩潮敲氠捯污猠潴慲敧瀠牡楳杮攠牲牯൳ 素ൽ紊ൽഊ昊湵瑣潩⁮慳敶慍歲牥楆瑬牥⡳ 筻਍†牴⁹筻਍††楷摮睯献獥楳湯瑓牯条⹥敳䥴整⡭慭歲牥楆瑬牥瑓牯条䭥祥‬半乏献牴湩楧祦洨牡敫䙲汩整獲⤩഻ 素⁽慣捴⁨攨牲牯 筻਍††⼯椠湧牯⁥潬慣⁬瑳牯条⁥牷瑩⁥牥潲獲਍†絽਍絽਍਍獡湹⁣畦据楴湯愠灰祬慍歲牥楆瑬牥佳汮⡹ 筻਍†潣獮⁴慭歲牥慐汹慯⁤‽慬整瑳慍歲牥慐汹慯⁤籼瀠敲楶畯偳祡潬摡഻ 椠⁦ℨ慭歲牥慐汹慯⥤爠瑥牵㭮਍†晩⠠湩瑩慩楬敺䵤楡⥮笠ൻ †挠湯瑳洠牡敫獲㴠洠牡敫卲牥敩⡳慭歲牥慐汹慯⥤洮楡㭮਍††潦⁲氨瑥椠㴠〠※⁩‼慭歲牥⹳敬杮桴※⁩㴫ㄠ 筻਍†††潣獮⁴牴捡䥥摮硥㴠䴠䥁彎剔䍁⹅牰浩牡佹数⁮‫㭩਍†††潣獮⁴畣牲湥⁴‽慭歲牥孳嵩഻ ††愠慷瑩倠潬汴⹹敲瑳汹⡥਍††††慭湩潒瑯ബ †††笠ൻ ††††砠›捛牵敲瑮洮灡⠨瑩浥 㸽椠整⹭⥸ⱝ਍†††††㩹嬠畣牲湥⹴慭⡰椨整⥭㴠‾瑩浥礮崩ബ ††††琠硥㩴嬠畣牲湥⹴慭⡰椨整⥭㴠‾瑩浥氮扡汥崩ബ ††††栠癯牥整瑸›摛瑥楡䡬癯牥挨牵敲瑮崩਍††††絽ബ †††嬠牴捡䥥摮硥൝ ††⤠഻ †素ൽ 素ൽ 椠⁦椨楮楴污穩摥湉楤慣潴⥲笠ൻ †挠湯瑳洠牡敫獲㴠洠牡敫卲牥敩⡳慭歲牥慐汹慯⥤椮摮捩瑡牯഻ †映牯⠠敬⁴⁩‽㬰椠㰠洠牡敫獲氮湥瑧㭨椠⬠‽⤱笠ൻ ††挠湯瑳挠牵敲瑮㴠洠牡敫獲楛㭝਍†††睡楡⁴汐瑯祬爮獥祴敬ന †††椠摮捩瑡牯潒瑯ബ †††笠ൻ ††††砠›捛牵敲瑮洮灡⠨瑩浥 㸽椠整⹭⥸ⱝ਍†††††㩹嬠畣牲湥⹴慭⡰椨整⥭㴠‾瑩浥礮崩ബ ††††栠癯牥整瑸›摛瑥楡䡬癯牥挨牵敲瑮崩਍††††絽ബ †††嬠嵩਍†††㬩਍††絽਍†絽਍絽਍਍畦据楴湯爠湥敤䵲牡敫䙲汩整䍲湯牴汯⡳ 筻਍†晩⠠洡牡敫䙲汩整割潯⥴爠瑥牵㭮਍†慭歲牥楆瑬牥潒瑯椮湮牥呈䱍㴠∠㬢਍†潣獮⁴楴汴⁥‽潤畣敭瑮挮敲瑡䕥敬敭瑮∨灳湡⤢഻ 琠瑩敬琮硥䍴湯整瑮㴠∠꟫꒻㼠鲋∺഻ 琠瑩敬献祴敬挮汯牯㴠∠㤣愴戳∸഻ 琠瑩敬献祴敬昮湯却穩⁥‽ㄢ瀲≸഻ 琠瑩敬献祴敬洮牡楧剮杩瑨㴠∠瀴≸഻ 洠牡敫䙲汩整割潯⹴灡数摮桃汩⡤楴汴⥥഻ഊ 洠牡敫䙲汩整佲瑰潩獮昮牯慅档⠨灯楴湯 㸽笠ൻ †挠湯瑳氠扡汥㴠搠捯浵湥⹴牣慥整汅浥湥⡴氢扡汥⤢഻ †氠扡汥献祴敬搮獩汰祡㴠∠湩楬敮昭敬≸഻ †氠扡汥献祴敬愮楬湧瑉浥⁳‽挢湥整≲഻ †氠扡汥献祴敬朮灡㴠∠瀴≸഻ †氠扡汥献祴敬昮湯却穩⁥‽ㄢ瀲≸഻ †氠扡汥献祴敬挮汯牯㴠∠搣搱搵≢഻ †氠扡汥献祴敬挮牵潳⁲‽瀢楯瑮牥㬢਍਍††潣獮⁴档捥扫硯㴠搠捯浵湥⹴牣慥整汅浥湥⡴椢灮瑵⤢഻ †挠敨正潢⹸祴数㴠∠档捥扫硯㬢਍††档捥扫硯挮敨正摥㴠䈠潯敬湡洨牡敫䙲汩整獲潛瑰潩⹮敫嵹㬩਍††档捥扫硯献祴敬洮牡楧⁮‽〢㬢਍††档捥扫硯愮摤癅湥䱴獩整敮⡲挢慨杮≥‬獡湹⁣⤨㴠‾筻਍†††慭歲牥楆瑬牥孳灯楴湯欮祥⁝‽档捥扫硯挮敨正摥഻ ††猠癡䵥牡敫䙲汩整獲⤨഻ ††愠慷瑩愠灰祬慍歲牥楆瑬牥佳汮⡹㬩਍††絽㬩਍਍††潣獮⁴整瑸㴠搠捯浵湥⹴牣慥整汅浥湥⡴猢慰≮㬩਍††整瑸琮硥䍴湯整瑮㴠漠瑰潩⹮慬敢㭬਍਍††慬敢⹬灡数摮桃汩⡤档捥扫硯㬩਍††慬敢⹬灡数摮桃汩⡤整瑸㬩਍††慭歲牥楆瑬牥潒瑯愮灰湥䍤楨摬氨扡汥㬩਍†絽㬩਍絽਍਍畦据楴湯爠湥敤䍲牵敲瑮慃摮敬瑓瑡獵瀨祡潬摡 筻਍†晩⠠挡慨瑲瑓瑡獵潒瑯 敲畴湲഻ 挠湯瑳挠牵敲瑮㴠瀠祡潬摡挮牵敲瑮慃摮敬簠⁼畮汬഻ 椠⁦ℨ畣牲湥⥴笠ൻ †挠慨瑲瑓瑡獵潒瑯椮湮牥呈䱍㴠∠㬢਍††敲畴湲഻ 素ൽ 挠湯瑳愠捣湥⁴‽畣牲湥⹴獩湕潣普物敭⁤‿⌢㕦改戰•›⌢㈲㕣攵㬢਍†潣獮⁴牰杯敲獳㴠䴠瑡⹨慭⡸ⰰ䴠瑡⹨業⡮畎扭牥挨牵敲瑮瀮潲牧獥偳瑣簠⁼⤰‬〱⤰㬩਍†档牡却慴畴剳潯⹴湩敮䡲䵔⁌ഽ †怠搼癩猠祴敬∽楤灳慬㩹汦硥愻楬湧椭整獭挺湥整㭲慧㩰〱硰昻敬⵸牷灡眺慲㭰㸢⁠ഫ †怠猼慰⁮瑳汹㵥挢汯牯␺筻捡散瑮絽∻␾筻畣牲湥⹴瑳瑡獵敔瑸簠⁼∢絽⼼灳湡怾⬠਍††㱠灳湡猠祴敬∽潣潬㩲㘣㜴㠴㭢㸢룪‿듫␿筻਍†††畣牲湥⹴慣摮敬楔敭簠⁼ⴢഢ †素㱽猯慰㹮⁠ഫ †怠搼癩猠祴敬∽楷瑤㩨㈱瀰㭸敨杩瑨㘺硰戻捡杫潲湵㩤ㄣ㉥㌹㭢潢摲牥爭摡畩㩳㤹瀹㭸癯牥汦睯栺摩敤㭮㸢⁠ഫ †怠搼癩猠祴敬∽楷瑤㩨笤灻潲牧獥絳╽栻楥桧㩴〱┰戻捡杫潲湵㩤笤慻捣湥絴㭽㸢⼼楤㹶⁠ഫ †怠⼼楤㹶⁠ഫ †怠⼼楤㹶㭠਍絽਍਍畦据楴湯爠湥敤䍲牵敲瑮慃摮敬瑓瑡獵牆浯瑓瑡⡥畣牲湥⥴笠ൻ 椠⁦ℨ档牡却慴畴剳潯⁴籼℠畣牲湥⥴爠瑥牵㭮਍†潣獮⁴捡散瑮㴠挠牵敲瑮椮啳据湯楦浲摥㼠∠昣㤵づ≢㨠∠㈣挲㔵≥഻ 挠湯瑳瀠潲牧獥⁳‽慍桴洮硡〨‬慍桴洮湩丨浵敢⡲畣牲湥⹴牰杯敲獳捐⁴籼〠Ⱙㄠ〰⤩഻ 挠慨瑲瑓瑡獵潒瑯椮湮牥呈䱍㴠਍††㱠楤⁶瑳汹㵥搢獩汰祡昺敬㭸污杩⵮瑩浥㩳散瑮牥朻灡ㄺ瀰㭸汦硥眭慲㩰牷灡∻怾⬠਍††㱠灳湡猠祴敬∽潣潬㩲笤慻捣湥絴㭽㸢笤捻牵敲瑮献慴畴味硥⁴籼∠索㱽猯慰㹮⁠ഫ †怠猼慰⁮瑳汹㵥挢汯牯⌺㐶㐷戸∻낸㿬㾴笤ൻ ††挠牵敲瑮挮湡汤呥浩⁥籼∠∭਍††絽⼼灳湡怾⬠਍††㱠楤⁶瑳汹㵥眢摩桴ㄺ〲硰栻楥桧㩴瀶㭸慢正牧畯摮⌺攱㤲戳戻牯敤⵲慲楤獵㤺㤹硰漻敶晲潬㩷楨摤湥∻怾⬠਍††㱠楤⁶瑳汹㵥眢摩桴␺筻牰杯敲獳絽㬥敨杩瑨ㄺ〰㬥慢正牧畯摮␺筻捡散瑮絽∻㰾搯癩怾⬠਍††㱠搯癩怾⬠਍††㱠搯癩怾഻紊ൽഊ昊湵瑣潩⁮瑳牡䍴牵敲瑮慃摮敬潃湵摴睯⡮慰汹慯⥤笠ൻ 椠⁦挨畯瑮潤湷楔敭⥲笠ൻ †挠敬牡湉整癲污挨畯瑮潤湷楔敭⥲഻ †挠畯瑮潤湷楔敭⁲‽畮汬഻ 素ൽ 挠湯瑳挠牵敲瑮㴠瀠祡潬摡挮牵敲瑮慃摮敬簠⁼畮汬഻ 椠⁦ℨ畣牲湥⥴笠ൻ †氠癩䍥畯瑮潤湷瑓瑡⁥‽畮汬഻ †爠湥敤䍲牵敲瑮慃摮敬瑓瑡獵瀨祡潬摡㬩਍††敲畴湲഻ 素ൽഊ 氠癩䍥畯瑮潤湷瑓瑡⁥‽筻⸠⸮畣牲湥⁴絽഻ 爠湥敤䍲牵敲瑮慃摮敬瑓瑡獵牆浯瑓瑡⡥楬敶潃湵摴睯卮慴整㬩਍†晩⠠氡癩䍥畯瑮潤湷瑓瑡⹥獩湕潣普物敭⥤笠ൻ †爠瑥牵㭮਍†絽਍਍†潣湵摴睯呮浩牥㴠猠瑥湉整癲污⠨ 㸽笠ൻ †椠⁦ℨ楬敶潃湵摴睯卮慴整簠⁼氡癩䍥畯瑮潤湷瑓瑡⹥獩湕潣普物敭⥤笠ൻ ††挠敬牡湉整癲污挨畯瑮潤湷楔敭⥲഻ ††挠畯瑮潤湷楔敭⁲‽畮汬഻ ††爠瑥牵㭮਍††絽਍††潣獮⁴敮瑸敒慭湩湩⁧‽慍桴洮硡〨‬畎扭牥氨癩䍥畯瑮潤湷瑓瑡⹥敲慭湩湩卧捥湯獤簠⁼⤰ⴠㄠ㬩਍††楬敶潃湵摴睯卮慴整爮浥楡楮杮敓潣摮⁳‽敮瑸敒慭湩湩㭧਍††楬敶潃湵摴睯卮慴整爮浥楡楮杮敔瑸㴠਍†††①筻瑓楲杮䴨瑡⹨汦潯⡲敮瑸敒慭湩湩⁧ 〶⤩瀮摡瑓牡⡴ⰲ∠∰紩㩽笤卻牴湩⡧敮瑸敒慭湩湩⁧‥〶⸩慰卤慴瑲㈨‬〢⤢絽㭠਍††潣獮⁴敮瑸牐杯敲獳㴠䴠瑡⹨慭⡸ⰰ䴠瑡⹨業⡮〱ⰰㄠ〰ⴠ⠠敮瑸敒慭湩湩⁧ 〳⤰⨠ㄠ〰⤩഻ †氠癩䍥畯瑮潤湷瑓瑡⹥牰杯敲獳捐⁴‽敮瑸牐杯敲獳഻ †椠⁦渨硥剴浥楡楮杮㰠‽⤰笠ൻ ††氠癩䍥畯瑮潤湷瑓瑡⹥獩湕潣普物敭⁤‽慦獬㭥਍†††楬敶潃湵摴睯卮慴整献慴畴味硥⁴‽鲵럪₼듫㼿閠㬢਍†††汣慥䥲瑮牥慶⡬潣湵摴睯呮浩牥㬩਍†††潣湵摴睯呮浩牥㴠渠汵㭬਍††絽攠獬⁥筻਍†††楬敶潃湵摴睯卮慴整献慴畴味硥⁴‽㽠겞㾴꿫閙㼿럂袧냪貹㿬␠筻楬敶潃湵摴睯卮慴整爮浥楡楮杮敔瑸絽㭠਍††絽਍††敲摮牥畃牲湥䍴湡汤卥慴畴䙳潲卭慴整氨癩䍥畯瑮潤湷瑓瑡⥥഻ 素ⱽㄠ〰⤰഻紊ൽഊ昊湵瑣潩⁮慭湩慍歲牥牔捡⡥慭歲牥ⱳ挠汯牯‬祳扭汯 筻਍†敲畴湲笠ൻ †琠灹㩥∠捳瑡整≲ബ †洠摯㩥∠慭歲牥⭳整瑸Ⱒ਍††㩸洠牡敫獲洮灡⠨瑩浥 㸽椠整⹭⥸ബ †礠›慭歲牥⹳慭⡰椨整⥭㴠‾瑩浥礮Ⱙ਍††整瑸›慭歲牥⹳慭⡰椨整⥭㴠‾瑩浥氮扡汥Ⱙ਍††整瑸潰楳楴湯›琢灯挠湥整≲ബ †琠硥晴湯㩴笠⁻楳敺›〱‬潣潬⁲絽ബ †洠牡敫㩲笠⁻潣潬Ⱳ猠穩㩥ㄠⰰ猠浹潢ⱬ氠湩㩥笠⁻潣潬㩲∠昣晦晦≦‬楷瑤㩨ㄠ素⁽絽ബ †栠癯牥湩潦›琢硥≴ബ †栠癯牥整瑸›敤慴汩潈敶⡲慭歲牥⥳ബ †栠癯牥整灭慬整›┢筻潨敶瑲硥絴㱽硥牴㹡⼼硥牴㹡Ⱒ਍††桳睯敬敧摮›慦獬൥ 素㭽਍絽਍਍畦据楴湯椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥ⱳ挠汯牯‬祳扭汯 筻਍†敲畴湲笠ൻ †琠灹㩥∠捳瑡整≲ബ †洠摯㩥∠慭歲牥≳ബ †砠›慭歲牥⹳慭⡰椨整⥭㴠‾瑩浥砮Ⱙ਍††㩹洠牡敫獲洮灡⠨瑩浥 㸽椠整⹭⥹ബ †洠牡敫㩲笠⁻潣潬Ⱳ猠穩㩥ㄠⰰ漠慰楣祴›⸰㈸‬祳扭汯‬楬敮›筻挠汯牯›⌢晦晦晦Ⱒ眠摩桴›⸱‴絽素ⱽ਍††潨敶楲普㩯∠整瑸Ⱒ਍††潨敶瑲硥㩴搠瑥楡䡬癯牥洨牡敫獲Ⱙ਍††潨敶瑲浥汰瑡㩥∠笥桻癯牥整瑸絽攼瑸慲㰾支瑸慲∾ബ †猠潨汷来湥㩤映污敳਍†絽഻紊ൽഊ昊湵瑣潩⁮慣摮敬牁慲獹瀨祡潬摡 筻਍†敲畴湲笠ൻ †砠›慰汹慯⹤慣摮敬⹳慭⡰弨‬湩敤⥸㴠‾湩敤⥸ബ †漠数㩮瀠祡潬摡挮湡汤獥洮灡⠨瑩浥 㸽椠整⹭⥯ബ †栠杩㩨瀠祡潬摡挮湡汤獥洮灡⠨瑩浥 㸽椠整⹭⥨ബ †氠睯›慰汹慯⹤慣摮敬⹳慭⡰椨整⥭㴠‾瑩浥氮Ⱙ਍††汣獯㩥瀠祡潬摡挮湡汤獥洮灡⠨瑩浥 㸽椠整⹭⥣ബ †琠浩獥›慰汹慯⹤慣摮敬⹳慭⡰椨整⥭㴠‾瑩浥琮ഩ 素㭽਍絽਍਍畦据楴湯洠牡敫卲牥敩⡳慰汹慯⥤笠ൻ 挠湯瑳漠摲牥⁳‽慰汹慯⹤牯敤獲簠⁼嵛഻ 挠湯瑳戠祵牏敤獲㴠洠牡敫䙲汩整獲漮摲牥扟祵㼠漠摲牥⹳楦瑬牥⠨瑩浥 㸽椠整⹭楳敤㴠㴽∠畢≹ ›嵛഻ 挠湯瑳猠汥佬摲牥⁳‽慭歲牥楆瑬牥⹳牯敤彲敳汬㼠漠摲牥⹳楦瑬牥⠨瑩浥 㸽椠整⹭楳敤㴠㴽∠敳汬⤢㨠嬠㭝਍†潣獮⁴牰浩牡佹数䵮楡⁮‽楦瑬牥灏湥慍歲牥⡳慰汹慯⹤楳湧污⹳牰浩牡佹数䵮楡⁮籼嬠ⱝ∠牰浩牡役灯湥⤢഻ 挠湯瑳瀠楲慭祲汃獯䵥楡⁮‽楦瑬牥汃獯䵥牡敫獲瀨祡潬摡献杩慮獬瀮楲慭祲汃獯䵥楡⁮籼嬠ⱝ∠牰浩牡役汣獯≥㬩਍†潣獮⁴慰物灏湥慍湩㴠映汩整佲数䵮牡敫獲瀨祡潬摡献杩慮獬瀮楡佲数䵮楡⁮籼嬠ⱝ∠慰物潟数≮㬩਍†潣獮⁴慰物汃獯䵥楡⁮‽楦瑬牥汃獯䵥牡敫獲瀨祡潬摡献杩慮獬瀮楡䍲潬敳慍湩簠⁼嵛‬瀢楡彲汣獯≥㬩਍†潣獮⁴牰浩牡佹数䥮摮捩瑡牯㴠映汩整佲数䵮牡敫獲瀨祡潬摡献杩慮獬瀮楲慭祲灏湥湉楤慣潴⁲籼嬠ⱝ∠牰浩牡役灯湥⤢഻ 挠湯瑳瀠楲慭祲汃獯䥥摮捩瑡牯㴠映汩整䍲潬敳慍歲牥⡳慰汹慯⹤楳湧污⹳牰浩牡䍹潬敳湉楤慣潴⁲籼嬠ⱝ∠牰浩牡役汣獯≥㬩਍†潣獮⁴慰物灏湥湉楤慣潴⁲‽楦瑬牥灏湥慍歲牥⡳慰汹慯⹤楳湧污⹳慰物灏湥湉楤慣潴⁲籼嬠ⱝ∠慰物潟数≮㬩਍†潣獮⁴慰物汃獯䥥摮捩瑡牯㴠映汩整䍲潬敳慍歲牥⡳慰汹慯⹤楳湧污⹳慰物汃獯䥥摮捩瑡牯簠⁼嵛‬瀢楡彲汣獯≥㬩਍†敲畴湲笠ൻ †洠楡㩮嬠਍†††牰浩牡佹数䵮楡Ɱ਍†††牰浩牡䍹潬敳慍湩ബ ††瀠楡佲数䵮楡Ɱ਍†††慰物汃獯䵥楡Ɱ਍†††畢佹摲牥ⱳ਍†††敳汬牏敤獲਍††ⱝ਍††湩楤慣潴㩲嬠਍†††牰浩牡佹数䵮楡Ɱ਍†††牰浩牡䍹潬敳慍湩ബ ††瀠楡佲数䵮楡Ɱ਍†††慰物汃獯䵥楡Ɱ਍†††畢佹摲牥ⱳ਍†††敳汬牏敤獲ബ ††瀠楲慭祲灏湥湉楤慣潴Ⱳ਍†††牰浩牡䍹潬敳湉楤慣潴Ⱳ਍†††慰物灏湥湉楤慣潴Ⱳ਍†††慰物汃獯䥥摮捩瑡牯਍††൝ 素㭽਍絽਍਍畦据楴湯眠瑩䵨牡敫獲戨獡健祡潬摡‬慭歲牥慐汹慯⥤笠ൻ 椠⁦ℨ慢敳慐汹慯⥤爠瑥牵⁮慭歲牥慐汹慯㭤਍†晩⠠洡牡敫偲祡潬摡 敲畴湲戠獡健祡潬摡഻ 爠瑥牵⁮筻਍††⸮戮獡健祡潬摡ബ †漠摲牥㩳洠牡敫偲祡潬摡漮摲牥⁳籼嬠ⱝ਍††楳湧污㩳洠牡敫偲祡潬摡献杩慮獬簠⁼筻絽਍†絽഻紊ൽഊ昊湵瑣潩⁮楴正慄慴瀨祡潬摡 筻਍†潣獮⁴⁸‽慰汹慯⹤慣摮敬⹳慭⡰弨‬湩敤⥸㴠‾湩敤⥸഻ 挠湯瑳猠整⁰‽慍桴洮硡ㄨ‬慍桴挮楥⡬⹸敬杮桴⼠㠠⤩഻ 爠瑥牵⁮筻਍††楴正慶獬›⹸楦瑬牥⠨ⱟ椠摮硥 㸽椠摮硥┠猠整⁰㴽‽‰籼椠摮硥㴠㴽砠氮湥瑧⁨‭⤱ബ †琠捩瑫硥㩴瀠祡潬摡琮捩呫硥⹴楦瑬牥⠨ⱟ椠摮硥 㸽椠摮硥┠猠整⁰㴽‽‰籼椠摮硥㴠㴽砠氮湥瑧⁨‭⤱਍†絽഻紊ൽഊ昊湵瑣潩⁮畢汩䵤楡䙮杩牵⡥慰汹慯⥤笠ൻ 挠湯瑳挠湡汤⁥‽慣摮敬牁慲獹瀨祡潬摡㬩਍†潣獮⁴楴正⁳‽楴正慄慴瀨祡潬摡㬩਍†潣獮⁴慭歲牥⁳‽慭歲牥敓楲獥瀨祡潬摡⸩慭湩഻ 挠湯瑳挠湡汤䡥癯牥敔瑸㴠瀠祡潬摡挮湡汤獥洮灡⠨瑩浥 㸽笠ൻ †挠湯瑳琠浩呥硥⁴‽椨整⹭⁴籼∠⤢爮灥慬散∨≔‬•⤢献楬散〨‬㘱㬩਍††敲畴湲怠鰿냪₄笤瑻浩呥硥絴㱽牢㼾‿笤乻浵敢⡲瑩浥漮⸩潴潌慣敬瑓楲杮⤨絽戼㹲돪‿笤乻浵敢⡲瑩浥栮⸩潴潌慣敬瑓楲杮⤨絽戼㹲耿냪₀笤乻浵敢⡲瑩浥氮⸩潴潌慣敬瑓楲杮⤨絽戼㹲ꋬ‿笤乻浵敢⡲瑩浥挮⸩潴潌慣敬瑓楲杮⤨絽㭠਍†絽㬩਍†敲畴湲笠ൻ †搠瑡㩡嬠਍†††筻਍††††祴数›挢湡汤獥楴正Ⱒ਍††††㩸挠湡汤⹥ⱸ਍††††灯湥›慣摮敬漮数Ɱ਍††††楨桧›慣摮敬栮杩ⱨ਍††††潬㩷挠湡汤⹥潬ⱷ਍††††汣獯㩥挠湡汤⹥汣獯ⱥ਍††††整瑸›慣摮敬潈敶呲硥ⱴ਍††††湩牣慥楳杮›筻氠湩㩥笠⁻潣潬㩲∠〣㤸㠹∱素ⱽ映汩捬汯牯›⌢㠰㤹ㄸ•絽ബ †††搠捥敲獡湩㩧笠⁻楬敮›筻挠汯牯›⌢㉦㘳㔴•絽‬楦汬潣潬㩲∠昣㌲㐶∵素ⱽ਍††††潨敶楲普㩯∠整瑸Ⱒ਍††††潨敶瑲硥㩴挠湡汤䡥癯牥敔瑸ബ †††栠癯牥整灭慬整›┢筻潨敶瑲硥絴㱽硥牴㹡⼼硥牴㹡Ⱒ਍††††桳睯敬敧摮›慦獬൥ ††素ⱽ਍†††慭湩慍歲牥牔捡⡥慭歲牥孳崰‬⌢戳㈸㙦Ⱒ∠楣捲敬⤢ബ ††洠楡䵮牡敫呲慲散洨牡敫獲ㅛⱝ∠攣㑦㐴∴‬挢物汣≥Ⱙ਍†††慭湩慍歲牥牔捡⡥慭歲牥孳崲‬⌢戳㈸㙦Ⱒ∠瑳牡⤢ബ ††洠楡䵮牡敫呲慲散洨牡敫獲㍛ⱝ∠攣㑦㐴∴‬猢慴≲Ⱙ਍†††慭湩慍歲牥牔捡⡥慭歲牥孳崴‬⌢㈲㕣攵Ⱒ∠敨牡≴Ⱙ਍†††慭湩慍歲牥牔捡⡥慭歲牥孳崵‬⌢㕦改戰Ⱒ∠敨牡≴ഩ †崠ബ †氠祡畯㩴笠ൻ ††瀠灡牥扟捧汯牯›⌢㌱㜱㈲Ⱒ਍†††汰瑯扟捧汯牯›⌢㌱㜱㈲Ⱒ਍†††潦瑮›筻挠汯牯›⌢ㅤ㑤捤Ⱒ映浡汩㩹∠慍杬湵䜠瑯楨≣素ⱽ਍†††慭杲湩›筻氠›ⰸ爠›㘵‬㩴㐠ⰲ戠›㠱素ⱽ਍†††敨杩瑨›〴ⰰ਍†††牤条潭敤›瀢湡Ⱒ਍†††潨敶浲摯㩥∠汣獯獥≴ബ ††栠癯牥慬敢㩬笠⁻杢潣潬㩲∠ㄣ㉥㈲≤‬潦瑮›筻挠汯牯›⌢ㅤ㑤捤•絽素ⱽ਍†††桳睯敬敧摮›慦獬ⱥ਍†††極敲楶楳湯›猢楨潮畢洭楡⵮档牡≴ബ ††砠硡獩›筻਍††††楴正潭敤›愢牲祡Ⱒ਍††††楴正慶獬›楴正⹳楴正慶獬ബ †††琠捩瑫硥㩴琠捩獫琮捩瑫硥ⱴ਍††††桳睯牧摩›慦獬ⱥ਍††††慲杮㩥嬠〭㐮ⰵ䴠瑡⹨慭⡸慣摮敬砮氮湥瑧⁨‭⸰㔵‬⤱ⱝ਍††††楦數牤湡敧›慦獬ⱥ਍††††慲杮獥楬敤㩲笠⁻楶楳汢㩥映污敳素ൽ ††素ⱽ਍†††慹楸㩳笠ൻ †††猠摩㩥∠楲桧≴ബ †††猠潨杷楲㩤琠畲ⱥ਍††††牧摩潣潬㩲∠杲慢㐨ⰲ㘴㔬ⰷ⸰㔶∩ബ †††映硩摥慲杮㩥映污敳਍†††絽ബ ††愠湮瑯瑡潩獮›൛ †††笠ൻ ††††砠›⸰㄰ബ ††††礠›⸱㐰ബ ††††砠敲㩦∠慰数≲ബ ††††礠敲㩦∠慰数≲ബ ††††猠潨慷牲睯›慦獬ⱥ਍†††††整瑸›①筻慰汹慯⹤祳扭汯慎敭絽술₷蒶듫₉럂㼠蒠肰닪ⰿ਍†††††潦瑮›筻猠穩㩥ㄠⰴ挠汯牯›⌢㕥㝥扥Ⱒ映浡汩㩹∠慍杬湵䜠瑯楨≣素ൽ †††素ⱽ਍††††筻਍†††††㩸〠㤮ⰹ਍†††††㩹ㄠ〮ⰴ਍†††††牸晥›瀢灡牥Ⱒ਍†††††特晥›瀢灡牥Ⱒ਍†††††慸据潨㩲∠楲桧≴ബ ††††猠潨慷牲睯›慦獬ⱥ਍†††††整瑸›笢瑳慲整祧江扡汥≽ബ ††††映湯㩴笠⁻楳敺›㌱‬潣潬㩲∠㘣愰昵≡‬慦業祬›䴢污畧⁮潇桴捩•絽਍††††絽਍†††൝ †素ൽ 素㭽਍絽਍਍畦据楴湯戠極摬湉楤慣潴䙲杩牵⡥慰汹慯⥤笠ൻ 挠湯瑳挠湡汤⁥‽慣摮敬牁慲獹瀨祡潬摡㬩਍†潣獮⁴楴正⁳‽楴正慄慴瀨祡潬摡㬩਍†潣獮⁴湩楤慣潴呲浩獥㴠挠湡汤⹥楴敭⹳慭⡰椨整⥭㴠‾椨整⁭籼∠⤢爮灥慬散∨≔‬•⤢献楬散〨‬㘱⤩഻ 挠湯瑳洠牡敫獲㴠洠牡敫卲牥敩⡳慰汹慯⥤椮摮捩瑡牯഻ 爠瑥牵⁮筻਍††慤慴›൛ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崰‬⌢戳㈸㙦Ⱒ∠楣捲敬⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崱‬⌢晥㐴㐴Ⱒ∠楣捲敬⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崲‬⌢戳㈸㙦Ⱒ∠瑳牡⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崳‬⌢晥㐴㐴Ⱒ∠瑳牡⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崴‬⌢㈲㕣攵Ⱒ∠敨牡≴Ⱙ਍†††湩楤慣潴䵲牡敫呲慲散洨牡敫獲㕛ⱝ∠昣㤵づ≢‬栢慥瑲⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崶‬⌢戳㈸㙦Ⱒ∠楣捲敬⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崷‬⌢晥㐴㐴Ⱒ∠楣捲敬⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崸‬⌢戳㈸㙦Ⱒ∠瑳牡⤢ബ ††椠摮捩瑡牯慍歲牥牔捡⡥慭歲牥孳崹‬⌢晥㐴㐴Ⱒ∠瑳牡⤢ബ ††笠ൻ †††琠灹㩥∠捳瑡整≲ബ †††洠摯㩥∠楬敮≳ബ †††砠›慣摮敬砮ബ †††礠›慰汹慯⹤捳⁲籼嬠ⱝ਍††††畣瑳浯慤慴›湩楤慣潴呲浩獥ബ †††氠湩㩥笠⁻潣潬㩲∠昣晦晦≦‬楷瑤㩨㐠㈮‬慤桳›猢汯摩•絽ബ †††栠癯牥整灭慬整›㽠蒰┠筻畣瑳浯慤慴絽戼㹲笤灻祡潬摡献浹潢乬浡絥⁽䍓⁒笥祻⸺昲絽攼瑸慲㰾支瑸慲怾ബ †††猠潨汷来湥㩤映污敳਍†††絽ബ ††笠ൻ †††琠灹㩥∠捳瑡整≲ബ †††洠摯㩥∠楬敮≳ബ †††砠›慣摮敬砮ബ †††礠›慰汹慯⹤慰物捓⁲籼嬠ⱝ਍††††畣瑳浯慤慴›湩楤慣潴呲浩獥ബ †††氠湩㩥笠⁻潣潬㩲∠昣㤵づ≢‬楷瑤㩨㌠㔮‬慤桳›搢瑯•絽ബ †††栠癯牥整灭慬整›㽠蒰┠筻畣瑳浯慤慴絽戼㹲笤灻祡潬摡瀮楡乲浡⁥籼∠돪蒲㼿絽匠剃┠筻㩹㈮給㱽硥牴㹡⼼硥牴㹡Ⱡ਍††††桳睯敬敧摮›慦獬൥ ††素ൽ †崠ബ †氠祡畯㩴笠ൻ ††瀠灡牥扟捧汯牯›⌢㌱㜱㈲Ⱒ਍†††汰瑯扟捧汯牯›⌢㌱㜱㈲Ⱒ਍†††潦瑮›筻挠汯牯›⌢ㅤ㑤捤Ⱒ映浡汩㩹∠慍杬湵䜠瑯楨≣素ⱽ਍†††慭杲湩›筻氠›ⰸ爠›㘵‬㩴㌠ⰴ戠›㈲素ⱽ਍†††敨杩瑨›〳ⰰ਍†††牤条潭敤›慦獬ⱥ਍†††潨敶浲摯㩥∠汣獯獥≴ബ ††栠癯牥楤瑳湡散›〲ബ ††猠楰敫楤瑳湡散›〲ബ ††栠癯牥慬敢㩬笠⁻杢潣潬㩲∠ㄣ㉥㈲≤‬潦瑮›筻挠汯牯›⌢ㅤ㑤捤•絽素ⱽ਍†††桳睯敬敧摮›慦獬ⱥ਍†††極敲楶楳湯›猢楨潮畢椭摮捩瑡牯挭慨瑲Ⱒ਍†††慸楸㩳笠ൻ †††琠捩浫摯㩥∠牡慲≹ബ †††琠捩癫污㩳琠捩獫琮捩癫污ⱳ਍††††楴正整瑸›楴正⹳楴正整瑸ബ †††猠潨杷楲㩤映污敳ബ †††爠湡敧›ⵛ⸰㔴‬慍桴洮硡挨湡汤⹥⹸敬杮桴ⴠ〠㔮ⰵㄠ崩ബ †††映硩摥慲杮㩥琠畲ⱥ਍††††桳睯灳歩獥›牴敵ബ †††猠楰敫潭敤›愢牣獯≳ബ †††猠楰敫潣潬㩲∠㐣㕢㘵∳ബ †††猠楰敫桴捩湫獥㩳ㄠ਍†††絽ബ ††礠硡獩›筻਍††††楳敤›爢杩瑨Ⱒ਍††††慲杮㩥嬠ㄭ㤮‬⸱崹ബ †††琠捩浫摯㩥∠牡慲≹ബ †††琠捩癫污㩳嬠ㄭ‬ⰰㄠⱝ਍††††楴正整瑸›≛頿诫⊨‬〢Ⱒ∠脿诫⊨ⱝ਍††††桳睯牧摩›牴敵ബ †††朠楲捤汯牯›爢执⡡㈴㐬ⰶ㜵〬㌮⤵Ⱒ਍††††楦數牤湡敧›牴敵਍†††絽ബ ††愠湮瑯瑡潩獮›൛ †††笠ൻ ††††砠›⸰㄰ബ ††††礠›⸱㠰ബ ††††砠敲㩦∠慰数≲ബ ††††礠敲㩦∠慰数≲ബ ††††猠潨慷牲睯›慦獬ⱥ਍†††††整瑸›뒳ꇬ肧㼿㼨㼿ꂄ›蠿닫겦㿬⼠벣駭₩逿蓬㪠놳닫㾄∿ബ ††††映湯㩴笠⁻楳敺›㈱‬潣潬㩲∠㤣慡戴∲‬慦業祬›䴢污畧⁮潇桴捩•絽਍††††絽਍†††൝ †素ൽ 素㭽਍絽਍਍畦据楴湯挠湡灁数摮瀨敲偶祡潬摡‬敮瑸慐汹慯⥤笠ൻ 椠⁦ℨ牰癥慐汹慯⁤籼℠敮瑸慐汹慯⥤爠瑥牵⁮慦獬㭥਍†潣獮⁴牰癥慃摮敬⁳‽牰癥慐汹慯⹤慣摮敬⁳籼嬠㭝਍†潣獮⁴敮瑸慃摮敬⁳‽敮瑸慐汹慯⹤慣摮敬⁳籼嬠㭝਍†晩⠠敮瑸慃摮敬⹳敬杮桴℠㴽瀠敲䍶湡汤獥氮湥瑧⁨‫⤱爠瑥牵⁮慦獬㭥਍†潦⁲氨瑥椠㴠〠※⁩‼牰癥慃摮敬⹳敬杮桴※⁩㴫ㄠ 筻਍††晩⠠牰癥慃摮敬孳嵩琮℠㴽渠硥䍴湡汤獥楛⹝⥴爠瑥牵⁮慦獬㭥਍†絽਍†敲畴湲琠畲㭥਍絽਍਍獡湹⁣畦据楴湯猠湹䥣摮捩瑡牯慒杮䙥潲䵭楡⡮ 筻਍†潣獮⁴畣牲湥䵴楡剮湡敧㴠洠楡剮潯⹴慬潹瑵⸿慸楸㽳爮湡敧഻ 椠⁦ℨ畣牲湥䵴楡剮湡敧簠⁼畣牲湥䵴楡剮湡敧氮湥瑧⁨㴡‽⤲爠瑥牵㭮਍†祳据湩剧湡敧㴠琠畲㭥਍†睡楡⁴汐瑯祬爮汥祡畯⡴湩楤慣潴割潯ⱴ笠⁻砢硡獩爮湡敧㨢挠牵敲瑮慍湩慒杮⁥絽㬩਍†祳据湩剧湡敧㴠映污敳഻紊ൽഊ愊祳据映湵瑣潩⁮灡汰䵹楡䥮据敲敭瑮污瀨敲偶祡潬摡‬敮瑸慐汹慯⥤笠ൻ 挠湯瑳渠硥䍴湡汤獥㴠挠湡汤䅥牲祡⡳敮瑸慐汹慯⥤഻ഊ 椠⁦挨湡灁数摮瀨敲偶祡潬摡‬敮瑸慐汹慯⥤ 筻਍††潣獮⁴敮䥷摮硥㴠渠硥䍴湡汤獥砮湛硥䍴湡汤獥砮氮湥瑧⁨‭崱഻ †愠慷瑩倠潬汴⹹硥整摮牔捡獥ന ††洠楡剮潯ⱴ਍†††筻਍††††㩸嬠湛睥湉敤嵸ⱝ਍††††灯湥›孛敮瑸慃摮敬⹳灯湥湛硥䍴湡汤獥漮数⹮敬杮桴ⴠㄠ嵝ⱝ਍††††楨桧›孛敮瑸慃摮敬⹳楨桧湛硥䍴湡汤獥栮杩⹨敬杮桴ⴠㄠ嵝ⱝ਍††††潬㩷嬠湛硥䍴湡汤獥氮睯湛硥䍴湡汤獥氮睯氮湥瑧⁨‭崱嵝ബ †††挠潬敳›孛敮瑸慃摮敬⹳汣獯孥敮瑸慃摮敬⹳汣獯⹥敬杮桴ⴠㄠ嵝൝ ††素ⱽ਍†††䵛䥁彎剔䍁⹅慣摮敬ⱝ਍†††敮瑸慃摮敬⹳⹸敬杮桴਍††㬩਍†絽攠獬⁥筻਍††潣獮⁴慣摮敬潈敶呲硥⁴‽敮瑸慐汹慯⹤慣摮敬⹳慭⡰椨整⥭㴠‾筻਍†††潣獮⁴楴敭敔瑸㴠⠠瑩浥琮簠⁼∢⸩敲汰捡⡥吢Ⱒ∠∠⸩汳捩⡥ⰰㄠ⤶഻ ††爠瑥牵⁮㽠蒰␠筻楴敭敔瑸絽戼㹲鰿㿪␠筻畎扭牥椨整⹭⥯琮䱯捯污卥牴湩⡧紩㱽牢ꂳ㿪␠筻畎扭牥椨整⹭⥨琮䱯捯污卥牴湩⡧紩㱽牢㼾肰␠筻畎扭牥椨整⹭⥬琮䱯捯污卥牴湩⡧紩㱽牢薢㿪␠筻畎扭牥椨整⹭⥣琮䱯捯污卥牴湩⡧紩恽഻ †素⥽഻ †愠慷瑩倠潬汴⹹敲瑳汹⡥਍†††慭湩潒瑯ബ ††笠ൻ †††砠›湛硥䍴湡汤獥砮ⱝ਍††††灯湥›湛硥䍴湡汤獥漮数嵮ബ †††栠杩㩨嬠敮瑸慃摮敬⹳楨桧ⱝ਍††††潬㩷嬠敮瑸慃摮敬⹳潬嵷ബ †††挠潬敳›湛硥䍴湡汤獥挮潬敳ⱝ਍††††潨敶瑲硥㩴嬠慣摮敬潈敶呲硥嵴ബ †††琠硥㩴嬠慣摮敬潈敶呲硥嵴਍†††絽ബ ††嬠䅍义呟䅒䕃挮湡汤嵥਍††㬩਍†絽਍਍†潣獮⁴楴正⁳‽楴正慄慴渨硥側祡潬摡㬩਍†睡楡⁴汐瑯祬爮汥祡畯⡴慭湩潒瑯‬筻਍††砢硡獩琮捩癫污≳›楴正⹳楴正慶獬ബ †∠慸楸⹳楴正整瑸㨢琠捩獫琮捩瑫硥൴ 素⥽഻紊ൽഊ愊祳据映湵瑣潩⁮灡汰䥹摮捩瑡牯湉牣浥湥慴⡬牰癥慐汹慯Ɽ渠硥側祡潬摡 筻਍†潣獮⁴敮瑸慃摮敬⁳‽慣摮敬牁慲獹渨硥側祡潬摡㬩਍†潣獮⁴湩楤慣潴呲浩獥㴠渠硥䍴湡汤獥琮浩獥洮灡⠨瑩浥 㸽⠠瑩浥簠⁼∢⸩敲汰捡⡥吢Ⱒ∠∠⸩汳捩⡥ⰰㄠ⤶㬩਍਍†晩⠠慣䅮灰湥⡤牰癥慐汹慯Ɽ渠硥側祡潬摡⤩笠ൻ †挠湯瑳渠睥湉敤⁸‽敮瑸慃摮敬⹳學敮瑸慃摮敬⹳⹸敬杮桴ⴠㄠ㭝਍††睡楡⁴汐瑯祬攮瑸湥呤慲散⡳਍†††湩楤慣潴割潯ⱴ਍†††筻਍††††㩸嬠湛睥湉敤嵸ⱝ਍††††㩹嬠⡛敮瑸慐汹慯⹤捳⁲籼嬠⥝湛硥側祡潬摡献牣氮湥瑧⁨‭崱嵝ബ †††挠獵潴摭瑡㩡嬠楛摮捩瑡牯楔敭孳湩楤慣潴呲浩獥氮湥瑧⁨‭崱嵝਍†††絽ബ ††嬠义䥄䅃佔归剔䍁⹅牰浩牡卹牣ⱝ਍†††敮瑸慃摮敬⹳⹸敬杮桴਍††㬩਍††睡楡⁴汐瑯祬攮瑸湥呤慲散⡳਍†††湩楤慣潴割潯ⱴ਍†††筻਍††††㩸嬠湛睥湉敤嵸ⱝ਍††††㩹嬠⡛敮瑸慐汹慯⹤慰物捓⁲籼嬠⥝湛硥側祡潬摡瀮楡卲牣氮湥瑧⁨‭崱嵝ബ †††挠獵潴摭瑡㩡嬠楛摮捩瑡牯楔敭孳湩楤慣潴呲浩獥氮湥瑧⁨‭崱嵝਍†††絽ബ ††嬠义䥄䅃佔归剔䍁⹅慰物捓嵲ബ ††渠硥䍴湡汤獥砮氮湥瑧൨ †⤠഻ 素⁽汥敳笠ൻ †愠慷瑩倠潬汴⹹敲瑳汹⡥਍†††湩楤慣潴割潯ⱴ਍†††筻਍††††㩸嬠敮瑸慃摮敬⹳嵸ബ †††礠›湛硥側祡潬摡献牣簠⁼嵛ⱝ਍††††畣瑳浯慤慴›楛摮捩瑡牯楔敭嵳਍†††絽ബ ††嬠义䥄䅃佔归剔䍁⹅牰浩牡卹牣൝ †⤠഻ †愠慷瑩倠潬汴⹹敲瑳汹⡥਍†††湩楤慣潴割潯ⱴ਍†††筻਍††††㩸嬠敮瑸慃摮敬⹳嵸ബ †††礠›湛硥側祡潬摡瀮楡卲牣簠⁼嵛ⱝ਍††††畣瑳浯慤慴›楛摮捩瑡牯楔敭嵳਍†††絽ബ ††嬠义䥄䅃佔归剔䍁⹅慰物捓嵲਍††㬩਍†絽਍਍†潣獮⁴楴正⁳‽楴正慄慴渨硥側祡潬摡㬩਍†睡楡⁴汐瑯祬爮汥祡畯⡴湩楤慣潴割潯ⱴ笠ൻ †∠慸楸⹳楴正慶獬㨢琠捩獫琮捩癫污ⱳ਍††砢硡獩琮捩瑫硥≴›楴正⹳楴正整瑸਍†絽㬩਍絽਍਍獡湹⁣畦据楴湯愠灰祬慍歲牥慐汹慯⡤慢敳慐汹慯Ɽ洠牡敫偲祡潬摡 筻਍†晩⠠戡獡健祡潬摡簠⁼洡牡敫偲祡潬摡 敲畴湲഻ 氠瑡獥䵴牡敫偲祡潬摡㴠眠瑩䵨牡敫獲戨獡健祡潬摡‬慭歲牥慐汹慯⥤഻ 挠湯瑳洠牡敫獲㴠洠牡敫卲牥敩⡳慬整瑳慍歲牥慐汹慯⥤഻ 椠⁦椨楮楴污穩摥慍湩 筻਍††潦⁲氨瑥椠㴠〠※⁩‼慭歲牥⹳慭湩氮湥瑧㭨椠⬠‽⤱笠ൻ ††挠湯瑳琠慲散湉敤⁸‽䅍义呟䅒䕃瀮楲慭祲灏湥⬠椠഻ ††挠湯瑳挠牵敲瑮㴠洠牡敫獲洮楡孮嵩഻ ††愠慷瑩倠潬汴⹹敲瑳汹⡥਍††††慭湩潒瑯ബ †††笠ൻ ††††砠›捛牵敲瑮洮灡⠨瑩浥 㸽椠整⹭⥸ⱝ਍†††††㩹嬠畣牲湥⹴慭⡰椨整⥭㴠‾瑩浥礮崩ബ ††††琠硥㩴嬠畣牲湥⹴慭⡰椨整⥭㴠‾瑩浥氮扡汥崩ബ ††††栠癯牥整瑸›摛瑥楡䡬癯牥挨牵敲瑮崩਍††††絽ബ †††嬠牴捡䥥摮硥൝ ††⤠഻ †素ൽ 素ൽ 椠⁦椨楮楴污穩摥湉楤慣潴⥲笠ൻ †映牯⠠敬⁴⁩‽㬰椠㰠洠牡敫獲椮摮捩瑡牯氮湥瑧㭨椠⬠‽⤱笠ൻ ††挠湯瑳挠牵敲瑮㴠洠牡敫獲椮摮捩瑡牯楛㭝਍†††睡楡⁴汐瑯祬爮獥祴敬ന †††椠摮捩瑡牯潒瑯ബ †††笠ൻ ††††砠›捛牵敲瑮洮灡⠨瑩浥 㸽椠整⹭⥸ⱝ਍†††††㩹嬠畣牲湥⹴慭⡰椨整⥭㴠‾瑩浥礮崩ബ ††††栠癯牥整瑸›摛瑥楡䡬癯牥挨牵敲瑮崩਍††††絽ബ †††嬠嵩਍†††㬩਍††絽਍†絽਍絽਍਍獡湹⁣畦据楴湯映瑥档慐汹慯⡤湩汣摵䵥牡敫獲 筻਍†敬⁴慬瑳牅潲⁲‽畮汬഻ 映牯⠠潣獮⁴慢敳漠⁦档牡䕴摮潰湩䉴獡獥 筻਍††潣獮⁴湥灤楯瑮㴠਍†††①筻慢敳絽欿湩㵤癯牥慬♹祳扭汯笽祳扭汯恽⬠਍†††♠慰物獟浹潢㵬灻楡彲畱牥絹猦潴档灟瑣笽瑳捯彨捰絴挦楣灟瑣笽捣彩捰絴爦楳灟瑣笽獲彩捰絴⁠ഫ ††怠猦牴瑡来役慮敭笽瑳慲整祧湟浡絥猦慴瑲摟瑡㵥獻慴瑲摟瑡絥攦摮摟瑡㵥敻摮摟瑡絥⁠ഫ ††怠椦据畬敤浟牡敫獲␽筻湩汣摵䵥牡敫獲㼠∠∱㨠∠∰絽㭠਍††牴⁹筻਍†††潣獮⁴敲灳湯敳㴠愠慷瑩映瑥档攨摮潰湩ⱴ笠⁻慣档㩥∠潮猭潴敲•絽㬩਍†††晩⠠爡獥潰獮⹥歯 筻਍††††桴潲⁷敮⁷牅潲⡲䡠呔⁐笤牻獥潰獮⹥瑳瑡獵絽⥠഻ ††素ൽ ††挠湯瑳挠湯整瑮祔数㴠匠牴湩⡧敲灳湯敳栮慥敤獲朮瑥∨潣瑮湥⵴祴数⤢簠⁼∢⸩潴潌敷䍲獡⡥㬩਍†††晩⠠挡湯整瑮祔数椮据畬敤⡳愢灰楬慣楴湯樯潳≮⤩笠ൻ †††琠牨睯渠睥䔠牲牯怨湕硥数瑣摥挠湯整瑮琭灹㩥␠筻潣瑮湥呴灹⁥籼∠湵湫睯≮絽⥠഻ ††素ൽ ††爠瑥牵⁮敲灳湯敳樮潳⡮㬩਍††絽挠瑡档⠠牥潲⥲笠ൻ ††氠獡䕴牲牯㴠攠牲牯഻ †素ൽ 素ൽ 琠牨睯氠獡䕴牲牯簠⁼敮⁷牅潲⡲䘢楡敬⁤潴映瑥档挠慨瑲瀠祡潬摡⤢഻紊ൽഊ愊祳据映湵瑣潩⁮敲牦獥䍨慨瑲⡳ 筻਍†潣獮⁴敮瑸慐汹慯⁤‽睡楡⁴敦捴偨祡潬摡琨畲⥥഻ 猠慴瑲畃牲湥䍴湡汤䍥畯瑮潤湷渨硥側祡潬摡㬩਍†潣獮⁴潣普杩㴠笠ൻ †爠獥潰獮癩㩥琠畲ⱥ਍††楤灳慬汹杯㩯映污敳ബ †搠獩汰祡潍敤慂㩲映污敳ബ †猠牣汯婬潯㩭琠畲ⱥ਍††潭敤慂䉲瑵潴獮潔敒潭敶›≛潺浯搲Ⱒ∠慰㉮≤‬氢獡潳搲Ⱒ∠敳敬瑣搲Ⱒ∠潺浯湉搲Ⱒ∠潺浯畏㉴≤‬愢瑵卯慣敬搲Ⱒ∠敲敳却慣敬搲崢਍†絽഻ഊ 椠⁦ℨ湩瑩慩楬敺䵤楡⥮笠ൻ †挠湯瑳洠楡䙮杩牵⁥‽畢汩䵤楡䙮杩牵⡥敮瑸慐汹慯⥤഻ †愠慷瑩倠潬汴⹹敮偷潬⡴慭湩潒瑯‬慭湩楆畧敲搮瑡ⱡ洠楡䙮杩牵⹥慬潹瑵‬潣普杩㬩਍††湩瑩慩楬敺䵤楡⁮‽牴敵഻ †洠楡剮潯⹴湯∨汰瑯祬牟汥祡畯≴‬攨敶瑮慄慴 㸽笠ൻ ††椠⁦猨湹楣杮慒杮⥥爠瑥牵㭮਍†††潣獮⁴へ㴠攠敶瑮慄慴≛慸楸⹳慲杮孥崰崢഻ ††挠湯瑳砠‱‽癥湥䑴瑡孡砢硡獩爮湡敧ㅛ≝㭝਍†††晩⠠へ㴠㴽甠摮晥湩摥簠⁼ㅸ㴠㴽甠摮晥湩摥 敲畴湲഻ ††猠湹楣杮慒杮⁥‽牴敵഻ ††倠潬汴⹹敲慬潹瑵椨摮捩瑡牯潒瑯‬筻∠慸楸⹳慲杮≥›硛ⰰ砠崱素⥽昮湩污祬⠨ 㸽笠ൻ †††猠湹楣杮慒杮⁥‽慦獬㭥਍†††絽㬩਍††絽㬩਍†絽攠獬⁥筻਍††睡楡⁴灡汰䵹楡䥮据敲敭瑮污瀨敲楶畯偳祡潬摡‬敮瑸慐汹慯⥤഻ 素ൽഊ 椠⁦ℨ湩瑩慩楬敺䥤摮捩瑡牯 筻਍††潣獮⁴湩楤慣潴䙲杩牵⁥‽畢汩䥤摮捩瑡牯楆畧敲渨硥側祡潬摡㬩਍††睡楡⁴汐瑯祬渮睥汐瑯椨摮捩瑡牯潒瑯‬湩楤慣潴䙲杩牵⹥慤慴‬湩楤慣潴䙲杩牵⹥慬潹瑵‬潣普杩㬩਍††湩瑩慩楬敺䥤摮捩瑡牯㴠琠畲㭥਍†絽攠獬⁥筻਍††睡楡⁴灡汰䥹摮捩瑡牯湉牣浥湥慴⡬牰癥潩獵慐汹慯Ɽ渠硥側祡潬摡㬩਍†絽਍਍†睡楡⁴祳据湉楤慣潴割湡敧牆浯慍湩⤨഻ 愠慷瑩愠灰祬慍歲牥慐汹慯⡤敮瑸慐汹慯Ɽ渠硥側祡潬摡㬩਍†牰癥潩獵慐汹慯⁤‽敮瑸慐汹慯㭤਍絽਍਍潬摡慍歲牥楆瑬牥⡳㬩਍敲摮牥慍歲牥楆瑬牥潃瑮潲獬⤨഻爊晥敲桳桃牡獴⤨഻椊⁦眨湩潤孷敲牦獥周浩牥敋嵹 筻਍†汣慥䥲瑮牥慶⡬楷摮睯牛晥敲桳楔敭䭲祥⥝഻紊ൽ眊湩潤孷敲牦獥周浩牥敋嵹㴠猠瑥湉整癲污爨晥敲桳桃牡獴‬〵〰㬩਍⼼捳楲瑰ാ∊∢਍਍
+from __future__ import annotations
+
+import re
+
+
+def build_live_chart_html(
+    *,
+    server_url: str,
+    symbol: str,
+    pair_symbol: str | None,
+    stoch_pct: int,
+    cci_pct: int,
+    rsi_pct: int,
+    strategy_name: str,
+    strategy_label: str,
+    start_date: str,
+    end_date: str,
+    render_nonce: int,
+) -> str:
+    pair_query = pair_symbol or ""
+    root_suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", f"{symbol}-{pair_query or 'none'}-{strategy_name}-{render_nonce}-{stoch_pct}-{cci_pct}-{rsi_pct}")
+    main_root_id = f"main-chart-root-{root_suffix}"
+    indicator_root_id = f"indicator-chart-root-{root_suffix}"
+    return f"""
+<div style="display:flex;flex-direction:column;gap:10px;">
+  <div style="display:none" data-strategy-name="{strategy_name}" data-strategy-label="{strategy_label}" data-render-nonce="{render_nonce}"></div>
+  <div id="chart-status-{root_suffix}" style="font-size:12px;color:#9aa4b2;margin:0 0 2px 6px;"></div>
+  <div id="chart-marker-filter-{root_suffix}" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px 6px;"></div>
+  <div id="{main_root_id}" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+  <div id="{indicator_root_id}" style="width:100%;height:300px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+</div>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+const mainRoot = document.getElementById("{main_root_id}");
+const indicatorRoot = document.getElementById("{indicator_root_id}");
+const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
+const markerFilterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
+const hostWindow = window.parent && window.parent.location ? window.parent : window;
+const hostName = hostWindow.location.hostname || "";
+const isLocalHost = ["localhost", "127.0.0.1"].includes(hostName);
+const preferredHost = hostName || "127.0.0.1";
+const chartEndpointBases = [];
+
+// 1) Try direct Signal API on EC2 host first (most reliable on http://IP:8501 access)
+chartEndpointBases.push(`http://${{preferredHost}}:8766/v1/chart`);
+chartEndpointBases.push(`http://${{preferredHost}}:8766/chart`);
+
+// 2) If reverse proxy is configured, same-origin paths may work on https domains
+chartEndpointBases.push(`${{hostWindow.location.protocol}}//${{preferredHost}}/v1/chart`);
+chartEndpointBases.push(`${{hostWindow.location.protocol}}//${{preferredHost}}/chart`);
+
+// 3) Local-only fallback (useful when app is opened on localhost directly)
+if (isLocalHost) {{
+  chartEndpointBases.push("http://127.0.0.1:8766/v1/chart");
+  chartEndpointBases.push("http://127.0.0.1:8766/chart");
+}}
+const refreshTimerKey = "__shinobu_chart_refresh_{root_suffix}";
+const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
+const markerFilterOptions = [
+  {{ key: "primary_open", label: "??덉쒔?귐? Open" }},
+  {{ key: "primary_close", label: "??덉쒔?귐? Close" }},
+  {{ key: "pair_open", label: "?④퉭苡??Open" }},
+  {{ key: "pair_close", label: "?④퉭苡??Close" }},  {{ key: "order_buy", label: "??삘꼻?? }},
+  {{ key: "order_sell", label: "??삘꼻?? }}
+];
+const markerFilters = {{
+  primary_open: true,
+  primary_close: true,
+  pair_open: true,
+  pair_close: true,  order_buy: true,
+  order_sell: true
+}};
+
+let initializedMain = false;
+let initializedIndicator = false;
+let syncingRange = false;
+let previousPayload = null;
+let latestMarkerPayload = null;
+let countdownTimer = null;
+let liveCountdownState = null;
+
+const MAIN_TRACE = {{
+  candle: 0,
+  primaryOpen: 1,
+  primaryClose: 2,
+  pairOpen: 3,
+  pairClose: 4,
+  orderBuy: 5,
+  orderSell: 6
+}};
+
+const INDICATOR_TRACE = {{
+  primaryOpenMain: 0,
+  primaryCloseMain: 1,
+  pairOpenMain: 2,
+  pairCloseMain: 3,
+  orderBuy: 4,
+  orderSell: 5,
+  primaryOpen: 6,
+  primaryClose: 7,
+  pairOpen: 8,
+  pairClose: 9,
+  primaryScr: 10,
+  pairScr: 11
+}};
+
+function detailHover(items) {{
+  return items.map((item) =>
+    [
+      item.label || "",
+      item.time ? `??볦퍢: ${{item.time}}` : "",
+      item.price ? `揶쎛野? ${{Number(item.price).toLocaleString()}}` : "",
+      item.reason ? `???: ${{item.reason}}` : "",
+      item.scr !== undefined ? `SCR: ${{Number(item.scr).toFixed(2)}}` : ""
+    ].filter(Boolean).join("<br>")
+  );
+}}
+
+function normalizeMarkerText(value) {{
+  return String(value || "").toLowerCase();
+}}
+
+function isStopMarker(item) {{
+  const label = normalizeMarkerText(item?.label);
+  const reason = normalizeMarkerText(item?.reason);
+  return (
+    label.includes("?癒?쟿") ||
+    reason.includes("?癒?쟿") ||
+    label.includes("stop") ||
+    reason.includes("stop") ||
+    label.includes("trailing") ||
+    reason.includes("trailing")
+  );
+}}
+
+function filterOpenMarkers(markers, key) {{
+  if (!markerFilters[key]) return [];
+  return markers;
+}}
+
+function filterCloseMarkers(markers, closeKey) {{
+  if (!markerFilters[closeKey]) return [];
+  return markers;
+}}
+
+function loadMarkerFilters() {{
+  try {{
+    const raw = window.sessionStorage.getItem(markerFilterStorageKey);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return;
+    markerFilterOptions.forEach((option) => {{
+      if (typeof parsed[option.key] === "boolean") {{
+        markerFilters[option.key] = parsed[option.key];
+      }}
+    }});
+  }} catch (error) {{
+    // ignore local storage parsing errors
+  }}
+}}
+
+function saveMarkerFilters() {{
+  try {{
+    window.sessionStorage.setItem(markerFilterStorageKey, JSON.stringify(markerFilters));
+  }} catch (error) {{
+    // ignore local storage write errors
+  }}
+}}
+
+async function applyMarkerFiltersOnly() {{
+  const markerPayload = latestMarkerPayload || previousPayload;
+  if (!markerPayload) return;
+  if (initializedMain) {{
+    const markers = markerSeries(markerPayload).main;
+    for (let i = 0; i < markers.length; i += 1) {{
+      const traceIndex = MAIN_TRACE.primaryOpen + i;
+      const current = markers[i];
+      await Plotly.restyle(
+        mainRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          text: [current.map((item) => item.label)],
+          hovertext: [detailHover(current)]
+        }},
+        [traceIndex]
+      );
+    }}
+  }}
+  if (initializedIndicator) {{
+    const markers = markerSeries(markerPayload).indicator;
+    for (let i = 0; i < markers.length; i += 1) {{
+      const current = markers[i];
+      await Plotly.restyle(
+        indicatorRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          hovertext: [detailHover(current)]
+        }},
+        [i]
+      );
+    }}
+  }}
+}}
+
+function renderMarkerFilterControls() {{
+  if (!markerFilterRoot) return;
+  markerFilterRoot.innerHTML = "";
+  const title = document.createElement("span");
+  title.textContent = "筌띾뜆鍮???뽯뻻:";
+  title.style.color = "#94a3b8";
+  title.style.fontSize = "12px";
+  title.style.marginRight = "4px";
+  markerFilterRoot.appendChild(title);
+
+  markerFilterOptions.forEach((option) => {{
+    const label = document.createElement("label");
+    label.style.display = "inline-flex";
+    label.style.alignItems = "center";
+    label.style.gap = "4px";
+    label.style.fontSize = "12px";
+    label.style.color = "#d1d5db";
+    label.style.cursor = "pointer";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(markerFilters[option.key]);
+    checkbox.style.margin = "0";
+    checkbox.addEventListener("change", async () => {{
+      markerFilters[option.key] = checkbox.checked;
+      saveMarkerFilters();
+      await applyMarkerFiltersOnly();
+    }});
+
+    const text = document.createElement("span");
+    text.textContent = option.label;
+
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    markerFilterRoot.appendChild(label);
+  }});
+}}
+
+function renderCurrentCandleStatus(payload) {{
+  if (!chartStatusRoot) return;
+  const current = payload.currentCandle || null;
+  if (!current) {{
+    chartStatusRoot.innerHTML = "";
+    return;
+  }}
+  const accent = current.isUnconfirmed ? "#f59e0b" : "#22c55e";
+  const progress = Math.max(0, Math.min(Number(current.progressPct || 0), 100));
+  chartStatusRoot.innerHTML =
+    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
+    `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
+    `<span style="color:#64748b;">疫꿸퀣? ??${{
+      current.candleTime || "-"
+    }}</span>` +
+    `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
+    `<div style="width:${{progress}}%;height:100%;background:${{accent}};"></div>` +
+    `</div>` +
+    `</div>`;
+}}
+
+function renderCurrentCandleStatusFromState(current) {{
+  if (!chartStatusRoot || !current) return;
+  const accent = current.isUnconfirmed ? "#f59e0b" : "#22c55e";
+  const progress = Math.max(0, Math.min(Number(current.progressPct || 0), 100));
+  chartStatusRoot.innerHTML =
+    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
+    `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
+    `<span style="color:#64748b;">疫꿸퀣? ??${{
+      current.candleTime || "-"
+    }}</span>` +
+    `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
+    `<div style="width:${{progress}}%;height:100%;background:${{accent}};"></div>` +
+    `</div>` +
+    `</div>`;
+}}
+
+function startCurrentCandleCountdown(payload) {{
+  if (countdownTimer) {{
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }}
+  const current = payload.currentCandle || null;
+  if (!current) {{
+    liveCountdownState = null;
+    renderCurrentCandleStatus(payload);
+    return;
+  }}
+
+  liveCountdownState = {{ ...current }};
+  renderCurrentCandleStatusFromState(liveCountdownState);
+  if (!liveCountdownState.isUnconfirmed) {{
+    return;
+  }}
+
+  countdownTimer = setInterval(() => {{
+    if (!liveCountdownState || !liveCountdownState.isUnconfirmed) {{
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      return;
+    }}
+    const nextRemaining = Math.max(0, Number(liveCountdownState.remainingSeconds || 0) - 1);
+    liveCountdownState.remainingSeconds = nextRemaining;
+    liveCountdownState.remainingText =
+      `${{String(Math.floor(nextRemaining / 60)).padStart(2, "0")}}:${{String(nextRemaining % 60).padStart(2, "0")}}`;
+    const nextProgress = Math.max(0, Math.min(100, 100 - (nextRemaining / 300) * 100));
+    liveCountdownState.progressPct = nextProgress;
+    if (nextRemaining <= 0) {{
+      liveCountdownState.isUnconfirmed = false;
+      liveCountdownState.statusText = "筌ㅼ뮄?????類ㅼ젟";
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }} else {{
+      liveCountdownState.statusText = `?袁⑹삺 ??沃섎챸???夷?筌띾뜃而㎪틦?? ${{liveCountdownState.remainingText}}`;
+    }}
+    renderCurrentCandleStatusFromState(liveCountdownState);
+  }}, 1000);
+}}
+
+function mainMarkerTrace(markers, color, symbol) {{
+  return {{
+    type: "scatter",
+    mode: "markers+text",
+    x: markers.map((item) => item.x),
+    y: markers.map((item) => item.y),
+    text: markers.map((item) => item.label),
+    textposition: "top center",
+    textfont: {{ size: 10, color }},
+    marker: {{ color, size: 10, symbol, line: {{ color: "#ffffff", width: 1 }} }},
+    hoverinfo: "text",
+    hovertext: detailHover(markers),
+    hovertemplate: "%{{hovertext}}<extra></extra>",
+    showlegend: false
+  }};
+}}
+
+function indicatorMarkerTrace(markers, color, symbol) {{
+  return {{
+    type: "scatter",
+    mode: "markers",
+    x: markers.map((item) => item.x),
+    y: markers.map((item) => item.y),
+    marker: {{ color, size: 10, opacity: 0.82, symbol, line: {{ color: "#ffffff", width: 1.4 }} }},
+    hoverinfo: "text",
+    hovertext: detailHover(markers),
+    hovertemplate: "%{{hovertext}}<extra></extra>",
+    showlegend: false
+  }};
+}}
+
+function candleArrays(payload) {{
+  return {{
+    x: payload.candles.map((_, index) => index),
+    open: payload.candles.map((item) => item.o),
+    high: payload.candles.map((item) => item.h),
+    low: payload.candles.map((item) => item.l),
+    close: payload.candles.map((item) => item.c),
+    times: payload.candles.map((item) => item.t)
+  }};
+}}
+
+function markerSeries(payload) {{
+  const orders = payload.orders || [];
+  const buyOrders = markerFilters.order_buy ? orders.filter((item) => item.side === "buy") : [];
+  const sellOrders = markerFilters.order_sell ? orders.filter((item) => item.side === "sell") : [];
+  const primaryOpenMain = filterOpenMarkers(payload.signals.primaryOpenMain || [], "primary_open");
+  const primaryCloseMain = filterCloseMarkers(payload.signals.primaryCloseMain || [], "primary_close");
+  const pairOpenMain = filterOpenMarkers(payload.signals.pairOpenMain || [], "pair_open");
+  const pairCloseMain = filterCloseMarkers(payload.signals.pairCloseMain || [], "pair_close");
+  const primaryOpenIndicator = filterOpenMarkers(payload.signals.primaryOpenIndicator || [], "primary_open");
+  const primaryCloseIndicator = filterCloseMarkers(payload.signals.primaryCloseIndicator || [], "primary_close");
+  const pairOpenIndicator = filterOpenMarkers(payload.signals.pairOpenIndicator || [], "pair_open");
+  const pairCloseIndicator = filterCloseMarkers(payload.signals.pairCloseIndicator || [], "pair_close");
+  return {{
+    main: [
+      primaryOpenMain,
+      primaryCloseMain,
+      pairOpenMain,
+      pairCloseMain,
+      buyOrders,
+      sellOrders
+    ],
+    indicator: [
+      primaryOpenMain,
+      primaryCloseMain,
+      pairOpenMain,
+      pairCloseMain,
+      buyOrders,
+      sellOrders,
+      primaryOpenIndicator,
+      primaryCloseIndicator,
+      pairOpenIndicator,
+      pairCloseIndicator
+    ]
+  }};
+}}
+
+function withMarkers(basePayload, markerPayload) {{
+  if (!basePayload) return markerPayload;
+  if (!markerPayload) return basePayload;
+  return {{
+    ...basePayload,
+    orders: markerPayload.orders || [],
+    signals: markerPayload.signals || {{}}
+  }};
+}}
+
+function tickData(payload) {{
+  const x = payload.candles.map((_, index) => index);
+  const step = Math.max(1, Math.ceil(x.length / 8));
+  return {{
+    tickvals: x.filter((_, index) => index % step === 0 || index === x.length - 1),
+    ticktext: payload.tickText.filter((_, index) => index % step === 0 || index === x.length - 1)
+  }};
+}}
+
+function buildMainFigure(payload) {{
+  const candle = candleArrays(payload);
+  const ticks = tickData(payload);
+  const markers = markerSeries(payload).main;
+  const candleHoverText = payload.candles.map((item) => {{
+    const timeText = (item.t || "").replace("T", " ").slice(0, 16);
+    return `??볦퍢 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>?⑥쥒? ${{Number(item.h).toLocaleString()}}<br>??揶쎛 ${{Number(item.l).toLocaleString()}}<br>?ル굛? ${{Number(item.c).toLocaleString()}}`;
+  }});
+  return {{
+    data: [
+      {{
+        type: "candlestick",
+        x: candle.x,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        text: candleHoverText,
+        increasing: {{ line: {{ color: "#089981" }}, fillcolor: "#089981" }},
+        decreasing: {{ line: {{ color: "#f23645" }}, fillcolor: "#f23645" }},
+        hoverinfo: "text",
+        hovertext: candleHoverText,
+        hovertemplate: "%{{hovertext}}<extra></extra>",
+        showlegend: false
+      }},
+      mainMarkerTrace(markers[0], "#3b82f6", "circle"),
+      mainMarkerTrace(markers[1], "#ef4444", "circle"),
+      mainMarkerTrace(markers[2], "#3b82f6", "star"),
+      mainMarkerTrace(markers[3], "#ef4444", "star"),
+      mainMarkerTrace(markers[4], "#22c55e", "heart"),
+      mainMarkerTrace(markers[5], "#f59e0b", "heart")
+    ],
+    layout: {{
+      paper_bgcolor: "#131722",
+      plot_bgcolor: "#131722",
+      font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
+      margin: {{ l: 8, r: 56, t: 42, b: 18 }},
+      height: 400,
+      dragmode: "pan",
+      hovermode: "closest",
+      hoverlabel: {{ bgcolor: "#1e222d", font: {{ color: "#d1d4dc" }} }},
+      showlegend: false,
+      uirevision: "shinobu-main-chart",
+      xaxis: {{
+        tickmode: "array",
+        tickvals: ticks.tickvals,
+        ticktext: ticks.ticktext,
+        showgrid: false,
+        range: [-0.45, Math.max(candle.x.length - 0.55, 1)],
+        fixedrange: false,
+        rangeslider: {{ visible: false }}
+      }},
+      yaxis: {{
+        side: "right",
+        showgrid: true,
+        gridcolor: "rgba(42,46,57,0.65)",
+        fixedrange: false
+      }},
+      annotations: [
+        {{
+          x: 0.01,
+          y: 1.04,
+          xref: "paper",
+          yref: "paper",
+          showarrow: false,
+          text: `${{payload.symbolName}} 夷?5?브쑬??夷???쇱읈 揶쎛野?,
+          font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }}
+        }},
+        {{
+          x: 0.99,
+          y: 1.04,
+          xref: "paper",
+          yref: "paper",
+          xanchor: "right",
+          showarrow: false,
+          text: "{strategy_label}",
+          font: {{ size: 13, color: "#60a5fa", family: "Malgun Gothic" }}
+        }}
+      ]
+    }}
+  }};
+}}
+
+function buildIndicatorFigure(payload) {{
+  const candle = candleArrays(payload);
+  const ticks = tickData(payload);
+  const indicatorTimes = candle.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
+  const markers = markerSeries(payload).indicator;
+  return {{
+    data: [
+      indicatorMarkerTrace(markers[0], "#3b82f6", "circle"),
+      indicatorMarkerTrace(markers[1], "#ef4444", "circle"),
+      indicatorMarkerTrace(markers[2], "#3b82f6", "star"),
+      indicatorMarkerTrace(markers[3], "#ef4444", "star"),
+      indicatorMarkerTrace(markers[4], "#22c55e", "heart"),
+      indicatorMarkerTrace(markers[5], "#f59e0b", "heart"),
+      indicatorMarkerTrace(markers[6], "#3b82f6", "circle"),
+      indicatorMarkerTrace(markers[7], "#ef4444", "circle"),
+      indicatorMarkerTrace(markers[8], "#3b82f6", "star"),
+      indicatorMarkerTrace(markers[9], "#ef4444", "star"),
+      {{
+        type: "scatter",
+        mode: "lines",
+        x: candle.x,
+        y: payload.scr || [],
+        customdata: indicatorTimes,
+        line: {{ color: "#ffffff", width: 4.2, dash: "solid" }},
+        hovertemplate: `??볦퍢 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
+        showlegend: false
+      }},
+      {{
+        type: "scatter",
+        mode: "lines",
+        x: candle.x,
+        y: payload.pairScr || [],
+        customdata: indicatorTimes,
+        line: {{ color: "#f59e0b", width: 3.5, dash: "dot" }},
+        hovertemplate: `??볦퍢 %{{customdata}}<br>${{payload.pairName || "?④퉭苡??}} SCR %{{y:.2f}}<extra></extra>`,
+        showlegend: false
+      }}
+    ],
+    layout: {{
+      paper_bgcolor: "#131722",
+      plot_bgcolor: "#131722",
+      font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
+      margin: {{ l: 8, r: 56, t: 34, b: 22 }},
+      height: 300,
+      dragmode: false,
+      hovermode: "closest",
+      hoverdistance: 20,
+      spikedistance: 20,
+      hoverlabel: {{ bgcolor: "#1e222d", font: {{ color: "#d1d4dc" }} }},
+      showlegend: false,
+      uirevision: "shinobu-indicator-chart",
+      xaxis: {{
+        tickmode: "array",
+        tickvals: ticks.tickvals,
+        ticktext: ticks.ticktext,
+        showgrid: false,
+        range: [-0.45, Math.max(candle.x.length - 0.55, 1)],
+        fixedrange: true,
+        showspikes: true,
+        spikemode: "across",
+        spikecolor: "#4b5563",
+        spikethickness: 1
+      }},
+      yaxis: {{
+        side: "right",
+        range: [-1.9, 1.9],
+        tickmode: "array",
+        tickvals: [-1, 0, 1],
+        ticktext: ["??롫뼊", "0", "?怨룸뼊"],
+        showgrid: true,
+        gridcolor: "rgba(42,46,57,0.35)",
+        fixedrange: true
+      }},
+      annotations: [
+        {{
+          x: 0.01,
+          y: 1.08,
+          xref: "paper",
+          yref: "paper",
+          showarrow: false,
+          text: "癰귣똻?쒙쭪???(????쇨퐨: ??덉쒔?귐? / 雅뚯눛???癒?퐨: ?④퉭苡??",
+          font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }}
+        }}
+      ]
+    }}
+  }};
+}}
+
+function canAppend(prevPayload, nextPayload) {{
+  if (!prevPayload || !nextPayload) return false;
+  const prevCandles = prevPayload.candles || [];
+  const nextCandles = nextPayload.candles || [];
+  if (nextCandles.length !== prevCandles.length + 1) return false;
+  for (let i = 0; i < prevCandles.length; i += 1) {{
+    if (prevCandles[i].t !== nextCandles[i].t) return false;
+  }}
+  return true;
+}}
+
+async function syncIndicatorRangeFromMain() {{
+  const currentMainRange = mainRoot.layout?.xaxis?.range;
+  if (!currentMainRange || currentMainRange.length !== 2) return;
+  syncingRange = true;
+  await Plotly.relayout(indicatorRoot, {{ "xaxis.range": currentMainRange }});
+  syncingRange = false;
+}}
+
+async function applyMainIncremental(prevPayload, nextPayload) {{
+  const nextCandles = candleArrays(nextPayload);
+
+  if (canAppend(prevPayload, nextPayload)) {{
+    const newIndex = nextCandles.x[nextCandles.x.length - 1];
+    await Plotly.extendTraces(
+      mainRoot,
+      {{
+        x: [[newIndex]],
+        open: [[nextCandles.open[nextCandles.open.length - 1]]],
+        high: [[nextCandles.high[nextCandles.high.length - 1]]],
+        low: [[nextCandles.low[nextCandles.low.length - 1]]],
+        close: [[nextCandles.close[nextCandles.close.length - 1]]]
+      }},
+      [MAIN_TRACE.candle],
+      nextCandles.x.length
+    );
+  }} else {{
+    const candleHoverText = nextPayload.candles.map((item) => {{
+      const timeText = (item.t || "").replace("T", " ").slice(0, 16);
+      return `??볦퍢 ${{timeText}}<br>??? ${{Number(item.o).toLocaleString()}}<br>?⑥쥒? ${{Number(item.h).toLocaleString()}}<br>??揶쎛 ${{Number(item.l).toLocaleString()}}<br>?ル굛? ${{Number(item.c).toLocaleString()}}`;
+    }});
+    await Plotly.restyle(
+      mainRoot,
+      {{
+        x: [nextCandles.x],
+        open: [nextCandles.open],
+        high: [nextCandles.high],
+        low: [nextCandles.low],
+        close: [nextCandles.close],
+        hovertext: [candleHoverText],
+        text: [candleHoverText]
+      }},
+      [MAIN_TRACE.candle]
+    );
+  }}
+
+  const ticks = tickData(nextPayload);
+  await Plotly.relayout(mainRoot, {{
+    "xaxis.tickvals": ticks.tickvals,
+    "xaxis.ticktext": ticks.ticktext
+  }});
+}}
+
+async function applyIndicatorIncremental(prevPayload, nextPayload) {{
+  const nextCandles = candleArrays(nextPayload);
+  const indicatorTimes = nextCandles.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
+
+  if (canAppend(prevPayload, nextPayload)) {{
+    const newIndex = nextCandles.x[nextCandles.x.length - 1];
+    await Plotly.extendTraces(
+      indicatorRoot,
+      {{
+        x: [[newIndex]],
+        y: [[(nextPayload.scr || [])[nextPayload.scr.length - 1]]],
+        customdata: [[indicatorTimes[indicatorTimes.length - 1]]]
+      }},
+      [INDICATOR_TRACE.primaryScr],
+      nextCandles.x.length
+    );
+    await Plotly.extendTraces(
+      indicatorRoot,
+      {{
+        x: [[newIndex]],
+        y: [[(nextPayload.pairScr || [])[nextPayload.pairScr.length - 1]]],
+        customdata: [[indicatorTimes[indicatorTimes.length - 1]]]
+      }},
+      [INDICATOR_TRACE.pairScr],
+      nextCandles.x.length
+    );
+  }} else {{
+    await Plotly.restyle(
+      indicatorRoot,
+      {{
+        x: [nextCandles.x],
+        y: [nextPayload.scr || []],
+        customdata: [indicatorTimes]
+      }},
+      [INDICATOR_TRACE.primaryScr]
+    );
+    await Plotly.restyle(
+      indicatorRoot,
+      {{
+        x: [nextCandles.x],
+        y: [nextPayload.pairScr || []],
+        customdata: [indicatorTimes]
+      }},
+      [INDICATOR_TRACE.pairScr]
+    );
+  }}
+
+  const ticks = tickData(nextPayload);
+  await Plotly.relayout(indicatorRoot, {{
+    "xaxis.tickvals": ticks.tickvals,
+    "xaxis.ticktext": ticks.ticktext
+  }});
+}}
+
+async function applyMarkerPayload(basePayload, markerPayload) {{
+  if (!basePayload || !markerPayload) return;
+  latestMarkerPayload = withMarkers(basePayload, markerPayload);
+  const markers = markerSeries(latestMarkerPayload);
+  if (initializedMain) {{
+    for (let i = 0; i < markers.main.length; i += 1) {{
+      const traceIndex = MAIN_TRACE.primaryOpen + i;
+      const current = markers.main[i];
+      await Plotly.restyle(
+        mainRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          text: [current.map((item) => item.label)],
+          hovertext: [detailHover(current)]
+        }},
+        [traceIndex]
+      );
+    }}
+  }}
+  if (initializedIndicator) {{
+    for (let i = 0; i < markers.indicator.length; i += 1) {{
+      const current = markers.indicator[i];
+      await Plotly.restyle(
+        indicatorRoot,
+        {{
+          x: [current.map((item) => item.x)],
+          y: [current.map((item) => item.y)],
+          hovertext: [detailHover(current)]
+        }},
+        [i]
+      );
+    }}
+  }}
+}}
+
+async function fetchPayload(includeMarkers) {{
+  let lastError = null;
+  for (const base of chartEndpointBases) {{
+    const endpoint =
+      `${{base}}?kind=overlay&symbol={symbol}` +
+      `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}` +
+      `&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}` +
+      `&include_markers=${{includeMarkers ? "1" : "0"}}`;
+    try {{
+      const response = await fetch(endpoint, {{ cache: "no-store" }});
+      if (!response.ok) {{
+        throw new Error(`HTTP ${{response.status}}`);
+      }}
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+      if (!contentType.includes("application/json")) {{
+        throw new Error(`Unexpected content-type: ${{contentType || "unknown"}}`);
+      }}
+      return response.json();
+    }} catch (error) {{
+      lastError = error;
+    }}
+  }}
+  throw lastError || new Error("Failed to fetch chart payload");
+}}
+
+async function refreshCharts() {{
+  const nextPayload = await fetchPayload(true);
+  startCurrentCandleCountdown(nextPayload);
+  const config = {{
+    responsive: true,
+    displaylogo: false,
+    displayModeBar: false,
+    scrollZoom: true,
+    modeBarButtonsToRemove: ["zoom2d", "pan2d", "lasso2d", "select2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"]
+  }};
+
+  if (!initializedMain) {{
+    const mainFigure = buildMainFigure(nextPayload);
+    await Plotly.newPlot(mainRoot, mainFigure.data, mainFigure.layout, config);
+    initializedMain = true;
+    mainRoot.on("plotly_relayout", (eventData) => {{
+      if (syncingRange) return;
+      const x0 = eventData["xaxis.range[0]"];
+      const x1 = eventData["xaxis.range[1]"];
+      if (x0 === undefined || x1 === undefined) return;
+      syncingRange = true;
+      Plotly.relayout(indicatorRoot, {{ "xaxis.range": [x0, x1] }}).finally(() => {{
+        syncingRange = false;
+      }});
+    }});
+  }} else {{
+    await applyMainIncremental(previousPayload, nextPayload);
+  }}
+
+  if (!initializedIndicator) {{
+    const indicatorFigure = buildIndicatorFigure(nextPayload);
+    await Plotly.newPlot(indicatorRoot, indicatorFigure.data, indicatorFigure.layout, config);
+    initializedIndicator = true;
+  }} else {{
+    await applyIndicatorIncremental(previousPayload, nextPayload);
+  }}
+
+  await syncIndicatorRangeFromMain();
+  await applyMarkerPayload(nextPayload, nextPayload);
+  previousPayload = nextPayload;
+}}
+
+loadMarkerFilters();
+renderMarkerFilterControls();
+refreshCharts();
+if (window[refreshTimerKey]) {{
+  clearInterval(window[refreshTimerKey]);
+}}
+window[refreshTimerKey] = setInterval(refreshCharts, 5000);
+</script>
+"""
