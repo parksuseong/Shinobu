@@ -1197,6 +1197,11 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
                     nearest_reason = str(runtime_sell.get("reason", "") or "").strip()
             if nearest_reason:
                 exit_reason = nearest_reason
+        if not str(exit_reason or "").strip():
+            # Retroactive fallback: pre-close sells (15:15~15:29 KST) are treated as forced EOD exits.
+            exec_time = pd.Timestamp(timestamp)
+            if exec_time.hour == 15 and 15 <= exec_time.minute <= 29:
+                exit_reason = "장마감 10분 전 강제 청산"
         trades.append(
             {
                 "symbol": symbol,
