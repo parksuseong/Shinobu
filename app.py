@@ -1111,6 +1111,7 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
     executions = executions.dropna(subset=["timestamp"])
     runtime_orders = get_live_runtime_state().get("orders", [])
     sell_reason_by_order_no: dict[str, str] = {}
+    sell_runtime_orders: list[dict[str, object]] = []
     if isinstance(runtime_orders, list):
         for item in runtime_orders:
             if not isinstance(item, dict):
@@ -1121,6 +1122,16 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
             reason = str(item.get("reason", "") or "").strip()
             if order_no and reason:
                 sell_reason_by_order_no[order_no] = reason
+            runtime_symbol = str(item.get("symbol", "") or "").strip()
+            runtime_ts = pd.to_datetime(item.get("timestamp"), errors="coerce")
+            if reason and runtime_symbol and pd.notna(runtime_ts):
+                sell_runtime_orders.append(
+                    {
+                        "symbol": runtime_symbol,
+                        "timestamp": pd.Timestamp(runtime_ts),
+                        "reason": reason,
+                    }
+                )
     dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in executions.columns]
     if dedupe_keys:
         executions = executions.drop_duplicates(subset=dedupe_keys, keep="first")
@@ -1171,6 +1182,21 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
         execution_reason = str(getattr(execution, "reason", "") or "").strip()
         execution_order_no = str(getattr(execution, "order_no", "") or "").strip()
         exit_reason = sell_reason_by_order_no.get(execution_order_no, execution_reason)
+        if not str(exit_reason or "").strip():
+            nearest_reason = ""
+            nearest_gap: float | None = None
+            for runtime_sell in sell_runtime_orders:
+                if str(runtime_sell.get("symbol", "")) != symbol:
+                    continue
+                runtime_ts = pd.Timestamp(runtime_sell["timestamp"])
+                gap_seconds = abs((runtime_ts - timestamp).total_seconds())
+                if gap_seconds > 1800:
+                    continue
+                if nearest_gap is None or gap_seconds < nearest_gap:
+                    nearest_gap = gap_seconds
+                    nearest_reason = str(runtime_sell.get("reason", "") or "").strip()
+            if nearest_reason:
+                exit_reason = nearest_reason
         trades.append(
             {
                 "symbol": symbol,
