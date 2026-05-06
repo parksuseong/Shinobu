@@ -1471,7 +1471,9 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
     strategy_label = "비공개"
     visible_start_date, visible_end_date = get_current_chart_date_range()
     runtime = get_live_runtime_state()
-    if runtime["last_status"] in {"checking", "waiting_data"} or not runtime["last_checked_candle"]:
+    if runtime["last_status"] in {"checking", "waiting_data"} or (
+        not runtime["last_checked_candle"] and runtime["last_status"] != "market_closed"
+    ):
         st.info("엔진이 계산하고 있습니다. 차트와 시그널을 준비하는 중입니다.")
     st.caption(f"표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
     components.html(
