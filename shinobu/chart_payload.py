@@ -528,96 +528,6 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     return markers
 
 
-def _inject_reconcile_open_signal_markers(
-    frame: pd.DataFrame,
-    signal_map: dict[str, list[dict[str, Any]]],
-    order_markers: list[dict[str, Any]],
-    symbol: str,
-    pair_symbol: str | None,
-) -> dict[str, list[dict[str, Any]]]:
-    if frame.empty or not signal_map or not order_markers:
-        return signal_map
-
-    frame_by_time = {timestamp.strftime("%Y-%m-%d %H:%M"): row for timestamp, row in frame.iterrows()}
-
-    def _has_marker(bucket: list[dict[str, Any]], time_key: str) -> bool:
-        return any(str(item.get("time", "") or "") == time_key for item in bucket)
-
-    for order in order_markers:
-        side = str(order.get("side", "") or "").strip().lower()
-        execution_tag = str(order.get("executionTag", "") or "").strip().lower()
-        reason = str(order.get("reason", "") or "").strip().lower()
-        if side != "buy":
-            continue
-        if execution_tag != "reconcile_open" and "buy open" not in reason:
-            continue
-
-        order_symbol = str(order.get("symbol", "") or "").strip()
-        time_key = str(order.get("time", "") or "").strip()
-        candle_row = frame_by_time.get(time_key)
-        if not time_key or candle_row is None:
-            continue
-
-        if order_symbol == pair_symbol:
-            main_bucket = signal_map.setdefault("pairOpenMain", [])
-            indicator_bucket = signal_map.setdefault("pairOpenIndicator", [])
-            if _has_marker(main_bucket, time_key):
-                continue
-            label = f"곱버스 open - 실매수 유발 신호"
-            main_bucket.append(
-                {
-                    "x": int(order.get("x", 0) or 0),
-                    "y": float(candle_row.get("Low", candle_row.get("Close", 0)) or 0) * 0.99625,
-                    "label": label,
-                    "time": time_key,
-                    "price": float(candle_row.get("Close", 0) or 0),
-                    "signal": "buy_open",
-                }
-            )
-            indicator_bucket.append(
-                {
-                    "x": int(order.get("x", 0) or 0),
-                    "y": float(candle_row.get("scr_line", 0) or 0),
-                    "label": label,
-                    "time": time_key,
-                    "price": float(candle_row.get("Close", 0) or 0),
-                    "scr": float(candle_row.get("scr_line", 0) or 0),
-                    "signal": "buy_open",
-                }
-            )
-            continue
-
-        if order_symbol == symbol:
-            main_bucket = signal_map.setdefault("primaryOpenMain", [])
-            indicator_bucket = signal_map.setdefault("primaryOpenIndicator", [])
-            if _has_marker(main_bucket, time_key):
-                continue
-            label = f"레버리지 open - 실매수 유발 신호"
-            main_bucket.append(
-                {
-                    "x": int(order.get("x", 0) or 0),
-                    "y": float(candle_row.get("Low", candle_row.get("Close", 0)) or 0) * 0.99625,
-                    "label": label,
-                    "time": time_key,
-                    "price": float(candle_row.get("Close", 0) or 0),
-                    "signal": "buy_open",
-                }
-            )
-            indicator_bucket.append(
-                {
-                    "x": int(order.get("x", 0) or 0),
-                    "y": float(candle_row.get("scr_line", 0) or 0),
-                    "label": label,
-                    "time": time_key,
-                    "price": float(candle_row.get("Close", 0) or 0),
-                    "scr": float(candle_row.get("scr_line", 0) or 0),
-                    "signal": "buy_open",
-                }
-            )
-
-    return signal_map
-
-
 def _append_main_marker(
     bucket: list[dict[str, Any]],
     positions: pd.Series,
@@ -794,13 +704,11 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
 
         primary_open = bool(primary_row.get("buy_open", False))
         primary_close = bool(primary_row.get("buy_close", False))
-        primary_raw_open = bool(primary_row.get("raw_buy_open", False))
 
         pair_open = bool(pair_row.get("buy_open", False)) if pair_row is not None else False
         pair_close = bool(pair_row.get("buy_close", False)) if pair_row is not None else False
-        pair_raw_open = bool(pair_row.get("raw_buy_open", False)) if pair_row is not None else False
 
-        if primary_open or (primary_raw_open and not primary_open):
+        if primary_open:
             prefix = "매수 open"
             label = _marker_label(prefix, primary_name, primary_row)
             _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, label, "open")
@@ -811,7 +719,7 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
             _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, label, "close")
             _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, label, "buy_close")
 
-        if pair_row is not None and (pair_open or (pair_raw_open and not pair_open)):
+        if pair_row is not None and pair_open:
             prefix = "매수 open"
             label = _marker_label(prefix, pair_name, pair_row)
             _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, label, "open")
@@ -894,13 +802,6 @@ def _build_chart_payload_sync(
             else {}
         )
         if include_scr:
-            visible_signals = _inject_reconcile_open_signal_markers(
-                frame=frame,
-                signal_map=visible_signals,
-                order_markers=visible_orders,
-                symbol=symbol,
-                pair_symbol=pair_symbol,
-            )
             visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
     else:
         visible_orders = []

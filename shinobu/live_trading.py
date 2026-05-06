@@ -587,15 +587,10 @@ def _choose_open_candidate(
     secondary_symbol: str,
     primary_row: pd.Series,
     secondary_row: pd.Series,
-    allow_raw_open: bool = False,
 ) -> tuple[str, pd.Series] | None:
     candidates = []
-    primary_open = bool(primary_row.get("buy_open", False)) or (
-        allow_raw_open and bool(primary_row.get("raw_buy_open", False))
-    )
-    secondary_open = bool(secondary_row.get("buy_open", False)) or (
-        allow_raw_open and bool(secondary_row.get("raw_buy_open", False))
-    )
+    primary_open = bool(primary_row.get("buy_open", False))
+    secondary_open = bool(secondary_row.get("buy_open", False))
     if primary_open:
         candidates.append((primary_symbol, primary_row))
     if secondary_open:
@@ -998,7 +993,7 @@ def process_live_trading_cycle(
             current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
             opposite_symbol = secondary_symbol if current_signal_symbol == primary_symbol else primary_symbol
             opposite_row = secondary_row if opposite_symbol == secondary_symbol else primary_row
-            opposite_open = bool(opposite_row.get("buy_open", False)) or bool(opposite_row.get("raw_buy_open", False))
+            opposite_open = bool(opposite_row.get("buy_open", False))
             if opposite_open:
                 # Force switching when opposite-side open signal exists.
                 chosen_open = (opposite_symbol, opposite_row)
@@ -1008,7 +1003,6 @@ def process_live_trading_cycle(
                     secondary_symbol,
                     primary_row,
                     secondary_row,
-                    allow_raw_open=True,
                 )
         else:
             chosen_open = _choose_open_candidate(
@@ -1016,7 +1010,6 @@ def process_live_trading_cycle(
                 secondary_symbol,
                 primary_row,
                 secondary_row,
-                allow_raw_open=False,
             )
 
         # Execute deferred open only on next business day and only if open signal still valid.
