@@ -482,31 +482,35 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     if order_frame.empty:
         return []
 
-    # If the same candle has both runtime-order and execution-history rows,
-    # keep runtime row only to avoid duplicate markers such as
-    # "(장마감 강제 청산)" + "(실제 체결)" rendered together.
-    runtime_keys: set[tuple[str, str, pd.Timestamp]] = set()
-    runtime_rows = order_frame[order_frame["source"] == "runtime"] if "source" in order_frame.columns else pd.DataFrame()
-    for _, row in runtime_rows.iterrows():
-        runtime_keys.add(
+    # If the same candle has both runtime-order and execution-history rows for SELL,
+    # keep only execution row (actual fill) so users see one real sell marker.
+    execution_sell_keys: set[tuple[str, str, pd.Timestamp]] = set()
+    execution_rows = order_frame[order_frame["source"] == "execution"] if "source" in order_frame.columns else pd.DataFrame()
+    for _, row in execution_rows.iterrows():
+        side_value = str(row.get("side", "") or "").strip().lower()
+        if side_value != "sell":
+            continue
+        execution_sell_keys.add(
             (
                 str(row.get("symbol", "") or ""),
-                str(row.get("side", "") or "").strip().lower(),
+                side_value,
                 pd.Timestamp(row.get("candle_time")),
             )
         )
-    if runtime_keys:
+    if execution_sell_keys:
         keep_mask = []
         for _, row in order_frame.iterrows():
-            if str(row.get("source", "") or "") != "execution":
-                keep_mask.append(True)
-                continue
+            source_value = str(row.get("source", "") or "")
+            side_value = str(row.get("side", "") or "").strip().lower()
             row_key = (
                 str(row.get("symbol", "") or ""),
-                str(row.get("side", "") or "").strip().lower(),
+                side_value,
                 pd.Timestamp(row.get("candle_time")),
             )
-            keep_mask.append(row_key not in runtime_keys)
+            if source_value == "runtime" and side_value == "sell" and row_key in execution_sell_keys:
+                keep_mask.append(False)
+            else:
+                keep_mask.append(True)
         order_frame = order_frame.loc[keep_mask].copy()
         if order_frame.empty:
             return []
