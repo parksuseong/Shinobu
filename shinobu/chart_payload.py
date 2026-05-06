@@ -801,7 +801,7 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
         pair_raw_open = bool(pair_row.get("raw_buy_open", False)) if pair_row is not None else False
 
         if primary_open or (primary_raw_open and not primary_open):
-            prefix = "매수 open(raw)" if (primary_raw_open and not primary_open) else "매수 open"
+            prefix = "매수 open"
             label = _marker_label(prefix, primary_name, primary_row)
             _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, label, "open")
             _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, label, "buy_open")
@@ -812,7 +812,7 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
             _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, label, "buy_close")
 
         if pair_row is not None and (pair_open or (pair_raw_open and not pair_open)):
-            prefix = "매수 open(raw)" if (pair_raw_open and not pair_open) else "매수 open"
+            prefix = "매수 open"
             label = _marker_label(prefix, pair_name, pair_row)
             _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, label, "open")
             _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, label, "buy_open")
