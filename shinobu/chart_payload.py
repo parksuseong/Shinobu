@@ -677,6 +677,25 @@ def _apply_main_marker_vertical_offsets(
     return signal_map, order_markers
 
 
+def _suppress_close_signals_on_forced_exit(
+    signal_map: dict[str, list[dict[str, Any]]],
+    order_markers: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    forced_exit_times = {
+        str(marker.get("time", "") or "")
+        for marker in order_markers
+        if str(marker.get("executionTag", "") or "").strip().lower() == "eod_force_exit"
+    }
+    if not forced_exit_times:
+        return signal_map
+
+    result = dict(signal_map)
+    for key in ("primaryCloseMain", "pairCloseMain", "primaryCloseIndicator", "pairCloseIndicator"):
+        markers = list(result.get(key, []))
+        result[key] = [marker for marker in markers if str(marker.get("time", "") or "") not in forced_exit_times]
+    return result
+
+
 def _marker_label(prefix: str, instrument_name: str, signal_row: pd.Series) -> str:
     detail = str(signal_row.get("signal_detail", "") or "").strip()
     if detail:
@@ -833,6 +852,7 @@ def _build_chart_payload_sync(
             else {}
         )
         if include_scr:
+            visible_signals = _suppress_close_signals_on_forced_exit(visible_signals, visible_orders)
             visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
     else:
         visible_orders = []
