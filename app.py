@@ -52,10 +52,8 @@ from shinobu.kis import KisApiError, fetch_domestic_balance, fetch_domestic_dail
 from shinobu.strategy_cache import calculate_strategy_cached
 from shinobu.live_trading import (
     EXECUTION_MODE_SIGNAL,
-    EXECUTION_MODE_X1,
     append_live_log,
     get_asset_history,
-    get_live_execution_mode,
     get_live_logs,
     get_live_orders,
     get_live_runtime_state,
@@ -216,8 +214,8 @@ def init_chart_date_range_state() -> None:
 
 
 def init_execution_mode_state() -> None:
-    if EXECUTION_MODE_STATE_KEY not in st.session_state:
-        st.session_state[EXECUTION_MODE_STATE_KEY] = get_live_execution_mode()
+    st.session_state[EXECUTION_MODE_STATE_KEY] = EXECUTION_MODE_SIGNAL
+    set_live_execution_mode(EXECUTION_MODE_SIGNAL)
 
 
 def get_current_chart_date_range() -> tuple[date, date]:
@@ -247,8 +245,7 @@ def get_current_strategy_profile() -> str:
 
 def get_current_execution_mode() -> str:
     init_execution_mode_state()
-    current = str(st.session_state.get(EXECUTION_MODE_STATE_KEY, EXECUTION_MODE_X1))
-    return current if current in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL} else EXECUTION_MODE_X1
+    return EXECUTION_MODE_SIGNAL
 
 
 def _set_strategy_profile(profile_name: str) -> None:
@@ -263,16 +260,15 @@ def _set_strategy_profile(profile_name: str) -> None:
 
 
 def _set_execution_mode(mode: str) -> None:
-    normalized = mode if mode in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL} else EXECUTION_MODE_X1
-    st.session_state[EXECUTION_MODE_STATE_KEY] = normalized
-    set_live_execution_mode(normalized)
+    st.session_state[EXECUTION_MODE_STATE_KEY] = EXECUTION_MODE_SIGNAL
+    set_live_execution_mode(EXECUTION_MODE_SIGNAL)
 
 
 def render_live_selector_bar() -> str:
     current_profile = normalize_strategy_name(DEFAULT_STRATEGY_NAME)
     _set_strategy_profile(current_profile)
     current_start_date, current_end_date = get_current_chart_date_range()
-    current_execution_mode = get_current_execution_mode()
+    _set_execution_mode(EXECUTION_MODE_SIGNAL)
     range_col, execution_col, _ = st.columns([1.3, 0.9, 2.8], vertical_alignment="top")
     with range_col:
         st.caption("\uCC28\uD2B8 \uAE30\uAC04")
@@ -293,12 +289,10 @@ def render_live_selector_bar() -> str:
             )
     with execution_col:
         st.caption("\uC2E4\uC81C \uC8FC\uBB38")
-        selected_execution_mode = st.selectbox(
+        st.text_input(
             "\uC2E4\uC81C \uC8FC\uBB38 \uD0C0\uC785",
-            options=[EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL],
-            index=0 if current_execution_mode == EXECUTION_MODE_X1 else 1,
-            format_func=lambda value: "x1 ETF" if value == EXECUTION_MODE_X1 else "\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4",
-            help="\uC2E4\uC81C \uC2DC\uADF8\uB110 \uC8FC\uBB38\uC744 x1 ETF \uB610\uB294 \uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4\uB85C \uC2E4\uD589\uD569\uB2C8\uB2E4.",
+            value="\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4",
+            disabled=True,
             label_visibility="collapsed",
         )
 
@@ -306,10 +300,7 @@ def render_live_selector_bar() -> str:
     selected_end = pd.Timestamp(selected_end_date).date()
     if selected_start != current_start_date or selected_end != current_end_date:
         _set_chart_date_range(selected_start, selected_end)
-    if selected_execution_mode != current_execution_mode:
-        _set_execution_mode(selected_execution_mode)
-
-    mode_label = "x1 ETF" if get_current_execution_mode() == EXECUTION_MODE_X1 else "\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4"
+    mode_label = "\uB808\uBC84\uB9AC\uC9C0/\uACF1\uBC84\uC2A4"
     chart_start_date, chart_end_date = get_current_chart_date_range()
     st.caption(
         f"\uCC28\uD2B8 \uD45C\uC2DC: {chart_start_date.isoformat()} ~ {chart_end_date.isoformat()} | \uC2E4\uC81C \uC8FC\uBB38: {mode_label}"
@@ -1759,8 +1750,8 @@ def _run_pair_candle_recovery_if_due(
 
 def render_live_trading_panel(pair_symbol: str | None) -> None:
     st.markdown("#### 실전 투자")
-    execution_mode = get_current_execution_mode()
-    execution_label = "x1 ETF" if execution_mode == EXECUTION_MODE_X1 else "레버리지/곱버스"
+    execution_mode = EXECUTION_MODE_SIGNAL
+    execution_label = "레버리지/곱버스"
     if pair_symbol is None:
         st.warning("실전 투자는 레버리지/인버스 페어 종목에서만 실행됩니다.")
 

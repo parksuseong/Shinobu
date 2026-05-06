@@ -30,7 +30,7 @@ SIGNAL_TO_TRADE_SYMBOL = {
 TRADE_TO_SIGNAL_SYMBOL = {value: key for key, value in SIGNAL_TO_TRADE_SYMBOL.items()}
 EXECUTION_MODE_X1 = "x1"
 EXECUTION_MODE_SIGNAL = "signal"
-DEFAULT_EXECUTION_MODE = EXECUTION_MODE_X1
+DEFAULT_EXECUTION_MODE = EXECUTION_MODE_SIGNAL
 MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
 LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 4.0
@@ -387,10 +387,8 @@ def set_live_chart_business_days(days: int) -> None:
 
 
 def normalize_execution_mode(mode: str | None) -> str:
-    candidate = str(mode or DEFAULT_EXECUTION_MODE).strip().lower()
-    if candidate in {EXECUTION_MODE_X1, EXECUTION_MODE_SIGNAL}:
-        return candidate
-    return DEFAULT_EXECUTION_MODE
+    # Live trading is fixed to leverage/inverse execution mode.
+    return EXECUTION_MODE_SIGNAL
 
 
 def get_live_execution_mode() -> str:
