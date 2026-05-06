@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from shinobu.data import display_name, load_live_chart_data, load_live_chart_data_cached_only
+from shinobu.kis import issue_access_token
 from shinobu.kis import KisApiError, cancel_domestic_order, fetch_domestic_balance, place_domestic_order
 from shinobu.strategy import (
     DEFAULT_STRATEGY_NAME,
@@ -57,6 +58,8 @@ REGULAR_MARKET_OPEN_HOUR = 9
 REGULAR_MARKET_CLOSE_HOUR = 15
 REGULAR_MARKET_CLOSE_MINUTE = 30
 AFTER_HOURS_CLOSE_HOUR = 18
+DAILY_TOKEN_REFRESH_HOUR = 18
+DAILY_TOKEN_REFRESH_MINUTE = 0
 PRE_CLOSE_FORCE_EXIT_MINUTES = 15
 LIVE_SWITCH_CONFIRM_BARS = 2
 LIVE_MAX_HOLD_BARS = 180
@@ -90,6 +93,7 @@ def _default_state() -> dict[str, Any]:
         "position_entry_candle": "",
         "last_regular_close_cleanup_date": "",
         "last_forced_exit_date": "",
+        "last_token_refresh_date": "",
         "deferred_open_signal_symbol": "",
         "deferred_open_trade_symbol": "",
         "deferred_open_candle": "",
@@ -500,6 +504,23 @@ def _is_pre_close_window(now: pd.Timestamp | None = None) -> bool:
     return current_minutes >= (regular_close_minutes - PRE_CLOSE_FORCE_EXIT_MINUTES)
 
 
+def _run_daily_token_refresh_if_due(state: dict[str, Any], now: pd.Timestamp) -> None:
+    if not _is_business_day(now):
+        return
+    refresh_triggered = (now.hour, now.minute) >= (DAILY_TOKEN_REFRESH_HOUR, DAILY_TOKEN_REFRESH_MINUTE)
+    if not refresh_triggered:
+        return
+    today_text = now.strftime("%Y-%m-%d")
+    if str(state.get("last_token_refresh_date", "") or "") == today_text:
+        return
+    try:
+        issue_access_token()
+        state["last_token_refresh_date"] = today_text
+        _append_log("정보", f"{today_text} {DAILY_TOKEN_REFRESH_HOUR:02d}:{DAILY_TOKEN_REFRESH_MINUTE:02d} 일일 토큰 강제 재발급 완료")
+    except Exception as exc:
+        _append_log("오류", f"{today_text} {DAILY_TOKEN_REFRESH_HOUR:02d}:{DAILY_TOKEN_REFRESH_MINUTE:02d} 일일 토큰 강제 재발급 실패: {exc}")
+
+
 def _is_closed_5m_candle(candle_start: pd.Timestamp, now: pd.Timestamp | None = None) -> bool:
     current = now if now is not None else _now_kst_naive()
     candle_start = pd.Timestamp(candle_start)
@@ -533,18 +554,23 @@ def _get_target_rows(
         return None
 
     closed_times = [pd.Timestamp(value) for value in combined_index[: max_closed_index + 1]]
-    target_time = closed_times[-1]
+    # Use only exact shared candles to avoid propagating stale signals via forward-fill.
+    primary_closed = pd.DatetimeIndex([index for index in primary.index if pd.Timestamp(index) in closed_times])
+    secondary_closed = pd.DatetimeIndex([index for index in secondary.index if pd.Timestamp(index) in closed_times])
+    eligible_times = primary_closed.intersection(secondary_closed).sort_values()
+    if len(eligible_times) == 0:
+        return None
+
+    target_time = pd.Timestamp(eligible_times[-1])
     last_checked_time = _parse_candle_key(last_checked_candle)
     if last_checked_time is not None:
-        for candidate in closed_times:
+        for candidate in eligible_times:
             if candidate > last_checked_time:
-                target_time = candidate
+                target_time = pd.Timestamp(candidate)
                 break
-    has_backlog = bool(target_time < closed_times[-1])
+    has_backlog = bool(target_time < pd.Timestamp(eligible_times[-1]))
 
-    aligned_primary = primary.reindex(combined_index).ffill()
-    aligned_secondary = secondary.reindex(combined_index).ffill()
-    return target_time, aligned_primary.loc[target_time], aligned_secondary.loc[target_time], has_backlog
+    return target_time, primary.loc[target_time], secondary.loc[target_time], has_backlog
 
 
 def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> dict[str, Any] | None:
@@ -947,6 +973,7 @@ def process_live_trading_cycle(
             return
         execution_mode = normalize_execution_mode(state.get("execution_mode", DEFAULT_EXECUTION_MODE))
         now_kst = _now_kst_naive()
+        _run_daily_token_refresh_if_due(state, now_kst)
 
         phase = _market_phase(now_kst)
         if phase != "regular":

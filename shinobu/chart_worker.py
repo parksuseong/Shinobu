@@ -10,6 +10,7 @@ from shinobu.live_trading import get_live_started_at
 from shinobu.strategy import (
     DEFAULT_STRATEGY_NAME,
     StrategyAdjustments,
+    calculate_strategy,
     get_strategy_history_business_days,
     normalize_strategy_name,
 )
@@ -83,7 +84,6 @@ def _load_strategy_frame(
     strategy_name: str,
     lookback_days_override: int | None = None,
 ) -> pd.DataFrame:
-    _ = lookback_days_override
     adjustment_key = f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}"
     payload = load_strategy_cache_payload(
         symbol=symbol,
@@ -95,7 +95,16 @@ def _load_strategy_frame(
         frame = payload.get("frame")
         if isinstance(frame, pd.DataFrame) and not frame.empty:
             return frame.sort_index()
-    return pd.DataFrame()
+    # Fallback: if strategy cache miss occurs, rebuild from raw cached candles so chart does not go blank.
+    lookback_days = (
+        int(lookback_days_override)
+        if isinstance(lookback_days_override, int) and lookback_days_override > 0
+        else market_data._business_days_to_lookback_days(get_strategy_history_business_days(strategy_name))
+    )
+    raw_frame = market_data.load_live_chart_data_cached_only(symbol, LIVE_TIMEFRAME, lookback_days=lookback_days).sort_index()
+    if raw_frame.empty:
+        return pd.DataFrame()
+    return calculate_strategy(raw_frame, adjustments, LIVE_TIMEFRAME, strategy_name=normalize_strategy_name(strategy_name))
 
 
 def collect_chart_frames(
