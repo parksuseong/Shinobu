@@ -230,11 +230,7 @@ def _resample_four_hour_crypto(frame: pd.DataFrame) -> pd.DataFrame:
     return aggregated.dropna().sort_index()
 
 
-def _resample_domestic_intraday(
-    frame: pd.DataFrame,
-    interval_minutes: int,
-    daily_close_map: dict[pd.Timestamp, float] | None = None,
-) -> pd.DataFrame:
+def _resample_domestic_intraday(frame: pd.DataFrame, interval_minutes: int) -> pd.DataFrame:
     minutes = frame.index.hour * 60 + frame.index.minute
     session_open = 9 * 60
     bucket = pd.Series((minutes - session_open) // interval_minutes, index=frame.index)
@@ -252,20 +248,7 @@ def _resample_domestic_intraday(
         start_time = pd.Timestamp(trade_date) + pd.Timedelta(hours=9) + pd.Timedelta(minutes=interval_minutes * int(bucket_index))
         rebuilt_index.append(start_time)
     aggregated.index = pd.DatetimeIndex(rebuilt_index, name="시간")
-    aggregated = aggregated.sort_index()
-
-    # KRX intraday feed can miss 15:20~15:30 auction prints. In that case,
-    # patch the last bucket close with daily close so the final bar closes correctly.
-    if daily_close_map:
-        for trade_date, daily_close in daily_close_map.items():
-            last_bucket_start = pd.Timestamp(trade_date) + pd.Timedelta(hours=15, minutes=15)
-            if last_bucket_start not in aggregated.index:
-                continue
-            close_value = float(daily_close)
-            aggregated.at[last_bucket_start, "Close"] = close_value
-            aggregated.at[last_bucket_start, "High"] = max(float(aggregated.at[last_bucket_start, "High"]), close_value)
-            aggregated.at[last_bucket_start, "Low"] = min(float(aggregated.at[last_bucket_start, "Low"]), close_value)
-    return aggregated
+    return aggregated.sort_index()
 
 
 def _load_yfinance_data(symbol: str, timeframe_label: str) -> pd.DataFrame:
@@ -361,19 +344,7 @@ def _load_live_chart_data_impl(
         short_code = display_symbol(symbol)
         if timeframe_label in INTRADAY_RESAMPLE_MINUTES:
             minute_frame = _load_persisted_intraday_frame(short_code, timeframe_label, lookback_days)
-            daily_close_map: dict[pd.Timestamp, float] = {}
-            try:
-                daily_frame = fetch_domestic_daily(short_code, "D")
-                if not daily_frame.empty:
-                    for trade_date, row in daily_frame.iterrows():
-                        daily_close_map[pd.Timestamp(trade_date).normalize()] = float(row["Close"])
-            except Exception:
-                daily_close_map = {}
-            return _resample_domestic_intraday(
-                minute_frame,
-                INTRADAY_RESAMPLE_MINUTES[timeframe_label],
-                daily_close_map=daily_close_map,
-            )
+            return _resample_domestic_intraday(minute_frame, INTRADAY_RESAMPLE_MINUTES[timeframe_label])
         if timeframe_label in {"일봉", "주봉", "월봉"}:
             period_code = {"일봉": "D", "주봉": "W", "월봉": "M"}[timeframe_label]
             return fetch_domestic_daily(short_code, period_code)
