@@ -1,17 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 
 import pandas as pd
 
 from shinobu import data as market_data
+from shinobu.cache_db import load_strategy_cache_payload
 from shinobu.live_trading import get_live_started_at
 from shinobu.strategy import (
     DEFAULT_STRATEGY_NAME,
     StrategyAdjustments,
     get_strategy_history_business_days,
+    normalize_strategy_name,
 )
-from shinobu.strategy_cache import calculate_strategy_cached
 
 
 LIVE_TIMEFRAME = "5분봉"
@@ -82,16 +83,19 @@ def _load_strategy_frame(
     strategy_name: str,
     lookback_days_override: int | None = None,
 ) -> pd.DataFrame:
-    lookback_days = int(lookback_days_override or market_data._business_days_to_lookback_days(get_strategy_history_business_days(strategy_name)))
-    frame = market_data.load_live_chart_data_cached_only(symbol, LIVE_TIMEFRAME, lookback_days=lookback_days)
-    calculated = calculate_strategy_cached(
-        frame,
-        adjustments,
-        LIVE_TIMEFRAME,
-        strategy_name=strategy_name,
+    _ = lookback_days_override
+    adjustment_key = f"s{adjustments.stoch_pct}_c{adjustments.cci_pct}_r{adjustments.rsi_pct}"
+    payload = load_strategy_cache_payload(
         symbol=symbol,
+        timeframe=LIVE_TIMEFRAME,
+        strategy_name=normalize_strategy_name(strategy_name),
+        adjustment_key=adjustment_key,
     )
-    return calculated.sort_index()
+    if isinstance(payload, dict):
+        frame = payload.get("frame")
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            return frame.sort_index()
+    return pd.DataFrame()
 
 
 def collect_chart_frames(
@@ -175,3 +179,4 @@ def collect_chart_frames(
         visible_frame=visible_frame,
         visible_pair_frame=visible_pair_frame,
     )
+
