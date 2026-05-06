@@ -681,50 +681,6 @@ def _apply_main_marker_vertical_offsets(
     return signal_map, order_markers
 
 
-def _suppress_strategy_close_near_forced_exit(
-    signal_map: dict[str, list[dict[str, Any]]],
-    order_markers: list[dict[str, Any]],
-) -> dict[str, list[dict[str, Any]]]:
-    forced_times: list[pd.Timestamp] = []
-    for marker in order_markers:
-        if str(marker.get("executionTag", "") or "").strip().lower() != "eod_force_exit":
-            continue
-        try:
-            forced_times.append(pd.Timestamp(str(marker.get("time", "") or "")))
-        except Exception:
-            continue
-    if not forced_times:
-        return signal_map
-
-    result = dict(signal_map)
-    target_keys = ("primaryCloseMain", "pairCloseMain", "primaryCloseIndicator", "pairCloseIndicator")
-    for key in target_keys:
-        source_markers = list(result.get(key, []))
-        filtered: list[dict[str, Any]] = []
-        for marker in source_markers:
-            marker_time_text = str(marker.get("time", "") or "")
-            try:
-                marker_time = pd.Timestamp(marker_time_text)
-            except Exception:
-                filtered.append(marker)
-                continue
-
-            suppress = False
-            for forced_time in forced_times:
-                if marker_time.normalize() != forced_time.normalize():
-                    continue
-                delta_minutes = (forced_time - marker_time).total_seconds() / 60.0
-                # Hide close-strategy markers that appear shortly before forced EOD exit
-                # so only forced-exit real sell marker remains visible.
-                if 0.0 <= delta_minutes <= 10.0:
-                    suppress = True
-                    break
-            if not suppress:
-                filtered.append(marker)
-        result[key] = filtered
-    return result
-
-
 def _marker_label(prefix: str, instrument_name: str, signal_row: pd.Series) -> str:
     detail = str(signal_row.get("signal_detail", "") or "").strip()
     if detail:
@@ -881,7 +837,6 @@ def _build_chart_payload_sync(
             else {}
         )
         if include_scr:
-            visible_signals = _suppress_strategy_close_near_forced_exit(visible_signals, visible_orders)
             visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
     else:
         visible_orders = []
