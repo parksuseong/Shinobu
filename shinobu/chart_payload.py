@@ -468,6 +468,8 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
         return []
     if "side" in order_frame.columns:
         order_frame["side"] = order_frame["side"].astype(str).str.strip().str.lower()
+    if "candle_time" in order_frame.columns:
+        order_frame["candle_time"] = pd.to_datetime(order_frame["candle_time"], errors="coerce").dt.floor("5min")
 
     candidate_symbols: set[str] = set()
     for symbol in symbols:
@@ -479,6 +481,35 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     order_frame = order_frame[order_frame["symbol"].isin(candidate_symbols)]
     if order_frame.empty:
         return []
+
+    # If the same candle has both runtime-order and execution-history rows,
+    # keep runtime row only to avoid duplicate markers such as
+    # "(장마감 강제 청산)" + "(실제 체결)" rendered together.
+    runtime_keys: set[tuple[str, str, pd.Timestamp]] = set()
+    runtime_rows = order_frame[order_frame["source"] == "runtime"] if "source" in order_frame.columns else pd.DataFrame()
+    for _, row in runtime_rows.iterrows():
+        runtime_keys.add(
+            (
+                str(row.get("symbol", "") or ""),
+                str(row.get("side", "") or "").strip().lower(),
+                pd.Timestamp(row.get("candle_time")),
+            )
+        )
+    if runtime_keys:
+        keep_mask = []
+        for _, row in order_frame.iterrows():
+            if str(row.get("source", "") or "") != "execution":
+                keep_mask.append(True)
+                continue
+            row_key = (
+                str(row.get("symbol", "") or ""),
+                str(row.get("side", "") or "").strip().lower(),
+                pd.Timestamp(row.get("candle_time")),
+            )
+            keep_mask.append(row_key not in runtime_keys)
+        order_frame = order_frame.loc[keep_mask].copy()
+        if order_frame.empty:
+            return []
 
     dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "candle_time"] if column in order_frame.columns]
     if dedupe_keys:
