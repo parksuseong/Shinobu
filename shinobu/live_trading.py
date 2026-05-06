@@ -1095,6 +1095,7 @@ def process_live_trading_cycle(
         pending_symbol = str(state.get("pending_target_symbol", "") or "")
         pending_reason = str(state.get("pending_target_reason", "") or "")
         pending_candle = str(state.get("pending_target_candle", "") or "")
+        pending_candle_ts = _parse_candle_text(pending_candle) or target_time
 
         if current_position is not None:
             current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
@@ -1159,7 +1160,7 @@ def process_live_trading_cycle(
                 current_quantity,
                 float(active_row["Close"]),
                 pending_reason or "지표 과열 청산",
-                target_time,
+                pending_candle_ts,
                 baseline_quantity=current_quantity,
                 execution_tag="reconcile_close",
             )
@@ -1197,7 +1198,7 @@ def process_live_trading_cycle(
                     buy_quantity,
                     buy_price,
                     pending_reason or "buy open 진입",
-                    target_time,
+                    pending_candle_ts,
                     baseline_quantity=0,
                     execution_tag="reconcile_open",
                 )
@@ -1252,7 +1253,7 @@ def process_live_trading_cycle(
                     current_quantity,
                     float(active_row["Close"]),
                     pending_reason or "목표 포지션 보정 청산",
-                    target_time,
+                    pending_candle_ts,
                     baseline_quantity=current_quantity,
                 )
                 fetch_domestic_balance.clear()
@@ -1289,7 +1290,7 @@ def process_live_trading_cycle(
                 buy_quantity,
                 buy_price,
                 pending_reason or "buy open 진입",
-                target_time,
+                pending_candle_ts,
                 baseline_quantity=0,
             )
             fetch_domestic_balance.clear()

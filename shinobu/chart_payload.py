@@ -466,6 +466,8 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     order_frame = pd.concat([runtime_frame, execution_marker_frame], ignore_index=True) if not runtime_frame.empty or not execution_marker_frame.empty else pd.DataFrame()
     if order_frame.empty:
         return []
+    if "side" in order_frame.columns:
+        order_frame["side"] = order_frame["side"].astype(str).str.strip().str.lower()
 
     candidate_symbols: set[str] = set()
     for symbol in symbols:
@@ -488,11 +490,17 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
     positions = pd.Series(range(len(frame)), index=frame.index)
     markers: list[dict[str, Any]] = []
     for (_, order), (_, candle) in zip(order_frame.iterrows(), aligned.iterrows(), strict=False):
-        x_value = positions.get(order["candle_time"])
+        candle_time = pd.Timestamp(order["candle_time"])
+        x_value = positions.get(candle_time)
+        if pd.isna(x_value):
+            # Fallback: align to the nearest prior visible candle so execution marker is not dropped.
+            indexer = frame.index.get_indexer([candle_time], method="pad")
+            if indexer.size > 0 and int(indexer[0]) >= 0:
+                x_value = int(indexer[0])
         if pd.isna(x_value):
             continue
 
-        side = str(order.get("side", ""))
+        side = str(order.get("side", "")).strip().lower()
         y_value = float(candle["Low"]) * 0.99625 if side == "buy" else float(candle["High"]) * 1.00375
         reason = str(order.get("reason", "") or "").strip()
         execution_tag = str(order.get("execution_tag", "") or "").strip().lower()
@@ -510,6 +518,7 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
                 "y": y_value,
                 "label": label,
                 "side": side,
+                "symbol": str(order.get("symbol", "") or ""),
                 "time": pd.Timestamp(order["candle_time"]).strftime("%Y-%m-%d %H:%M"),
                 "price": float(order.get("price", 0) or 0),
                 "reason": reason,
@@ -517,6 +526,96 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
             }
         )
     return markers
+
+
+def _inject_reconcile_open_signal_markers(
+    frame: pd.DataFrame,
+    signal_map: dict[str, list[dict[str, Any]]],
+    order_markers: list[dict[str, Any]],
+    symbol: str,
+    pair_symbol: str | None,
+) -> dict[str, list[dict[str, Any]]]:
+    if frame.empty or not signal_map or not order_markers:
+        return signal_map
+
+    frame_by_time = {timestamp.strftime("%Y-%m-%d %H:%M"): row for timestamp, row in frame.iterrows()}
+
+    def _has_marker(bucket: list[dict[str, Any]], time_key: str) -> bool:
+        return any(str(item.get("time", "") or "") == time_key for item in bucket)
+
+    for order in order_markers:
+        side = str(order.get("side", "") or "").strip().lower()
+        execution_tag = str(order.get("executionTag", "") or "").strip().lower()
+        reason = str(order.get("reason", "") or "").strip().lower()
+        if side != "buy":
+            continue
+        if execution_tag != "reconcile_open" and "buy open" not in reason:
+            continue
+
+        order_symbol = str(order.get("symbol", "") or "").strip()
+        time_key = str(order.get("time", "") or "").strip()
+        candle_row = frame_by_time.get(time_key)
+        if not time_key or candle_row is None:
+            continue
+
+        if order_symbol == pair_symbol:
+            main_bucket = signal_map.setdefault("pairOpenMain", [])
+            indicator_bucket = signal_map.setdefault("pairOpenIndicator", [])
+            if _has_marker(main_bucket, time_key):
+                continue
+            label = f"곱버스 open - 실매수 유발 신호"
+            main_bucket.append(
+                {
+                    "x": int(order.get("x", 0) or 0),
+                    "y": float(candle_row.get("Low", candle_row.get("Close", 0)) or 0) * 0.99625,
+                    "label": label,
+                    "time": time_key,
+                    "price": float(candle_row.get("Close", 0) or 0),
+                    "signal": "buy_open",
+                }
+            )
+            indicator_bucket.append(
+                {
+                    "x": int(order.get("x", 0) or 0),
+                    "y": float(candle_row.get("scr_line", 0) or 0),
+                    "label": label,
+                    "time": time_key,
+                    "price": float(candle_row.get("Close", 0) or 0),
+                    "scr": float(candle_row.get("scr_line", 0) or 0),
+                    "signal": "buy_open",
+                }
+            )
+            continue
+
+        if order_symbol == symbol:
+            main_bucket = signal_map.setdefault("primaryOpenMain", [])
+            indicator_bucket = signal_map.setdefault("primaryOpenIndicator", [])
+            if _has_marker(main_bucket, time_key):
+                continue
+            label = f"레버리지 open - 실매수 유발 신호"
+            main_bucket.append(
+                {
+                    "x": int(order.get("x", 0) or 0),
+                    "y": float(candle_row.get("Low", candle_row.get("Close", 0)) or 0) * 0.99625,
+                    "label": label,
+                    "time": time_key,
+                    "price": float(candle_row.get("Close", 0) or 0),
+                    "signal": "buy_open",
+                }
+            )
+            indicator_bucket.append(
+                {
+                    "x": int(order.get("x", 0) or 0),
+                    "y": float(candle_row.get("scr_line", 0) or 0),
+                    "label": label,
+                    "time": time_key,
+                    "price": float(candle_row.get("Close", 0) or 0),
+                    "scr": float(candle_row.get("scr_line", 0) or 0),
+                    "signal": "buy_open",
+                }
+            )
+
+    return signal_map
 
 
 def _append_main_marker(
@@ -823,6 +922,13 @@ def _build_chart_payload_sync(
             else {}
         )
         if include_scr:
+            visible_signals = _inject_reconcile_open_signal_markers(
+                frame=frame,
+                signal_map=visible_signals,
+                order_markers=visible_orders,
+                symbol=symbol,
+                pair_symbol=pair_symbol,
+            )
             visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
     else:
         visible_orders = []
