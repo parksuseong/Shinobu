@@ -1089,7 +1089,7 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
     start_date = fetch_start.strftime("%Y%m%d")
     end_date = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
     frames = []
-    for symbol in ["069500.KS", "114800.KS"]:
+    for symbol in ["122630.KS", "252670.KS", "069500.KS", "114800.KS"]:
         frame = fetch_domestic_daily_ccld(start_date, end_date, symbol=symbol, max_pages=2)
         if not frame.empty:
             frames.append(frame)
@@ -1126,7 +1126,9 @@ def get_live_trade_history(lookback_days: int = 5) -> pd.DataFrame:
     dedupe_keys = [column for column in ["symbol", "side", "quantity", "price", "timestamp", "order_no"] if column in executions.columns]
     if dedupe_keys:
         executions = executions.drop_duplicates(subset=dedupe_keys, keep="first")
-    executions = executions.loc[executions["symbol"].isin(["069500.KS", "114800.KS"])].sort_values("timestamp")
+    executions = executions.loc[
+        executions["symbol"].isin(["122630.KS", "252670.KS", "069500.KS", "114800.KS"])
+    ].sort_values("timestamp")
     if executions.empty:
         return pd.DataFrame()
 
@@ -1234,7 +1236,7 @@ def get_recent_execution_ledger(lookback_days: int = 7) -> pd.DataFrame:
     start = (pd.Timestamp.now(tz=None).normalize() - pd.Timedelta(days=max(int(lookback_days), 1) - 1)).strftime("%Y%m%d")
     end = pd.Timestamp.now(tz=None).strftime("%Y%m%d")
     frames = []
-    for symbol in ["069500.KS", "114800.KS"]:
+    for symbol in ["122630.KS", "252670.KS", "069500.KS", "114800.KS"]:
         frame = fetch_domestic_daily_ccld(start, end, symbol=symbol, max_pages=2)
         if not frame.empty:
             frames.append(frame)
@@ -1242,7 +1244,9 @@ def get_recent_execution_ledger(lookback_days: int = 7) -> pd.DataFrame:
     if executions.empty:
         return executions
     executions = executions.copy()
-    executions = executions.loc[executions["symbol"].isin(["069500.KS", "114800.KS"])]
+    executions = executions.loc[
+        executions["symbol"].isin(["122630.KS", "252670.KS", "069500.KS", "114800.KS"])
+    ]
     if executions.empty:
         return executions
     executions["timestamp"] = pd.to_datetime(executions["timestamp"], errors="coerce")
@@ -1262,7 +1266,7 @@ def _render_open_live_positions() -> None:
     if should_refresh and not is_stale:
         st.session_state[ACCOUNT_PANEL_LAST_ORDER_KEY] = last_order_at
 
-    trade_codes = {"069500", "114800"}
+    trade_codes = {"122630", "252670", "069500", "114800"}
     if not current_positions.empty and "code" in current_positions.columns:
         open_view = current_positions[current_positions["code"].astype(str).isin(trade_codes)].copy()
         open_view = _dedupe_positions_frame(open_view)
