@@ -1077,7 +1077,9 @@ def process_live_trading_cycle(
                 current_signal_symbol = current_position.get("signal_symbol", current_symbol)
                 active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
                 current_quantity = int(current_position["quantity"])
-                _append_log("정보", f"{candle_key} 기준 장마감 10분 전 리스크 관리 청산을 실행합니다.")
+                forced_exit_time = now_kst.floor("min").strftime("%Y-%m-%d %H:%M")
+                forced_exit_candle = now_kst.floor("5min")
+                _append_log("정보", f"장마감 10분 전 리스크 관리 강제 청산 실행 (실행 시각: {forced_exit_time})")
                 _submit_live_order(
                     state,
                     current_symbol,
@@ -1085,7 +1087,7 @@ def process_live_trading_cycle(
                     current_quantity,
                     float(active_row["Close"]),
                     "장마감 10분 전 강제 청산",
-                    target_time,
+                    forced_exit_candle,
                     baseline_quantity=current_quantity,
                     execution_tag="eod_force_exit",
                 )
