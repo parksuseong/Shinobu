@@ -302,6 +302,11 @@ def _load_cached_minute_frame(symbol: str, timeframe_label: str, lookback_days: 
 
 def _write_cached_minute_frame(symbol: str, timeframe_label: str, lookback_days: int, frame: pd.DataFrame) -> None:
     trimmed = frame.sort_index()
+    # Keep raw cache aligned to requested intraday buckets.
+    # For example, "5분봉" rows must be stored only on :00/:05/:10... boundaries.
+    interval = INTRADAY_RESAMPLE_MINUTES.get(timeframe_label)
+    if interval:
+        trimmed = _resample_domestic_intraday(trimmed, interval)
     upsert_raw_intraday(symbol, timeframe_label, trimmed)
 
 
