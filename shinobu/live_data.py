@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from shinobu.kis import _fetch_domestic_intraday_batch, fetch_domestic_intraday_history
+from shinobu.kis import KST, _fetch_domestic_intraday_batch, fetch_domestic_intraday_history
 
 
 LIVE_RECENT_LOOKBACK_MINUTES = 720
@@ -18,7 +18,8 @@ def load_intraday_seed(symbol: str, lookback_days: int = 5) -> pd.DataFrame:
 
 @st.cache_data(ttl=5, show_spinner=False)
 def load_intraday_recent(symbol: str, lookback_minutes: int = LIVE_RECENT_LOOKBACK_MINUTES) -> pd.DataFrame:
-    end_dt = pd.Timestamp(datetime.now().replace(second=0, microsecond=0))
+    # Always anchor intraday fetch to KST clock, regardless of server local timezone.
+    end_dt = pd.Timestamp(datetime.now(tz=KST).replace(second=0, microsecond=0)).tz_localize(None)
     batch = _fetch_domestic_intraday_batch(symbol, end_dt)
     if batch.empty:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
