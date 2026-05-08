@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 
-STOCH_PERIOD = 14
+STOCH_PERIOD = 5
 CCI_PERIOD = 20
 RSI_PERIOD = 14
 
@@ -82,7 +82,7 @@ SRC_PROFILE_OPTIONS = {
         rsi_oversold=35.0,
         rsi_overbought=70.0,
         open_prev_need=3,
-        open_cross_need=3,
+        open_cross_need=2,
         close_need=3,
         label="SCR Blog",
     ),
@@ -194,8 +194,15 @@ def _build_raw_conditions(
         cci_threshold=thresholds.cci_oversold,
         rsi_threshold=thresholds.rsi_oversold,
     )
-    raw_buy_open = (
+    # Entry precondition uses recent two completed candles:
+    # allow entry if either of the last two candles satisfied full oversold gate.
+    previous_2 = strategy.shift(2)
+    recent_two_oversold_ready = (
         (previous["oversold_count"].fillna(0).astype(int) >= profile.open_prev_need)
+        | (previous_2["oversold_count"].fillna(0).astype(int) >= profile.open_prev_need)
+    )
+    raw_buy_open = (
+        recent_two_oversold_ready
         & (cross_up_count >= profile.open_cross_need)
     )
     raw_buy_close = (
