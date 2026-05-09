@@ -12,9 +12,9 @@ RSI_PERIOD = 5
 
 @dataclass(frozen=True)
 class SrcAdjustments:
-    stoch_pct: int = 0
+    stoch_pct: int = -20
     cci_pct: int = 0
-    rsi_pct: int = 0
+    rsi_pct: int = 4
 
 
 @dataclass(frozen=True)

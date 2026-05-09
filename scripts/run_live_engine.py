@@ -129,7 +129,7 @@ def main() -> None:
     if not is_live_enabled():
         set_live_enabled(True)
 
-    adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
+    adjustments = StrategyAdjustments(stoch_pct=-20, cci_pct=0, rsi_pct=4)
     append_live_log("정보", "백그라운드 실전 엔진 시작")
 
     while _running:

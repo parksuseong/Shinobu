@@ -2946,7 +2946,7 @@ def main() -> None:
     init_strategy_profile_state()
     init_chart_date_range_state()
     init_execution_mode_state()
-    adjustments = StrategyAdjustments(stoch_pct=0, cci_pct=0, rsi_pct=0)
+    adjustments = StrategyAdjustments(stoch_pct=-20, cci_pct=0, rsi_pct=4)
     base_profile_name = get_current_strategy_profile()
 
     st.markdown(
