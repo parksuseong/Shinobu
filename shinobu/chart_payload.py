@@ -730,7 +730,7 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
         return empty
 
     primary_name = market_data.display_name(symbol)
-    pair_name = market_data.display_name(pair_symbol) if pair_symbol else "???"
+    pair_name = market_data.display_name(pair_symbol) if pair_symbol else "곱버스"
     positions = pd.Series(range(len(frame)), index=frame.index)
     aligned_pair = pair_frame.reindex(frame.index).ffill() if pair_frame is not None and not pair_frame.empty else None
 
@@ -761,11 +761,11 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
             if not open_candidate:
                 continue
             if open_candidate == symbol:
-                label = _marker_label("??? open", primary_name, primary_row)
+                label = _marker_label("매수 open", primary_name, primary_row)
                 _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, label, "open")
                 _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, label, "buy_open")
             elif pair_row is not None:
-                label = _marker_label("??? open", pair_name, pair_row)
+                label = _marker_label("매수 open", pair_name, pair_row)
                 _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, label, "open")
                 _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, label, "buy_open")
             current_symbol = open_candidate
@@ -773,20 +773,20 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
 
         if open_candidate and open_candidate != current_symbol:
             if current_symbol == symbol:
-                close_label = _marker_label("??? close", primary_name, primary_row)
+                close_label = _marker_label("매도 close", primary_name, primary_row)
                 _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, close_label, "buy_close")
             elif pair_row is not None:
-                close_label = _marker_label("??? close", pair_name, pair_row)
+                close_label = _marker_label("매도 close", pair_name, pair_row)
                 _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, close_label, "buy_close")
 
             if open_candidate == symbol:
-                open_label = _marker_label("??? open", primary_name, primary_row)
+                open_label = _marker_label("매수 open", primary_name, primary_row)
                 _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, open_label, "open")
                 _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, open_label, "buy_open")
             elif pair_row is not None:
-                open_label = _marker_label("??? open", pair_name, pair_row)
+                open_label = _marker_label("매수 open", pair_name, pair_row)
                 _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, open_label, "open")
                 _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, open_label, "buy_open")
 
@@ -796,11 +796,11 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
         active_row = primary_row if current_symbol == symbol else pair_row
         if active_row is not None and bool(active_row.get("buy_close", False)):
             if current_symbol == symbol:
-                label = _marker_label("??? close", primary_name, primary_row)
+                label = _marker_label("매도 close", primary_name, primary_row)
                 _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, label, "close")
                 _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, label, "buy_close")
             elif pair_row is not None:
-                label = _marker_label("??? close", pair_name, pair_row)
+                label = _marker_label("매도 close", pair_name, pair_row)
                 _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, label, "close")
                 _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, label, "buy_close")
             current_symbol = None
