@@ -773,11 +773,11 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
 
         if open_candidate and open_candidate != current_symbol:
             if current_symbol == symbol:
-                close_label = _marker_label("매도 close", primary_name, primary_row)
+                close_label = _marker_label("매도 close(스위칭)", primary_name, primary_row)
                 _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, close_label, "buy_close")
             elif pair_row is not None:
-                close_label = _marker_label("매도 close", pair_name, pair_row)
+                close_label = _marker_label("매도 close(스위칭)", pair_name, pair_row)
                 _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, close_label, "close")
                 _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, close_label, "buy_close")
 
