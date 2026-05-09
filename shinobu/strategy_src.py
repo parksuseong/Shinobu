@@ -12,9 +12,9 @@ RSI_PERIOD = 5
 
 @dataclass(frozen=True)
 class SrcAdjustments:
-    stoch_pct: int = -20
+    stoch_pct: int = 0
     cci_pct: int = 0
-    rsi_pct: int = 4
+    rsi_pct: int = 0
 
 
 @dataclass(frozen=True)
@@ -75,15 +75,15 @@ SRC_PROFILE_OPTIONS = {
     "normal": NORMAL_5M_PROFILE,
     "active": ACTIVE_5M_PROFILE,
     "blog_scr": SrcProfile(
-        stoch_oversold=18.0,
-        stoch_overbought=75.0,
-        cci_oversold=-120.0,
-        cci_overbought=110.0,
-        rsi_oversold=40.0,
-        rsi_overbought=60.0,
+        stoch_oversold=20.0,
+        stoch_overbought=60.0,
+        cci_oversold=-61.0,
+        cci_overbought=59.0,
+        rsi_oversold=33.0,
+        rsi_overbought=56.0,
         open_prev_need=3,
         open_cross_need=2,
-        close_need=3,
+        close_need=2,
         label="SCR Blog",
     ),
 }
