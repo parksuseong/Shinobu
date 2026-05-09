@@ -75,7 +75,7 @@ SRC_PROFILE_OPTIONS = {
     "normal": NORMAL_5M_PROFILE,
     "active": ACTIVE_5M_PROFILE,
     "blog_scr": SrcProfile(
-        stoch_oversold=15.0,
+        stoch_oversold=18.0,
         stoch_overbought=75.0,
         cci_oversold=-120.0,
         cci_overbought=110.0,
