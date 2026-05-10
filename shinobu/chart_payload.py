@@ -536,7 +536,12 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
             continue
 
         side = str(order.get("side", "")).strip().lower()
-        y_value = float(candle["Low"]) * 0.99625 if side == "buy" else float(candle["High"]) * 1.00375
+        base_price = candle.get("Low") if side == "buy" else candle.get("High")
+        if pd.isna(base_price):
+            base_price = candle.get("Close")
+        if pd.isna(base_price):
+            continue
+        y_value = float(base_price) * (0.99625 if side == "buy" else 1.00375)
         reason = str(order.get("reason", "") or "").strip()
         # Some old runtime rows may carry mojibake/garbled reason text.
         # Hide broken reason text to prevent "?" marker labels.
@@ -578,7 +583,13 @@ def _append_main_marker(
     x_value = positions.get(timestamp)
     if pd.isna(x_value):
         return
-    y_value = float(price_row["Low"]) * 0.99625 if marker_side == "open" else float(price_row["High"]) * 1.00375
+    price_key = "Low" if marker_side == "open" else "High"
+    base_price = price_row.get(price_key)
+    if pd.isna(base_price):
+        base_price = price_row.get("Close")
+    if pd.isna(base_price):
+        return
+    y_value = float(base_price) * (0.99625 if marker_side == "open" else 1.00375)
     bucket.append(
         {
             "x": int(x_value),
