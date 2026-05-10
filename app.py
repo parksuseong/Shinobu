@@ -1475,6 +1475,9 @@ def render_live_trade_chart(symbol: str, pair_symbol: str | None, adjustments: S
         not runtime["last_checked_candle"] and runtime["last_status"] != "market_closed"
     ):
         st.info("엔진이 계산하고 있습니다. 차트와 시그널을 준비하는 중입니다.")
+    st.caption(
+        f"적용 파라미터: stoch_pct={adjustments.stoch_pct}, cci_pct={adjustments.cci_pct}, rsi_pct={adjustments.rsi_pct}"
+    )
     st.caption(f"표시 기간: {visible_start_date.isoformat()} ~ {visible_end_date.isoformat()}")
     components.html(
         build_live_chart_html(
@@ -2946,7 +2949,9 @@ def main() -> None:
     init_strategy_profile_state()
     init_chart_date_range_state()
     init_execution_mode_state()
-    adjustments = StrategyAdjustments(stoch_pct=-20, cci_pct=0, rsi_pct=4)
+    # Keep live/backtest strategy view on the default adjustment set (s0_c0_r0)
+    # so chart markers and DB-stored signal rows stay aligned.
+    adjustments = StrategyAdjustments()
     base_profile_name = get_current_strategy_profile()
 
     st.markdown(
