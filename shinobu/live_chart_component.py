@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 
@@ -18,439 +18,236 @@ def build_live_chart_html(
     render_nonce: int,
 ) -> str:
     pair_query = pair_symbol or ""
-    root_suffix = re.sub(r"[^a-zA-Z0-9_-]+", "-", f"{symbol}-{pair_query or 'none'}-{strategy_name}-{render_nonce}-{stoch_pct}-{cci_pct}-{rsi_pct}")
+    root_suffix = re.sub(
+        r"[^a-zA-Z0-9_-]+",
+        "-",
+        f"{symbol}-{pair_query or 'none'}-{strategy_name}-{render_nonce}-{stoch_pct}-{cci_pct}-{rsi_pct}",
+    )
     main_root_id = f"main-chart-root-{root_suffix}"
     indicator_root_id = f"indicator-chart-root-{root_suffix}"
+
     return f"""
-<div style="display:flex;flex-direction:column;gap:10px;">
-  <div style="display:none" data-strategy-name="{strategy_name}" data-strategy-label="{strategy_label}" data-render-nonce="{render_nonce}"></div>
-  <div id="chart-status-{root_suffix}" style="font-size:12px;color:#9aa4b2;margin:0 0 2px 6px;"></div>
-  <div id="chart-marker-filter-{root_suffix}" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px 6px;"></div>
-  <div id="{main_root_id}" style="width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
-  <div id="{indicator_root_id}" style="width:100%;height:300px;background:#131722;border:1px solid #2a2e39;border-radius:12px;"></div>
+<div style=\"display:flex;flex-direction:column;gap:10px;\">
+  <div id=\"chart-status-{root_suffix}\" style=\"font-size:12px;color:#9aa4b2;margin:0 0 2px 6px;\"></div>
+  <div id=\"chart-marker-filter-{root_suffix}\" style=\"display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px 6px;\"></div>
+  <div id=\"{main_root_id}\" style=\"width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;\"></div>
+  <div id=\"{indicator_root_id}\" style=\"width:100%;height:300px;background:#131722;border:1px solid #2a2e39;border-radius:12px;\"></div>
 </div>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src=\"https://cdn.plot.ly/plotly-2.35.2.min.js\"></script>
 <script>
 const mainRoot = document.getElementById("{main_root_id}");
 const indicatorRoot = document.getElementById("{indicator_root_id}");
-const chartStatusRoot = document.getElementById("chart-status-{root_suffix}");
-const markerFilterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
+const statusRoot = document.getElementById("chart-status-{root_suffix}");
+const filterRoot = document.getElementById("chart-marker-filter-{root_suffix}");
+
 const hostWindow = window.parent && window.parent.location ? window.parent : window;
-const hostName = hostWindow.location.hostname || "";
-const isLocalHost = ["localhost", "127.0.0.1"].includes(hostName);
-const preferredHost = hostName || "127.0.0.1";
-const chartEndpointBases = [];
+const hostName = hostWindow.location.hostname || "127.0.0.1";
+const proto = hostWindow.location.protocol || "http:";
 
-// 1) Try direct Signal API on EC2 host first (most reliable on http://IP:8501 access)
-chartEndpointBases.push(`http://${{preferredHost}}:8766/v1/chart`);
-chartEndpointBases.push(`http://${{preferredHost}}:8766/chart`);
-
-// 2) If reverse proxy is configured, same-origin paths may work on https domains
-chartEndpointBases.push(`${{hostWindow.location.protocol}}//${{preferredHost}}/v1/chart`);
-chartEndpointBases.push(`${{hostWindow.location.protocol}}//${{preferredHost}}/chart`);
-
-// 3) Local-only fallback (useful when app is opened on localhost directly)
-if (isLocalHost) {{
-  chartEndpointBases.push("http://127.0.0.1:8766/v1/chart");
-  chartEndpointBases.push("http://127.0.0.1:8766/chart");
-}}
-const refreshTimerKey = "__shinobu_chart_refresh_{root_suffix}";
-const markerFilterStorageKey = "shinobu_marker_filters_v1_{root_suffix}";
-const markerFilterOptions = [
-  {{ key: "primary_open", label: "레버리지 Open" }},
-  {{ key: "primary_close", label: "레버리지 Close" }},
-  {{ key: "pair_open", label: "곱버스 Open" }},
-  {{ key: "pair_close", label: "곱버스 Close" }},
-  {{ key: "order_buy", label: "실매수" }},
-  {{ key: "order_sell", label: "실매도" }}
+const endpointBases = [
+  `http://${{hostName}}:8766/v1/chart`,
+  `http://${{hostName}}:8766/chart`,
+  `${{proto}}//${{hostName}}/v1/chart`,
+  `${{proto}}//${{hostName}}/chart`,
+  "http://127.0.0.1:8766/v1/chart",
+  "http://127.0.0.1:8766/chart",
 ];
-const markerFilters = {{
+
+const filterKey = "shinobu_marker_filters_{root_suffix}";
+const filters = {{
   primary_open: true,
   primary_close: true,
   pair_open: true,
   pair_close: true,
   order_buy: true,
-  order_sell: true
+  order_sell: true,
 }};
 
-let initializedMain = false;
-let initializedIndicator = false;
-let syncingRange = false;
-let previousPayload = null;
-let latestMarkerPayload = null;
-let countdownTimer = null;
-let liveCountdownState = null;
+let mainReady = false;
+let indicatorReady = false;
+let prevPayload = null;
+let timer = null;
 
-const MAIN_TRACE = {{
-  candle: 0,
-  primaryOpen: 1,
-  primaryClose: 2,
-  pairOpen: 3,
-  pairClose: 4,
-  orderBuy: 5,
-  orderSell: 6
-}};
-
-const INDICATOR_TRACE = {{
-  primaryOpenMain: 0,
-  primaryCloseMain: 1,
-  pairOpenMain: 2,
-  pairCloseMain: 3,
-  orderBuy: 4,
-  orderSell: 5,
-  primaryOpen: 6,
-  primaryClose: 7,
-  pairOpen: 8,
-  pairClose: 9,
-  primaryScr: 10,
-  pairScr: 11
-}};
-
-function detailHover(items) {{
-  return items.map((item) =>
-    [
-      item.label || "",
-      item.time ? `시간: ${{item.time}}` : "",
-      item.price ? `가격: ${{Number(item.price).toLocaleString()}}` : "",
-      item.reason ? `사유: ${{item.reason}}` : "",
-      item.scr !== undefined ? `SCR: ${{Number(item.scr).toFixed(2)}}` : ""
-    ].filter(Boolean).join("<br>")
-  );
-}}
-
-function normalizeMarkerText(value) {{
-  return String(value || "").toLowerCase();
-}}
-
-function isStopMarker(item) {{
-  const label = normalizeMarkerText(item?.label);
-  const reason = normalizeMarkerText(item?.reason);
-  return (
-    label.includes("손절") ||
-    reason.includes("손절") ||
-    label.includes("stop") ||
-    reason.includes("stop") ||
-    label.includes("trailing") ||
-    reason.includes("trailing")
-  );
-}}
-
-function filterOpenMarkers(markers, key) {{
-  if (!markerFilters[key]) return [];
-  return markers;
-}}
-
-function filterCloseMarkers(markers, closeKey) {{
-  if (!markerFilters[closeKey]) return [];
-  return markers;
-}}
-
-function loadMarkerFilters() {{
+function loadFilters() {{
   try {{
-    const raw = window.sessionStorage.getItem(markerFilterStorageKey);
+    const raw = sessionStorage.getItem(filterKey);
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return;
-    markerFilterOptions.forEach((option) => {{
-      if (typeof parsed[option.key] === "boolean") {{
-        markerFilters[option.key] = parsed[option.key];
-      }}
+    Object.keys(filters).forEach((k) => {{
+      if (typeof parsed[k] === "boolean") filters[k] = parsed[k];
     }});
-  }} catch (error) {{
-    // ignore local storage parsing errors
-  }}
+  }} catch (_) {{}}
 }}
 
-function saveMarkerFilters() {{
-  try {{
-    window.sessionStorage.setItem(markerFilterStorageKey, JSON.stringify(markerFilters));
-  }} catch (error) {{
-    // ignore local storage write errors
-  }}
+function saveFilters() {{
+  try {{ sessionStorage.setItem(filterKey, JSON.stringify(filters)); }} catch (_) {{}}
 }}
 
-async function applyMarkerFiltersOnly() {{
-  const markerPayload = latestMarkerPayload || previousPayload;
-  if (!markerPayload) return;
-  if (initializedMain) {{
-    const markers = markerSeries(markerPayload).main;
-    for (let i = 0; i < markers.length; i += 1) {{
-      const traceIndex = MAIN_TRACE.primaryOpen + i;
-      const current = markers[i];
-      await Plotly.restyle(
-        mainRoot,
-        {{
-          x: [current.map((item) => item.x)],
-          y: [current.map((item) => item.y)],
-          text: [current.map((item) => item.label)],
-          hovertext: [detailHover(current)]
-        }},
-        [traceIndex]
-      );
-    }}
-  }}
-  if (initializedIndicator) {{
-    const markers = markerSeries(markerPayload).indicator;
-    for (let i = 0; i < markers.length; i += 1) {{
-      const current = markers[i];
-      await Plotly.restyle(
-        indicatorRoot,
-        {{
-          x: [current.map((item) => item.x)],
-          y: [current.map((item) => item.y)],
-          hovertext: [detailHover(current)]
-        }},
-        [i]
-      );
-    }}
-  }}
-}}
-
-function renderMarkerFilterControls() {{
-  if (!markerFilterRoot) return;
-  markerFilterRoot.innerHTML = "";
+function drawFilterUI() {{
+  filterRoot.innerHTML = "";
   const title = document.createElement("span");
   title.textContent = "마커 표시:";
   title.style.color = "#94a3b8";
   title.style.fontSize = "12px";
-  title.style.marginRight = "4px";
-  markerFilterRoot.appendChild(title);
+  filterRoot.appendChild(title);
 
-  markerFilterOptions.forEach((option) => {{
+  const labels = [
+    ["primary_open", "레버리지 Open"],
+    ["primary_close", "레버리지 Close"],
+    ["pair_open", "곱버스 Open"],
+    ["pair_close", "곱버스 Close"],
+    ["order_buy", "실매수"],
+    ["order_sell", "실매도"],
+  ];
+
+  labels.forEach(([key, labelText]) => {{
     const label = document.createElement("label");
     label.style.display = "inline-flex";
     label.style.alignItems = "center";
     label.style.gap = "4px";
     label.style.fontSize = "12px";
     label.style.color = "#d1d5db";
-    label.style.cursor = "pointer";
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = Boolean(markerFilters[option.key]);
-    checkbox.style.margin = "0";
-    checkbox.addEventListener("change", async () => {{
-      markerFilters[option.key] = checkbox.checked;
-      saveMarkerFilters();
-      await applyMarkerFiltersOnly();
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = !!filters[key];
+    input.addEventListener("change", async () => {{
+      filters[key] = input.checked;
+      saveFilters();
+      await refreshCharts();
     }});
 
     const text = document.createElement("span");
-    text.textContent = option.label;
-
-    label.appendChild(checkbox);
+    text.textContent = labelText;
+    label.appendChild(input);
     label.appendChild(text);
-    markerFilterRoot.appendChild(label);
+    filterRoot.appendChild(label);
   }});
 }}
 
-function renderCurrentCandleStatus(payload) {{
-  if (!chartStatusRoot) return;
-  const current = payload.currentCandle || null;
-  if (!current) {{
-    chartStatusRoot.innerHTML = "";
-    return;
-  }}
-  const accent = current.isUnconfirmed ? "#f59e0b" : "#22c55e";
-  const progress = Math.max(0, Math.min(Number(current.progressPct || 0), 100));
-  chartStatusRoot.innerHTML =
-    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
-    `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
-    `<span style="color:#64748b;">기준 봉 ${{
-      current.candleTime || "-"
-    }}</span>` +
-    `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
-    `<div style="width:${{progress}}%;height:100%;background:${{accent}};"></div>` +
-    `</div>` +
-    `</div>`;
+function hoverCandle(item) {{
+  const t = (item.t || "").replace("T", " ").slice(0, 16);
+  return `시간 ${{t}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
 }}
 
-function renderCurrentCandleStatusFromState(current) {{
-  if (!chartStatusRoot || !current) return;
-  const accent = current.isUnconfirmed ? "#f59e0b" : "#22c55e";
-  const progress = Math.max(0, Math.min(Number(current.progressPct || 0), 100));
-  chartStatusRoot.innerHTML =
-    `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">` +
-    `<span style="color:${{accent}};">${{current.statusText || ""}}</span>` +
-    `<span style="color:#64748b;">기준 봉 ${{
-      current.candleTime || "-"
-    }}</span>` +
-    `<div style="width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">` +
-    `<div style="width:${{progress}}%;height:100%;background:${{accent}};"></div>` +
-    `</div>` +
-    `</div>`;
+function detailHover(item) {{
+  const out = [item.label || ""];
+  if (item.time) out.push(`시간: ${{item.time}}`);
+  if (item.price !== undefined && item.price !== null) out.push(`가격: ${{Number(item.price).toLocaleString()}}`);
+  if (item.reason) out.push(`사유: ${{item.reason}}`);
+  if (item.scr !== undefined && item.scr !== null) out.push(`SCR: ${{Number(item.scr).toFixed(2)}}`);
+  return out.join("<br>");
 }}
 
-function startCurrentCandleCountdown(payload) {{
-  if (countdownTimer) {{
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }}
-  const current = payload.currentCandle || null;
-  if (!current) {{
-    liveCountdownState = null;
-    renderCurrentCandleStatus(payload);
-    return;
-  }}
-
-  liveCountdownState = {{ ...current }};
-  renderCurrentCandleStatusFromState(liveCountdownState);
-  if (!liveCountdownState.isUnconfirmed) {{
-    return;
-  }}
-
-  countdownTimer = setInterval(() => {{
-    if (!liveCountdownState || !liveCountdownState.isUnconfirmed) {{
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-      return;
-    }}
-    const nextRemaining = Math.max(0, Number(liveCountdownState.remainingSeconds || 0) - 1);
-    liveCountdownState.remainingSeconds = nextRemaining;
-    liveCountdownState.remainingText =
-      `${{String(Math.floor(nextRemaining / 60)).padStart(2, "0")}}:${{String(nextRemaining % 60).padStart(2, "0")}}`;
-    const nextProgress = Math.max(0, Math.min(100, 100 - (nextRemaining / 300) * 100));
-    liveCountdownState.progressPct = nextProgress;
-    if (nextRemaining <= 0) {{
-      liveCountdownState.isUnconfirmed = false;
-      liveCountdownState.statusText = "최근 봉 확정";
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-    }} else {{
-      liveCountdownState.statusText = `현재 봉 미확정 · 마감까지 ${{liveCountdownState.remainingText}}`;
-    }}
-    renderCurrentCandleStatusFromState(liveCountdownState);
-  }}, 1000);
-}}
-
-function mainMarkerTrace(markers, color, symbol) {{
+function markerTrace(items, color, symbol, showText=true) {{
   return {{
     type: "scatter",
-    mode: "markers+text",
-    x: markers.map((item) => item.x),
-    y: markers.map((item) => item.y),
-    text: markers.map((item) => item.label),
+    mode: showText ? "markers+text" : "markers",
+    x: items.map((x) => x.x),
+    y: items.map((x) => x.y),
+    text: showText ? items.map((x) => x.label || "") : undefined,
     textposition: "top center",
     textfont: {{ size: 10, color }},
-    marker: {{ color, size: 10, symbol, line: {{ color: "#ffffff", width: 1 }} }},
-    hoverinfo: "text",
-    hovertext: detailHover(markers),
+    marker: {{ color, size: 10, symbol, line: {{ color: "#fff", width: 1 }} }},
+    hovertext: items.map((x) => detailHover(x)),
     hovertemplate: "%{{hovertext}}<extra></extra>",
-    showlegend: false
-  }};
-}}
-
-function indicatorMarkerTrace(markers, color, symbol) {{
-  return {{
-    type: "scatter",
-    mode: "markers",
-    x: markers.map((item) => item.x),
-    y: markers.map((item) => item.y),
-    marker: {{ color, size: 10, opacity: 0.82, symbol, line: {{ color: "#ffffff", width: 1.4 }} }},
     hoverinfo: "text",
-    hovertext: detailHover(markers),
-    hovertemplate: "%{{hovertext}}<extra></extra>",
-    showlegend: false
+    showlegend: false,
   }};
 }}
 
-function candleArrays(payload) {{
-  return {{
-    x: payload.candles.map((_, index) => index),
-    open: payload.candles.map((item) => item.o),
-    high: payload.candles.map((item) => item.h),
-    low: payload.candles.map((item) => item.l),
-    close: payload.candles.map((item) => item.c),
-    times: payload.candles.map((item) => item.t)
-  }};
-}}
-
-function markerSeries(payload) {{
+function pickMarkers(payload) {{
+  const sig = payload.signals || {{}};
   const orders = payload.orders || [];
-  const buyOrders = markerFilters.order_buy ? orders.filter((item) => item.side === "buy") : [];
-  const sellOrders = markerFilters.order_sell ? orders.filter((item) => item.side === "sell") : [];
-  const primaryOpenMain = filterOpenMarkers(payload.signals.primaryOpenMain || [], "primary_open");
-  const primaryCloseMain = filterCloseMarkers(payload.signals.primaryCloseMain || [], "primary_close");
-  const pairOpenMain = filterOpenMarkers(payload.signals.pairOpenMain || [], "pair_open");
-  const pairCloseMain = filterCloseMarkers(payload.signals.pairCloseMain || [], "pair_close");
-  const primaryOpenIndicator = filterOpenMarkers(payload.signals.primaryOpenIndicator || [], "primary_open");
-  const primaryCloseIndicator = filterCloseMarkers(payload.signals.primaryCloseIndicator || [], "primary_close");
-  const pairOpenIndicator = filterOpenMarkers(payload.signals.pairOpenIndicator || [], "pair_open");
-  const pairCloseIndicator = filterCloseMarkers(payload.signals.pairCloseIndicator || [], "pair_close");
-  return {{
-    main: [
-      primaryOpenMain,
-      primaryCloseMain,
-      pairOpenMain,
-      pairCloseMain,
-      buyOrders,
-      sellOrders
-    ],
-    indicator: [
-      primaryOpenMain,
-      primaryCloseMain,
-      pairOpenMain,
-      pairCloseMain,
-      buyOrders,
-      sellOrders,
-      primaryOpenIndicator,
-      primaryCloseIndicator,
-      pairOpenIndicator,
-      pairCloseIndicator
-    ]
+  const out = {{
+    primaryOpenMain: filters.primary_open ? (sig.primaryOpenMain || []) : [],
+    primaryCloseMain: filters.primary_close ? (sig.primaryCloseMain || []) : [],
+    pairOpenMain: filters.pair_open ? (sig.pairOpenMain || []) : [],
+    pairCloseMain: filters.pair_close ? (sig.pairCloseMain || []) : [],
+    primaryOpenIndicator: filters.primary_open ? (sig.primaryOpenIndicator || []) : [],
+    primaryCloseIndicator: filters.primary_close ? (sig.primaryCloseIndicator || []) : [],
+    pairOpenIndicator: filters.pair_open ? (sig.pairOpenIndicator || []) : [],
+    pairCloseIndicator: filters.pair_close ? (sig.pairCloseIndicator || []) : [],
+    orderBuy: filters.order_buy ? orders.filter((x) => x.side === "buy") : [],
+    orderSell: filters.order_sell ? orders.filter((x) => x.side === "sell") : [],
   }};
+  return out;
 }}
 
-function withMarkers(basePayload, markerPayload) {{
-  if (!basePayload) return markerPayload;
-  if (!markerPayload) return basePayload;
-  return {{
-    ...basePayload,
-    orders: markerPayload.orders || [],
-    signals: markerPayload.signals || {{}}
-  }};
-}}
-
-function tickData(payload) {{
-  const x = payload.candles.map((_, index) => index);
+function ticks(payload) {{
+  const x = payload.candles.map((_, i) => i);
   const step = Math.max(1, Math.ceil(x.length / 8));
-  return {{
-    tickvals: x.filter((_, index) => index % step === 0 || index === x.length - 1),
-    ticktext: payload.tickText.filter((_, index) => index % step === 0 || index === x.length - 1)
-  }};
+  const vals = x.filter((_, i) => i % step === 0 || i === x.length - 1);
+  const txt = (payload.tickText || []).filter((_, i) => i % step === 0 || i === payload.tickText.length - 1);
+  return {{ vals, txt }};
 }}
 
-function buildMainFigure(payload) {{
-  const candle = candleArrays(payload);
-  const ticks = tickData(payload);
-  const markers = markerSeries(payload).main;
-  const candleHoverText = payload.candles.map((item) => {{
-    const timeText = (item.t || "").replace("T", " ").slice(0, 16);
-    return `시간 ${{timeText}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
-  }});
+function renderStatus(payload) {{
+  if (!statusRoot) return;
+  const c = payload.currentCandle || null;
+  if (!c) {{
+    statusRoot.innerHTML = "";
+    return;
+  }}
+  const accent = c.isUnconfirmed ? "#f59e0b" : "#22c55e";
+  const p = Math.max(0, Math.min(Number(c.progressPct || 0), 100));
+  statusRoot.innerHTML =
+    `<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap;\">` +
+    `<span style=\"color:${{accent}};\">${{c.statusText || ""}}</span>` +
+    `<span style=\"color:#64748b;\">기준 봉 ${{c.candleTime || "-"}}</span>` +
+    `<div style=\"width:120px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;\">` +
+    `<div style=\"width:${{p}}%;height:100%;background:${{accent}};\"></div>` +
+    `</div></div>`;
+}}
+
+async function fetchPayload(includeMarkers=true) {{
+  let lastErr = null;
+  for (const base of endpointBases) {{
+    const url =
+      `${{base}}?kind=overlay&symbol={symbol}` +
+      `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}` +
+      `&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}` +
+      `&include_markers=${{includeMarkers ? "1" : "0"}}`;
+    try {{
+      const res = await fetch(url, {{ cache: "no-store" }});
+      if (!res.ok) throw new Error(`HTTP ${{res.status}}`);
+      const ct = String(res.headers.get("content-type") || "").toLowerCase();
+      if (!ct.includes("application/json")) throw new Error(`Unexpected content-type: ${{ct}}`);
+      return await res.json();
+    }} catch (e) {{
+      lastErr = e;
+    }}
+  }}
+  throw lastErr || new Error("fetch failed");
+}}
+
+function buildMain(payload) {{
+  const m = pickMarkers(payload);
+  const x = payload.candles.map((_, i) => i);
+  const tk = ticks(payload);
+  const hover = payload.candles.map((c) => hoverCandle(c));
   return {{
     data: [
       {{
         type: "candlestick",
-        x: candle.x,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-        text: candleHoverText,
+        x,
+        open: payload.candles.map((c) => c.o),
+        high: payload.candles.map((c) => c.h),
+        low: payload.candles.map((c) => c.l),
+        close: payload.candles.map((c) => c.c),
+        text: hover,
+        hovertext: hover,
+        hovertemplate: "%{{hovertext}}<extra></extra>",
         increasing: {{ line: {{ color: "#089981" }}, fillcolor: "#089981" }},
         decreasing: {{ line: {{ color: "#f23645" }}, fillcolor: "#f23645" }},
-        hoverinfo: "text",
-        hovertext: candleHoverText,
-        hovertemplate: "%{{hovertext}}<extra></extra>",
-        showlegend: false
+        showlegend: false,
       }},
-      mainMarkerTrace(markers[0], "#3b82f6", "circle"),
-      mainMarkerTrace(markers[1], "#ef4444", "circle"),
-      mainMarkerTrace(markers[2], "#3b82f6", "star"),
-      mainMarkerTrace(markers[3], "#ef4444", "star"),
-      mainMarkerTrace(markers[4], "#22c55e", "heart"),
-      mainMarkerTrace(markers[5], "#f59e0b", "heart")
+      markerTrace(m.primaryOpenMain, "#3b82f6", "circle"),
+      markerTrace(m.primaryCloseMain, "#ef4444", "circle"),
+      markerTrace(m.pairOpenMain, "#3b82f6", "star"),
+      markerTrace(m.pairCloseMain, "#ef4444", "star"),
+      markerTrace(m.orderBuy, "#22c55e", "diamond"),
+      markerTrace(m.orderSell, "#f59e0b", "diamond"),
     ],
     layout: {{
       paper_bgcolor: "#131722",
@@ -460,86 +257,61 @@ function buildMainFigure(payload) {{
       height: 400,
       dragmode: "pan",
       hovermode: "closest",
-      hoverlabel: {{ bgcolor: "#1e222d", font: {{ color: "#d1d4dc" }} }},
       showlegend: false,
       uirevision: "shinobu-main-chart",
       xaxis: {{
         tickmode: "array",
-        tickvals: ticks.tickvals,
-        ticktext: ticks.ticktext,
+        tickvals: tk.vals,
+        ticktext: tk.txt,
         showgrid: false,
-        range: [-0.45, Math.max(candle.x.length - 0.55, 1)],
-        fixedrange: false,
-        rangeslider: {{ visible: false }}
+        rangeslider: {{ visible: false }},
       }},
-      yaxis: {{
-        side: "right",
-        showgrid: true,
-        gridcolor: "rgba(42,46,57,0.65)",
-        fixedrange: false
-      }},
+      yaxis: {{ side: "right", showgrid: true, gridcolor: "rgba(42,46,57,0.65)" }},
       annotations: [
         {{
-          x: 0.01,
-          y: 1.04,
-          xref: "paper",
-          yref: "paper",
-          showarrow: false,
+          x: 0.01, y: 1.04, xref: "paper", yref: "paper", showarrow: false,
           text: `${{payload.symbolName}} · 5분봉 · 실전 가격`,
-          font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }}
+          font: {{ size: 14, color: "#e5e7eb", family: "Malgun Gothic" }},
         }},
         {{
-          x: 0.99,
-          y: 1.04,
-          xref: "paper",
-          yref: "paper",
-          xanchor: "right",
-          showarrow: false,
+          x: 0.99, y: 1.04, xref: "paper", yref: "paper", xanchor: "right", showarrow: false,
           text: "{strategy_label}",
-          font: {{ size: 13, color: "#60a5fa", family: "Malgun Gothic" }}
-        }}
-      ]
-    }}
+          font: {{ size: 13, color: "#60a5fa", family: "Malgun Gothic" }},
+        }},
+      ],
+    }},
   }};
 }}
 
-function buildIndicatorFigure(payload) {{
-  const candle = candleArrays(payload);
-  const ticks = tickData(payload);
-  const indicatorTimes = candle.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
-  const markers = markerSeries(payload).indicator;
+function buildIndicator(payload) {{
+  const m = pickMarkers(payload);
+  const x = payload.candles.map((_, i) => i);
+  const tk = ticks(payload);
+  const times = payload.candles.map((c) => String(c.t || "").replace("T", " ").slice(0, 16));
   return {{
     data: [
-      indicatorMarkerTrace(markers[0], "#3b82f6", "circle"),
-      indicatorMarkerTrace(markers[1], "#ef4444", "circle"),
-      indicatorMarkerTrace(markers[2], "#3b82f6", "star"),
-      indicatorMarkerTrace(markers[3], "#ef4444", "star"),
-      indicatorMarkerTrace(markers[4], "#22c55e", "heart"),
-      indicatorMarkerTrace(markers[5], "#f59e0b", "heart"),
-      indicatorMarkerTrace(markers[6], "#3b82f6", "circle"),
-      indicatorMarkerTrace(markers[7], "#ef4444", "circle"),
-      indicatorMarkerTrace(markers[8], "#3b82f6", "star"),
-      indicatorMarkerTrace(markers[9], "#ef4444", "star"),
+      markerTrace(m.primaryOpenMain, "#3b82f6", "circle", false),
+      markerTrace(m.primaryCloseMain, "#ef4444", "circle", false),
+      markerTrace(m.pairOpenMain, "#3b82f6", "star", false),
+      markerTrace(m.pairCloseMain, "#ef4444", "star", false),
+      markerTrace(m.orderBuy, "#22c55e", "diamond", false),
+      markerTrace(m.orderSell, "#f59e0b", "diamond", false),
+      markerTrace(m.primaryOpenIndicator, "#3b82f6", "circle", false),
+      markerTrace(m.primaryCloseIndicator, "#ef4444", "circle", false),
+      markerTrace(m.pairOpenIndicator, "#3b82f6", "star", false),
+      markerTrace(m.pairCloseIndicator, "#ef4444", "star", false),
       {{
-        type: "scatter",
-        mode: "lines",
-        x: candle.x,
-        y: payload.scr || [],
-        customdata: indicatorTimes,
+        type: "scatter", mode: "lines", x, y: payload.scr || [], customdata: times,
         line: {{ color: "#ffffff", width: 4.2, dash: "solid" }},
         hovertemplate: `시간 %{{customdata}}<br>${{payload.symbolName}} SCR %{{y:.2f}}<extra></extra>`,
-        showlegend: false
+        showlegend: false,
       }},
       {{
-        type: "scatter",
-        mode: "lines",
-        x: candle.x,
-        y: payload.pairScr || [],
-        customdata: indicatorTimes,
+        type: "scatter", mode: "lines", x, y: payload.pairScr || [], customdata: times,
         line: {{ color: "#f59e0b", width: 3.5, dash: "dot" }},
         hovertemplate: `시간 %{{customdata}}<br>${{payload.pairName || "곱버스"}} SCR %{{y:.2f}}<extra></extra>`,
-        showlegend: false
-      }}
+        showlegend: false,
+      }},
     ],
     layout: {{
       paper_bgcolor: "#131722",
@@ -547,290 +319,55 @@ function buildIndicatorFigure(payload) {{
       font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
       margin: {{ l: 8, r: 56, t: 34, b: 22 }},
       height: 300,
-      dragmode: false,
       hovermode: "closest",
-      hoverdistance: 20,
-      spikedistance: 20,
-      hoverlabel: {{ bgcolor: "#1e222d", font: {{ color: "#d1d4dc" }} }},
       showlegend: false,
       uirevision: "shinobu-indicator-chart",
-      xaxis: {{
-        tickmode: "array",
-        tickvals: ticks.tickvals,
-        ticktext: ticks.ticktext,
-        showgrid: false,
-        range: [-0.45, Math.max(candle.x.length - 0.55, 1)],
-        fixedrange: true,
-        showspikes: true,
-        spikemode: "across",
-        spikecolor: "#4b5563",
-        spikethickness: 1
-      }},
-      yaxis: {{
-        side: "right",
-        range: [-1.9, 1.9],
-        tickmode: "array",
-        tickvals: [-1, 0, 1],
-        ticktext: ["하단", "0", "상단"],
-        showgrid: true,
-        gridcolor: "rgba(42,46,57,0.35)",
-        fixedrange: true
-      }},
+      xaxis: {{ tickmode: "array", tickvals: tk.vals, ticktext: tk.txt, showgrid: false }},
+      yaxis: {{ side: "right", range: [-1.9, 1.9], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)" }},
       annotations: [
         {{
-          x: 0.01,
-          y: 1.08,
-          xref: "paper",
-          yref: "paper",
-          showarrow: false,
+          x: 0.01, y: 1.08, xref: "paper", yref: "paper", showarrow: false,
           text: "보조지표 (흰 실선: 레버리지 / 주황 점선: 곱버스)",
-          font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }}
-        }}
-      ]
-    }}
+          font: {{ size: 12, color: "#9aa4b2", family: "Malgun Gothic" }},
+        }},
+      ],
+    }},
   }};
-}}
-
-function canAppend(prevPayload, nextPayload) {{
-  if (!prevPayload || !nextPayload) return false;
-  const prevCandles = prevPayload.candles || [];
-  const nextCandles = nextPayload.candles || [];
-  if (nextCandles.length !== prevCandles.length + 1) return false;
-  for (let i = 0; i < prevCandles.length; i += 1) {{
-    if (prevCandles[i].t !== nextCandles[i].t) return false;
-  }}
-  return true;
-}}
-
-async function syncIndicatorRangeFromMain() {{
-  const currentMainRange = mainRoot.layout?.xaxis?.range;
-  if (!currentMainRange || currentMainRange.length !== 2) return;
-  syncingRange = true;
-  await Plotly.relayout(indicatorRoot, {{ "xaxis.range": currentMainRange }});
-  syncingRange = false;
-}}
-
-async function applyMainIncremental(prevPayload, nextPayload) {{
-  const nextCandles = candleArrays(nextPayload);
-
-  if (canAppend(prevPayload, nextPayload)) {{
-    const newIndex = nextCandles.x[nextCandles.x.length - 1];
-    await Plotly.extendTraces(
-      mainRoot,
-      {{
-        x: [[newIndex]],
-        open: [[nextCandles.open[nextCandles.open.length - 1]]],
-        high: [[nextCandles.high[nextCandles.high.length - 1]]],
-        low: [[nextCandles.low[nextCandles.low.length - 1]]],
-        close: [[nextCandles.close[nextCandles.close.length - 1]]]
-      }},
-      [MAIN_TRACE.candle],
-      nextCandles.x.length
-    );
-  }} else {{
-    const candleHoverText = nextPayload.candles.map((item) => {{
-      const timeText = (item.t || "").replace("T", " ").slice(0, 16);
-      return `시간 ${{timeText}}<br>시가 ${{Number(item.o).toLocaleString()}}<br>고가 ${{Number(item.h).toLocaleString()}}<br>저가 ${{Number(item.l).toLocaleString()}}<br>종가 ${{Number(item.c).toLocaleString()}}`;
-    }});
-    await Plotly.restyle(
-      mainRoot,
-      {{
-        x: [nextCandles.x],
-        open: [nextCandles.open],
-        high: [nextCandles.high],
-        low: [nextCandles.low],
-        close: [nextCandles.close],
-        hovertext: [candleHoverText],
-        text: [candleHoverText]
-      }},
-      [MAIN_TRACE.candle]
-    );
-  }}
-
-  const ticks = tickData(nextPayload);
-  await Plotly.relayout(mainRoot, {{
-    "xaxis.tickvals": ticks.tickvals,
-    "xaxis.ticktext": ticks.ticktext
-  }});
-}}
-
-async function applyIndicatorIncremental(prevPayload, nextPayload) {{
-  const nextCandles = candleArrays(nextPayload);
-  const indicatorTimes = nextCandles.times.map((item) => (item || "").replace("T", " ").slice(0, 16));
-
-  if (canAppend(prevPayload, nextPayload)) {{
-    const newIndex = nextCandles.x[nextCandles.x.length - 1];
-    await Plotly.extendTraces(
-      indicatorRoot,
-      {{
-        x: [[newIndex]],
-        y: [[(nextPayload.scr || [])[nextPayload.scr.length - 1]]],
-        customdata: [[indicatorTimes[indicatorTimes.length - 1]]]
-      }},
-      [INDICATOR_TRACE.primaryScr],
-      nextCandles.x.length
-    );
-    await Plotly.extendTraces(
-      indicatorRoot,
-      {{
-        x: [[newIndex]],
-        y: [[(nextPayload.pairScr || [])[nextPayload.pairScr.length - 1]]],
-        customdata: [[indicatorTimes[indicatorTimes.length - 1]]]
-      }},
-      [INDICATOR_TRACE.pairScr],
-      nextCandles.x.length
-    );
-  }} else {{
-    await Plotly.restyle(
-      indicatorRoot,
-      {{
-        x: [nextCandles.x],
-        y: [nextPayload.scr || []],
-        customdata: [indicatorTimes]
-      }},
-      [INDICATOR_TRACE.primaryScr]
-    );
-    await Plotly.restyle(
-      indicatorRoot,
-      {{
-        x: [nextCandles.x],
-        y: [nextPayload.pairScr || []],
-        customdata: [indicatorTimes]
-      }},
-      [INDICATOR_TRACE.pairScr]
-    );
-  }}
-
-  const ticks = tickData(nextPayload);
-  await Plotly.relayout(indicatorRoot, {{
-    "xaxis.tickvals": ticks.tickvals,
-    "xaxis.ticktext": ticks.ticktext
-  }});
-}}
-
-async function applyMarkerPayload(basePayload, markerPayload) {{
-  if (!basePayload || !markerPayload) return;
-  latestMarkerPayload = withMarkers(basePayload, markerPayload);
-  const markers = markerSeries(latestMarkerPayload);
-  if (initializedMain) {{
-    for (let i = 0; i < markers.main.length; i += 1) {{
-      const traceIndex = MAIN_TRACE.primaryOpen + i;
-      const current = markers.main[i];
-      await Plotly.restyle(
-        mainRoot,
-        {{
-          x: [current.map((item) => item.x)],
-          y: [current.map((item) => item.y)],
-          text: [current.map((item) => item.label)],
-          hovertext: [detailHover(current)]
-        }},
-        [traceIndex]
-      );
-    }}
-  }}
-  if (initializedIndicator) {{
-    for (let i = 0; i < markers.indicator.length; i += 1) {{
-      const current = markers.indicator[i];
-      await Plotly.restyle(
-        indicatorRoot,
-        {{
-          x: [current.map((item) => item.x)],
-          y: [current.map((item) => item.y)],
-          hovertext: [detailHover(current)]
-        }},
-        [i]
-      );
-    }}
-  }}
-}}
-
-async function fetchPayload(includeMarkers) {{
-  let lastError = null;
-  for (const base of chartEndpointBases) {{
-    const endpoint =
-      `${{base}}?kind=overlay&symbol={symbol}` +
-      `&pair_symbol={pair_query}&stoch_pct={stoch_pct}&cci_pct={cci_pct}&rsi_pct={rsi_pct}` +
-      `&strategy_name={strategy_name}&start_date={start_date}&end_date={end_date}` +
-      `&include_markers=${{includeMarkers ? "1" : "0"}}`;
-    try {{
-      const response = await fetch(endpoint, {{ cache: "no-store" }});
-      if (!response.ok) {{
-        throw new Error(`HTTP ${{response.status}}`);
-      }}
-      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-      if (!contentType.includes("application/json")) {{
-        throw new Error(`Unexpected content-type: ${{contentType || "unknown"}}`);
-      }}
-      return response.json();
-    }} catch (error) {{
-      lastError = error;
-    }}
-  }}
-  throw lastError || new Error("Failed to fetch chart payload");
 }}
 
 async function refreshCharts() {{
   try {{
-    const nextPayload = await fetchPayload(true);
-    startCurrentCandleCountdown(nextPayload);
-    const config = {{
-      responsive: true,
-      displaylogo: false,
-      displayModeBar: false,
-      scrollZoom: true,
-      modeBarButtonsToRemove: ["zoom2d", "pan2d", "lasso2d", "select2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"]
-    }};
+    const payload = await fetchPayload(true);
+    renderStatus(payload);
+    const config = {{ responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: true }};
 
-    if (!initializedMain) {{
-      const mainFigure = buildMainFigure(nextPayload);
-      await Plotly.newPlot(mainRoot, mainFigure.data, mainFigure.layout, config);
-      initializedMain = true;
-      mainRoot.on("plotly_relayout", (eventData) => {{
-        if (syncingRange) return;
-        const x0 = eventData["xaxis.range[0]"];
-        const x1 = eventData["xaxis.range[1]"];
-        if (x0 === undefined || x1 === undefined) return;
-        syncingRange = true;
-        Plotly.relayout(indicatorRoot, {{ "xaxis.range": [x0, x1] }}).finally(() => {{
-          syncingRange = false;
-        }});
-      }});
+    const main = buildMain(payload);
+    const ind = buildIndicator(payload);
+
+    if (!mainReady) {{
+      await Plotly.newPlot(mainRoot, main.data, main.layout, config);
+      mainReady = true;
     }} else {{
-      try {{
-        await applyMainIncremental(previousPayload, nextPayload);
-      }} catch (mainIncrementalError) {{
-        const mainFigure = buildMainFigure(nextPayload);
-        await Plotly.react(mainRoot, mainFigure.data, mainFigure.layout, config);
-      }}
+      await Plotly.react(mainRoot, main.data, main.layout, config);
     }}
 
-    if (!initializedIndicator) {{
-      const indicatorFigure = buildIndicatorFigure(nextPayload);
-      await Plotly.newPlot(indicatorRoot, indicatorFigure.data, indicatorFigure.layout, config);
-      initializedIndicator = true;
+    if (!indicatorReady) {{
+      await Plotly.newPlot(indicatorRoot, ind.data, ind.layout, config);
+      indicatorReady = true;
     }} else {{
-      try {{
-        await applyIndicatorIncremental(previousPayload, nextPayload);
-      }} catch (indicatorIncrementalError) {{
-        const indicatorFigure = buildIndicatorFigure(nextPayload);
-        await Plotly.react(indicatorRoot, indicatorFigure.data, indicatorFigure.layout, config);
-      }}
+      await Plotly.react(indicatorRoot, ind.data, ind.layout, config);
     }}
 
-    await syncIndicatorRangeFromMain();
-    await applyMarkerPayload(nextPayload, nextPayload);
-    previousPayload = nextPayload;
-  }} catch (error) {{
-    console.error("refreshCharts failed", error);
+    prevPayload = payload;
+  }} catch (e) {{
+    console.error("refreshCharts failed", e);
   }}
 }}
 
-loadMarkerFilters();
-renderMarkerFilterControls();
+loadFilters();
+drawFilterUI();
 refreshCharts();
-if (window[refreshTimerKey]) {{
-  clearInterval(window[refreshTimerKey]);
-}}
-window[refreshTimerKey] = setInterval(refreshCharts, 5000);
+if (timer) clearInterval(timer);
+timer = setInterval(refreshCharts, 5000);
 </script>
 """
