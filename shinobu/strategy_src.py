@@ -82,7 +82,7 @@ SRC_PROFILE_OPTIONS = {
         rsi_oversold=30.0,
         rsi_overbought=70.0,
         open_prev_need=3,
-        open_cross_need=1,
+        open_cross_need=3,
         close_need=3,
         label="SCR Blog",
     ),
