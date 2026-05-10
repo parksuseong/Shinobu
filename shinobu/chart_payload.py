@@ -867,7 +867,23 @@ def _build_chart_payload_sync(
     frame = bundle.visible_frame
     pair_frame = bundle.visible_pair_frame
 
-    valid_frame = frame.dropna(subset=["Open", "High", "Low", "Close"]).copy()
+    # OHLC column names can vary by source (Open/open). Normalize robustly.
+    normalized = frame.copy()
+    ohlc_aliases = {
+        "Open": ["Open", "open"],
+        "High": ["High", "high"],
+        "Low": ["Low", "low"],
+        "Close": ["Close", "close"],
+    }
+    for canonical, candidates in ohlc_aliases.items():
+        if canonical in normalized.columns:
+            normalized[canonical] = pd.to_numeric(normalized[canonical], errors="coerce")
+            continue
+        for candidate in candidates:
+            if candidate in normalized.columns:
+                normalized[canonical] = pd.to_numeric(normalized[candidate], errors="coerce")
+                break
+    valid_frame = normalized.dropna(subset=["Open", "High", "Low", "Close"]).copy()
     candles = [
         {
             "t": index.isoformat(),
