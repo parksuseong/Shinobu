@@ -538,6 +538,10 @@ def _build_order_markers(frame: pd.DataFrame, symbols: list[str]) -> list[dict[s
         side = str(order.get("side", "")).strip().lower()
         y_value = float(candle["Low"]) * 0.99625 if side == "buy" else float(candle["High"]) * 1.00375
         reason = str(order.get("reason", "") or "").strip()
+        # Some old runtime rows may carry mojibake/garbled reason text.
+        # Hide broken reason text to prevent "?" marker labels.
+        if reason and ("�" in reason or "?" in reason):
+            reason = ""
         execution_tag = str(order.get("execution_tag", "") or "").strip().lower()
         if side == "buy":
             label = f"실매수 - {market_data.display_name(order['symbol'])}"
@@ -804,44 +808,6 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
                 _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, label, "close")
                 _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, label, "buy_close")
             current_symbol = None
-
-    return empty
-
-    primary_name = market_data.display_name(symbol)
-    pair_name = market_data.display_name(pair_symbol) if pair_symbol else "???"
-    positions = pd.Series(range(len(frame)), index=frame.index)
-    aligned_pair = pair_frame.reindex(frame.index).ffill() if pair_frame is not None and not pair_frame.empty else None
-
-    for timestamp, primary_row in frame.iterrows():
-        pair_row = aligned_pair.loc[timestamp] if aligned_pair is not None else None
-
-        primary_open = bool(primary_row.get("buy_open", False))
-        primary_close = bool(primary_row.get("buy_close", False))
-
-        pair_open = bool(pair_row.get("buy_open", False)) if pair_row is not None else False
-        pair_close = bool(pair_row.get("buy_close", False)) if pair_row is not None else False
-
-        if primary_open:
-            prefix = "매수 open"
-            label = _marker_label(prefix, primary_name, primary_row)
-            _append_main_marker(empty["primaryOpenMain"], positions, timestamp, primary_row, label, "open")
-            _append_indicator_marker(empty["primaryOpenIndicator"], positions, timestamp, primary_row, label, "buy_open")
-
-        if primary_close:
-            label = _marker_label("매도 close", primary_name, primary_row)
-            _append_main_marker(empty["primaryCloseMain"], positions, timestamp, primary_row, label, "close")
-            _append_indicator_marker(empty["primaryCloseIndicator"], positions, timestamp, primary_row, label, "buy_close")
-
-        if pair_row is not None and pair_open:
-            prefix = "매수 open"
-            label = _marker_label(prefix, pair_name, pair_row)
-            _append_main_marker(empty["pairOpenMain"], positions, timestamp, primary_row, label, "open")
-            _append_indicator_marker(empty["pairOpenIndicator"], positions, timestamp, pair_row, label, "buy_open")
-
-        if pair_row is not None and pair_close:
-            label = _marker_label("매도 close", pair_name, pair_row)
-            _append_main_marker(empty["pairCloseMain"], positions, timestamp, primary_row, label, "close")
-            _append_indicator_marker(empty["pairCloseIndicator"], positions, timestamp, pair_row, label, "buy_close")
 
     return empty
 
