@@ -856,6 +856,7 @@ def _build_chart_payload_sync(
     frame = bundle.visible_frame
     pair_frame = bundle.visible_pair_frame
 
+    valid_frame = frame.dropna(subset=["Open", "High", "Low", "Close"]).copy()
     candles = [
         {
             "t": index.isoformat(),
@@ -864,29 +865,29 @@ def _build_chart_payload_sync(
             "l": float(row["Low"]),
             "c": float(row["Close"]),
         }
-        for index, row in frame.iterrows()
+        for index, row in valid_frame.iterrows()
     ]
-    tick_text = [index.strftime("%m-%d %H:%M") for index in frame.index]
+    tick_text = [index.strftime("%m-%d %H:%M") for index in valid_frame.index]
     if include_markers:
         visible_orders = _filter_markers_to_visible_range(
             _build_order_markers(full_frame, [value for value in [symbol, pair_symbol] if value is not None]),
-            _frame_position_map(frame),
+            _frame_position_map(valid_frame),
         )
         visible_signals = (
             _filter_signal_bucket_map(
                 _build_position_signal_markers(full_frame, symbol, pair_symbol, full_pair_frame),
-                frame,
+                valid_frame,
             )
             if include_scr
             else {}
         )
         if include_scr:
-            visible_signals, visible_orders = _apply_main_marker_vertical_offsets(frame, visible_signals, visible_orders)
+            visible_signals, visible_orders = _apply_main_marker_vertical_offsets(valid_frame, visible_signals, visible_orders)
     else:
         visible_orders = []
         visible_signals = {}
-    scr_values = [None if pd.isna(value) else float(value) for value in frame["scr_line"].tolist()] if include_scr else None
-    pair_scr_values = _pair_scr(frame, pair_frame) if include_scr else None
+    scr_values = [None if pd.isna(value) else float(value) for value in valid_frame["scr_line"].tolist()] if include_scr else None
+    pair_scr_values = _pair_scr(valid_frame, pair_frame) if include_scr else None
     candles, tick_text, scr_values, pair_scr_values = _merge_payload_arrays(
         cached_payload,
         candles=candles,
