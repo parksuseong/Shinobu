@@ -6,7 +6,7 @@ import pandas as pd
 
 
 STOCH_PERIOD = 5
-CCI_PERIOD = 14
+CCI_PERIOD = 20
 RSI_PERIOD = 5
 
 
@@ -75,15 +75,15 @@ SRC_PROFILE_OPTIONS = {
     "normal": NORMAL_5M_PROFILE,
     "active": ACTIVE_5M_PROFILE,
     "blog_scr": SrcProfile(
-        stoch_oversold=10.0,
-        stoch_overbought=75.0,
-        cci_oversold=-140.0,
-        cci_overbought=120.0,
-        rsi_oversold=25.0,
-        rsi_overbought=65.0,
-        open_prev_need=2,
-        open_cross_need=3,
-        close_need=2,
+        stoch_oversold=20.0,
+        stoch_overbought=80.0,
+        cci_oversold=-100.0,
+        cci_overbought=100.0,
+        rsi_oversold=30.0,
+        rsi_overbought=70.0,
+        open_prev_need=3,
+        open_cross_need=1,
+        close_need=3,
         label="SCR Blog",
     ),
 }
