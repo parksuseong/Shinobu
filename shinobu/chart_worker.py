@@ -94,7 +94,14 @@ def _load_strategy_frame(
     if isinstance(payload, dict):
         frame = payload.get("frame")
         if isinstance(frame, pd.DataFrame) and not frame.empty:
-            return frame.sort_index()
+            candidate = frame.sort_index()
+            # Guard against corrupted cached strategy frame where OHLC is all None.
+            required = ["Open", "High", "Low", "Close"]
+            if all(col in candidate.columns for col in required):
+                if candidate[required].dropna(how="all").empty:
+                    candidate = pd.DataFrame()
+            if not candidate.empty:
+                return candidate
     # Fallback: if strategy cache miss occurs, rebuild from raw cached candles so chart does not go blank.
     lookback_days = (
         int(lookback_days_override)
