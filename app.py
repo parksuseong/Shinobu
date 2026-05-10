@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import sqlite3
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,7 @@ import yfinance as yf
 from config import get_secret, has_kis_account
 from shinobu import data as market_data
 from shinobu.cache_db import (
+    DB_PATH,
     acquire_named_lock,
     align_raw_intraday_pair_to_intersection,
     acquire_startup_init_lock,
@@ -418,6 +420,27 @@ def _run_startup_initialization(primary_symbol: str, pair_symbol: str | None) ->
 
 
 def _ensure_startup_initialization(primary_symbol: str, pair_symbol: str | None) -> None:
+    # Safety net: when DB already contains precomputed indicator rows but the
+    # startup meta flag is missing, treat initialization as completed.
+    if not is_startup_initialized():
+        try:
+            symbols = [value for value in [primary_symbol, pair_symbol] if value]
+            with sqlite3.connect(DB_PATH) as connection:
+                placeholders = ",".join("?" for _ in symbols)
+                query = f"""
+                    SELECT COUNT(*)
+                    FROM indicator_data
+                    WHERE timeframe = ?
+                      AND strategy_name = ?
+                      AND symbol IN ({placeholders})
+                """
+                params = [LIVE_TIMEFRAME, normalize_strategy_name(DEFAULT_STRATEGY_NAME), *symbols]
+                row_count = int(connection.execute(query, params).fetchone()[0] or 0)
+            if row_count > 0:
+                mark_startup_initialized(True)
+        except Exception:
+            pass
+
     if is_startup_initialized():
         _set_reset_state(
             running=False,
