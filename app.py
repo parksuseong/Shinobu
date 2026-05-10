@@ -176,6 +176,8 @@ POSITIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 NEGATIVE_FALLBACK_PATH = ASSET_DIR / "shinobu_negative.svg"
 NEUTRAL_FALLBACK_PATH = ASSET_DIR / "shinobu_positive.svg"
 _PAIR_RECOVERY_LAST_RUN_MONOTONIC = 0.0
+_INDICATOR_SYNC_LAST_RUN_MONOTONIC = 0.0
+_INDICATOR_SYNC_LOCK = threading.Lock()
 _PAIR_RECOVERY_STATE: dict[str, str] = {
     "checked_at": "-",
     "message": "대기 중",
@@ -338,6 +340,74 @@ def _lookback_days_from_current_year_start() -> int:
     now = pd.Timestamp.now(tz="Asia/Seoul")
     year_start = pd.Timestamp(year=now.year, month=1, day=1, tz="Asia/Seoul")
     return max(5, int((now - year_start).days) + 3)
+
+
+def _get_raw_and_indicator_max_ts(primary_symbol: str, pair_symbol: str | None) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    symbols = [value for value in [primary_symbol, pair_symbol] if value]
+    if not symbols:
+        return None, None
+    short_symbols = [market_data.display_symbol(symbol) for symbol in symbols]
+    try:
+        with sqlite3.connect(DB_PATH) as connection:
+            raw_placeholders = ",".join("?" for _ in short_symbols)
+            ind_placeholders = ",".join("?" for _ in symbols)
+            raw_query = (
+                f"SELECT MAX(ts) FROM raw_market_data "
+                f"WHERE timeframe=? AND symbol IN ({raw_placeholders})"
+            )
+            ind_query = (
+                f"SELECT MAX(ts) FROM indicator_data "
+                f"WHERE timeframe=? AND strategy_name=? AND symbol IN ({ind_placeholders})"
+            )
+            raw_row = connection.execute(raw_query, [LIVE_TIMEFRAME, *short_symbols]).fetchone()
+            ind_row = connection.execute(
+                ind_query,
+                [LIVE_TIMEFRAME, normalize_strategy_name(DEFAULT_STRATEGY_NAME), *symbols],
+            ).fetchone()
+        raw_ts = pd.Timestamp(raw_row[0]) if raw_row and raw_row[0] else None
+        ind_ts = pd.Timestamp(ind_row[0]) if ind_row and ind_row[0] else None
+        return raw_ts, ind_ts
+    except Exception:
+        return None, None
+
+
+def _sync_indicator_from_cached_raw_if_stale(primary_symbol: str, pair_symbol: str | None) -> None:
+    global _INDICATOR_SYNC_LAST_RUN_MONOTONIC
+    now_mono = time.monotonic()
+    if now_mono - _INDICATOR_SYNC_LAST_RUN_MONOTONIC < 30:
+        return
+    if not _INDICATOR_SYNC_LOCK.acquire(blocking=False):
+        return
+    try:
+        raw_ts, ind_ts = _get_raw_and_indicator_max_ts(primary_symbol, pair_symbol)
+        if raw_ts is None:
+            _INDICATOR_SYNC_LAST_RUN_MONOTONIC = now_mono
+            return
+        if ind_ts is not None and ind_ts >= raw_ts:
+            _INDICATOR_SYNC_LAST_RUN_MONOTONIC = now_mono
+            return
+
+        lookback_days = _lookback_days_from_current_year_start()
+        for symbol in [value for value in [primary_symbol, pair_symbol] if value]:
+            source_frame = market_data.load_live_chart_data_cached_only(
+                symbol,
+                LIVE_TIMEFRAME,
+                lookback_days=lookback_days,
+            )
+            if source_frame.empty:
+                continue
+            calculate_strategy_cached(
+                source_frame,
+                StrategyAdjustments(),
+                LIVE_TIMEFRAME,
+                strategy_name=DEFAULT_STRATEGY_NAME,
+                symbol=symbol,
+            )
+        _INDICATOR_SYNC_LAST_RUN_MONOTONIC = now_mono
+    except Exception:
+        _INDICATOR_SYNC_LAST_RUN_MONOTONIC = now_mono
+    finally:
+        _INDICATOR_SYNC_LOCK.release()
 
 
 def _run_startup_initialization(primary_symbol: str, pair_symbol: str | None) -> None:
@@ -2967,6 +3037,7 @@ def main() -> None:
     if bool(reset_state.get("running", False)) or not bool(reset_state.get("done", False)):
         render_reset_running_page()
         return
+    _sync_indicator_from_cached_raw_if_stale(loaded_symbol, pair_symbol)
 
     init_live_chart_state()
     init_strategy_profile_state()
