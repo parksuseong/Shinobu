@@ -265,6 +265,7 @@ function buildMain(payload) {{
         tickvals: tk.vals,
         ticktext: tk.txt,
         showgrid: false,
+        range: [-0.35, Math.max(x.length - 0.65, 1)],
         rangeslider: {{ visible: false }},
       }},
       yaxis: {{ side: "right", showgrid: true, gridcolor: "rgba(42,46,57,0.65)" }},
