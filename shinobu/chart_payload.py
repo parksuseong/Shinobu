@@ -764,13 +764,34 @@ def _build_position_signal_markers(frame: pd.DataFrame, symbol: str, pair_symbol
             current_symbol = None
             current_day = day_key
         pair_row = aligned_pair.loc[timestamp] if aligned_pair is not None else None
-        open_candidate = _choose_open_candidate_for_markers(
-            symbol,
-            pair_symbol,
-            primary_row,
-            pair_row,
-            allow_raw_open=False,
-        )
+        if current_symbol is None:
+            open_candidate = _choose_open_candidate_for_markers(
+                symbol,
+                pair_symbol,
+                primary_row,
+                pair_row,
+                allow_raw_open=False,
+            )
+        else:
+            # Mirror live-engine switch behavior:
+            # while holding one side, opposite-side buy_open has priority and forces switch.
+            if current_symbol == symbol:
+                opposite_symbol = pair_symbol
+                opposite_row = pair_row
+            else:
+                opposite_symbol = symbol
+                opposite_row = primary_row
+
+            if opposite_symbol and opposite_row is not None and bool(opposite_row.get("buy_open", False)):
+                open_candidate = opposite_symbol
+            else:
+                open_candidate = _choose_open_candidate_for_markers(
+                    symbol,
+                    pair_symbol,
+                    primary_row,
+                    pair_row,
+                    allow_raw_open=False,
+                )
 
         if current_symbol is None:
             if not open_candidate:
