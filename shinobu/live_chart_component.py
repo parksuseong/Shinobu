@@ -31,7 +31,7 @@ def build_live_chart_html(
   <div id=\"chart-status-{root_suffix}\" style=\"font-size:12px;color:#9aa4b2;margin:0 0 2px 6px;\"></div>
   <div id=\"chart-marker-filter-{root_suffix}\" style=\"display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px 6px;\"></div>
   <div id=\"{main_root_id}\" style=\"width:100%;height:400px;background:#131722;border:1px solid #2a2e39;border-radius:12px;\"></div>
-  <div id=\"{indicator_root_id}\" style=\"width:100%;height:320px;background:#131722;border:1px solid #2a2e39;border-radius:12px;\"></div>
+  <div id=\"{indicator_root_id}\" style=\"width:100%;height:340px;background:#131722;border:1px solid #2a2e39;border-radius:12px;\"></div>
 </div>
 <script src=\"https://cdn.plot.ly/plotly-2.35.2.min.js\"></script>
 <script>
@@ -318,14 +318,14 @@ function buildIndicator(payload) {{
       paper_bgcolor: "#131722",
       plot_bgcolor: "#131722",
       font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
-      margin: {{ l: 8, r: 56, t: 36, b: 34 }},
-      height: 320,
+      margin: {{ l: 16, r: 64, t: 36, b: 56 }},
+      height: 340,
       dragmode: false,
       hovermode: "closest",
       showlegend: false,
       uirevision: "shinobu-indicator-chart",
-      xaxis: {{ tickmode: "array", tickvals: tk.vals, ticktext: tk.txt, showgrid: false, fixedrange: true }},
-      yaxis: {{ side: "right", range: [-1.9, 1.9], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)", fixedrange: true }},
+      xaxis: {{ tickmode: "array", tickvals: tk.vals, ticktext: tk.txt, showgrid: false, fixedrange: true, automargin: true }},
+      yaxis: {{ side: "right", range: [-1.9, 1.9], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)", fixedrange: true, automargin: true }},
       annotations: [
         {{
           x: 0.01, y: 1.08, xref: "paper", yref: "paper", showarrow: false,
