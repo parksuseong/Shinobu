@@ -319,11 +319,12 @@ function buildIndicator(payload) {{
       font: {{ color: "#d1d4dc", family: "Malgun Gothic" }},
       margin: {{ l: 8, r: 56, t: 34, b: 22 }},
       height: 300,
+      dragmode: false,
       hovermode: "closest",
       showlegend: false,
       uirevision: "shinobu-indicator-chart",
-      xaxis: {{ tickmode: "array", tickvals: tk.vals, ticktext: tk.txt, showgrid: false }},
-      yaxis: {{ side: "right", range: [-1.9, 1.9], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)" }},
+      xaxis: {{ tickmode: "array", tickvals: tk.vals, ticktext: tk.txt, showgrid: false, fixedrange: true }},
+      yaxis: {{ side: "right", range: [-1.9, 1.9], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)", fixedrange: true }},
       annotations: [
         {{
           x: 0.01, y: 1.08, xref: "paper", yref: "paper", showarrow: false,
