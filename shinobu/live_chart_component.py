@@ -67,6 +67,7 @@ let mainReady = false;
 let indicatorReady = false;
 let prevPayload = null;
 let timer = null;
+let syncingRange = false;
 
 function loadFilters() {{
   try {{
@@ -348,6 +349,18 @@ async function refreshCharts() {{
     if (!mainReady) {{
       await Plotly.newPlot(mainRoot, main.data, main.layout, config);
       mainReady = true;
+      mainRoot.on("plotly_relayout", (eventData) => {{
+        if (syncingRange) return;
+        const x0 = eventData["xaxis.range[0]"];
+        const x1 = eventData["xaxis.range[1]"];
+        if (x0 === undefined || x1 === undefined) return;
+        if (!indicatorReady) return;
+        syncingRange = true;
+        Plotly.relayout(indicatorRoot, {{"xaxis.range": [x0, x1]}})
+          .finally(() => {{
+            syncingRange = false;
+          }});
+      }});
     }} else {{
       await Plotly.react(mainRoot, main.data, main.layout, config);
     }}
@@ -357,6 +370,16 @@ async function refreshCharts() {{
       indicatorReady = true;
     }} else {{
       await Plotly.react(indicatorRoot, ind.data, ind.layout, config);
+    }}
+
+    // Keep indicator x-range aligned with current main x-range.
+    const mainRange = mainRoot.layout?.xaxis?.range;
+    if (indicatorReady && mainRange && mainRange.length === 2) {{
+      syncingRange = true;
+      await Plotly.relayout(indicatorRoot, {{"xaxis.range": mainRange}})
+        .finally(() => {{
+          syncingRange = false;
+        }});
     }}
 
     prevPayload = payload;
