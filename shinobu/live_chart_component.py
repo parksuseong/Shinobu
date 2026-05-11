@@ -325,7 +325,7 @@ function buildIndicator(payload) {{
       showlegend: false,
       uirevision: "shinobu-indicator-chart",
       xaxis: {{ tickmode: "array", tickvals: tk.vals, ticktext: tk.txt, showgrid: false, fixedrange: true, automargin: true }},
-      yaxis: {{ side: "right", range: [-1.9, 1.9], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)", fixedrange: true, automargin: true }},
+      yaxis: {{ side: "right", range: [-2.4, 2.4], tickmode: "array", tickvals: [-1,0,1], ticktext: ["하단","0","상단"], showgrid: true, gridcolor: "rgba(42,46,57,0.35)", fixedrange: true, automargin: true }},
       annotations: [
         {{
           x: 0.01, y: 1.08, xref: "paper", yref: "paper", showarrow: false,
