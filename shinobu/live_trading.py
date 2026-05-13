@@ -63,6 +63,8 @@ DAILY_TOKEN_REFRESH_MINUTE = 0
 PRE_CLOSE_FORCE_EXIT_MINUTES = 15
 LIVE_SWITCH_CONFIRM_BARS = 2
 LIVE_MAX_HOLD_BARS = 180
+# Trade only after one additional candle closes so recovery/re-aggregation can settle.
+LIVE_SIGNAL_SETTLE_BARS = 1
 
 
 def _now_text() -> str:
@@ -558,17 +560,22 @@ def _get_target_rows(
     primary_closed = pd.DatetimeIndex([index for index in primary.index if pd.Timestamp(index) in closed_times])
     secondary_closed = pd.DatetimeIndex([index for index in secondary.index if pd.Timestamp(index) in closed_times])
     eligible_times = primary_closed.intersection(secondary_closed).sort_values()
-    if len(eligible_times) == 0:
+    settle_bars = max(int(LIVE_SIGNAL_SETTLE_BARS), 0)
+    max_stable_pos = len(eligible_times) - 1 - settle_bars
+    if max_stable_pos < 0:
+        return None
+    stable_times = eligible_times[: max_stable_pos + 1]
+    if len(stable_times) == 0:
         return None
 
-    target_time = pd.Timestamp(eligible_times[-1])
+    target_time = pd.Timestamp(stable_times[-1])
     last_checked_time = _parse_candle_key(last_checked_candle)
     if last_checked_time is not None:
-        for candidate in eligible_times:
+        for candidate in stable_times:
             if candidate > last_checked_time:
                 target_time = pd.Timestamp(candidate)
                 break
-    has_backlog = bool(target_time < pd.Timestamp(eligible_times[-1]))
+    has_backlog = bool(target_time < pd.Timestamp(stable_times[-1]))
 
     return target_time, primary.loc[target_time], secondary.loc[target_time], has_backlog
 
@@ -1123,13 +1130,52 @@ def process_live_trading_cycle(
             current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
             if chosen_open is not None and chosen_open[0] != current_signal_symbol:
-                _set_pending_target(
+                # Immediate same-cycle switching: close current and open opposite in one pass.
+                target_trade_symbol = _trade_symbol(chosen_open[0], execution_mode)
+                current_symbol = current_position["symbol"]
+                current_quantity = int(current_position["quantity"])
+                _submit_live_order(
                     state,
-                    "symbol",
-                    _trade_symbol(chosen_open[0], execution_mode),
-                    "반대 ETF 스위치",
+                    current_symbol,
+                    "sell",
+                    current_quantity,
+                    float(active_row["Close"]),
+                    "switch_to_opposite",
                     target_time,
+                    baseline_quantity=current_quantity,
+                    execution_tag="switch_close",
                 )
+                fetch_domestic_balance.clear()
+                positions, summary = fetch_domestic_balance()
+                refreshed_position = _find_current_pair_position(positions, [primary_symbol, secondary_symbol])
+                if refreshed_position is not None:
+                    _set_status(state, "holding")
+                    _append_log("??", "??? ??? ?? ???? ?? ?? ??? ??????.")
+                    _write_state(state)
+                    return
+                target_row = primary_row if chosen_open[0] == primary_symbol else secondary_row
+                buy_price = float(target_row["Close"])
+                buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
+                if buy_quantity <= 0:
+                    _set_status(state, "waiting_cash")
+                    _append_log("??", f"{display_name(target_trade_symbol)} ??? ?? ?? ??? ?? ?????.")
+                    _write_state(state)
+                    return
+                _submit_live_order(
+                    state,
+                    target_trade_symbol,
+                    "buy",
+                    buy_quantity,
+                    buy_price,
+                    "switch_to_opposite",
+                    target_time,
+                    baseline_quantity=0,
+                    execution_tag="switch_open",
+                )
+                _clear_pending_target(state)
+                _set_status(state, "ordered")
+                _write_state(state)
+                return
             elif bool(active_row.get("buy_close", False)):
                 _set_pending_target(state, "cash", reason="지표 과열 청산", candle_time=target_time)
         elif chosen_open is not None:
