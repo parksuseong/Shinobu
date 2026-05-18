@@ -32,6 +32,7 @@ TRADE_TO_SIGNAL_SYMBOL = {value: key for key, value in SIGNAL_TO_TRADE_SYMBOL.it
 EXECUTION_MODE_X1 = "x1"
 EXECUTION_MODE_SIGNAL = "signal"
 DEFAULT_EXECUTION_MODE = EXECUTION_MODE_SIGNAL
+STOP_LOSS_PCT = -1.0
 MAX_LIVE_ORDERS = 200
 MAX_ASSET_HISTORY = 240
 LIVE_FILL_CONFIRM_TIMEOUT_SECONDS = 4.0
@@ -74,6 +75,8 @@ def _now_text() -> str:
 def _default_state() -> dict[str, Any]:
     return {
         "enabled": False,
+        "buy_enabled": True,
+        "sell_enabled": True,
         "started_at": "",
         "strategy_name": DEFAULT_STRATEGY_NAME,
         "chart_business_days": 2,
@@ -358,7 +361,25 @@ def get_live_runtime_state() -> dict[str, str]:
         "last_order_at": str(state.get("last_order_at", "")),
         "last_status": str(state.get("last_status", "stopped")),
         "last_error": str(state.get("last_error", "")),
+        "buy_enabled": bool(state.get("buy_enabled", True)),
+        "sell_enabled": bool(state.get("sell_enabled", True)),
     }
+
+
+def set_live_buy_enabled(enabled: bool) -> None:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        state["buy_enabled"] = bool(enabled)
+        _append_log("상태", f"매수 주문 {'활성화' if enabled else '중단'}")
+        _write_state(state)
+
+
+def set_live_sell_enabled(enabled: bool) -> None:
+    with _LIVE_STATE_LOCK:
+        state = _read_state()
+        state["sell_enabled"] = bool(enabled)
+        _append_log("상태", f"매도 주문 {'활성화' if enabled else '중단'}")
+        _write_state(state)
 
 
 def get_live_strategy_name() -> str:
@@ -611,6 +632,7 @@ def _find_current_pair_position(positions: pd.DataFrame, symbols: list[str]) -> 
         "signal_symbol": TRADE_TO_SIGNAL_SYMBOL.get(held_trade_symbol, held_trade_symbol),
         "name": row.get("name", ""),
         "quantity": int(float(row.get("quantity", 0))),
+        "avg_price": float(row.get("avg_price", 0)),
         "current_price": float(row.get("current_price", 0)),
     }
 
@@ -637,6 +659,18 @@ def _allocation_quantity(orderable_cash: float, price: float) -> int:
     if price <= 0:
         return 0
     return int(max(float(orderable_cash), 0.0) // float(price))
+
+
+def _unrealized_return_pct(
+    signal_symbol: str,
+    entry_price: float,
+    current_price: float,
+) -> float:
+    if entry_price <= 0 or current_price <= 0:
+        return 0.0
+    if signal_symbol == "122630.KS":
+        return (current_price / entry_price - 1.0) * 100.0
+    return (entry_price / current_price - 1.0) * 100.0
 
 
 def _is_cash_exceeded_error(exc: Exception) -> bool:
@@ -786,6 +820,17 @@ def _submit_live_order(
     baseline_quantity: int,
     execution_tag: str = "",
 ) -> None:
+    if side == "buy" and not bool(state.get("buy_enabled", True)):
+        _set_status(state, "idle")
+        _append_log("정보", f"{display_name(symbol)} 매수 주문 차단됨: 매수 중단 상태")
+        _write_state(state)
+        return
+    if side == "sell" and not bool(state.get("sell_enabled", True)):
+        _set_status(state, "idle")
+        _append_log("정보", f"{display_name(symbol)} 매도 주문 차단됨: 매도 중단 상태")
+        _write_state(state)
+        return
+
     current_baseline = int(baseline_quantity)
     round_count = 0
     buy_half_ladder_mode = False
@@ -1128,6 +1173,22 @@ def process_live_trading_cycle(
 
         if current_position is not None:
             current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
+            active_row_for_stop = primary_row if current_signal_symbol == primary_symbol else secondary_row
+            stop_ret = _unrealized_return_pct(
+                current_signal_symbol,
+                float(current_position.get("avg_price", 0.0) or current_position.get("current_price", 0.0)),
+                float(active_row_for_stop.get("Close", 0.0)),
+            )
+            if stop_ret <= STOP_LOSS_PCT:
+                _set_pending_target(state, "cash", reason=f"손절 {STOP_LOSS_PCT:.1f}%", candle_time=target_time)
+                pending_mode = "cash"
+                pending_symbol = ""
+                pending_reason = str(state.get("pending_target_reason", "") or "")
+                pending_candle = str(state.get("pending_target_candle", "") or "")
+                pending_candle_ts = _parse_candle_text(pending_candle) or target_time
+
+        if current_position is not None:
+            current_signal_symbol = current_position.get("signal_symbol", current_position["symbol"])
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
             if chosen_open is not None and chosen_open[0] != current_signal_symbol:
                 # Immediate same-cycle switching: close current and open opposite in one pass.
@@ -1213,7 +1274,9 @@ def process_live_trading_cycle(
             active_row = primary_row if current_signal_symbol == primary_symbol else secondary_row
             # Keep close execution paired with a currently valid buy_close signal.
             # If close signal is no longer true, drop stale pending-close reconciliation.
-            if not bool(active_row.get("buy_close", False)):
+            close_reason = str(pending_reason or "")
+            allow_without_buy_close = close_reason.startswith("손절")
+            if not allow_without_buy_close and not bool(active_row.get("buy_close", False)):
                 _append_log("정보", f"{pending_candle or candle_key} 기준 청산 보정 해제: 현재 봉 buy_close 미충족")
                 _clear_pending_target(state)
                 _set_status(state, "idle")
@@ -1244,6 +1307,17 @@ def process_live_trading_cycle(
             if current_position is None:
                 target_signal_symbol = TRADE_TO_SIGNAL_SYMBOL.get(pending_symbol, pending_symbol)
                 target_row = primary_row if target_signal_symbol == primary_symbol else secondary_row
+                # Guard reconcile-open with the latest confirmed buy_open signal.
+                # This prevents stale pending targets from entering without a valid signal row.
+                if not bool(target_row.get("buy_open", False)):
+                    _append_log(
+                        "정보",
+                        f"{pending_candle or candle_key} 기준 진입 보정 해제: 현재 봉 buy_open 미충족",
+                    )
+                    _clear_pending_target(state)
+                    _set_status(state, "idle")
+                    _write_state(state)
+                    return
                 buy_price = float(target_row["Close"])
                 buy_quantity = _allocation_quantity(summary.get("orderable_cash", 0), buy_price)
                 if buy_quantity <= 0:

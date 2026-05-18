@@ -65,8 +65,10 @@ from shinobu.live_trading import (
     is_live_enabled,
     process_live_trading_cycle,
     record_asset_snapshot,
+    set_live_buy_enabled,
     set_live_enabled,
     set_live_execution_mode,
+    set_live_sell_enabled,
     set_live_strategy_name,
 )
 from shinobu.strategy import (
@@ -1878,6 +1880,32 @@ def render_live_trading_panel(pair_symbol: str | None) -> None:
     )
 
     runtime = get_live_runtime_state()
+    buy_enabled = bool(runtime.get("buy_enabled", True))
+    sell_enabled = bool(runtime.get("sell_enabled", True))
+
+    st.markdown("##### 주문 제어")
+    buy_col, sell_col = st.columns(2)
+    with buy_col:
+        if buy_enabled:
+            if st.button("매수 중단", key="live-buy-stop", use_container_width=True):
+                set_live_buy_enabled(False)
+                st.rerun()
+        else:
+            if st.button("매수 재개", key="live-buy-resume", use_container_width=True):
+                set_live_buy_enabled(True)
+                st.rerun()
+        st.caption(f"현재 매수: {'활성' if buy_enabled else '중단'}")
+    with sell_col:
+        if sell_enabled:
+            if st.button("매도 중단", key="live-sell-stop", use_container_width=True):
+                set_live_sell_enabled(False)
+                st.rerun()
+        else:
+            if st.button("매도 재개", key="live-sell-resume", use_container_width=True):
+                set_live_sell_enabled(True)
+                st.rerun()
+        st.caption(f"현재 매도: {'활성' if sell_enabled else '중단'}")
+
     status_name = {
         "running": "실행 중",
         "stopped": "중지됨",
